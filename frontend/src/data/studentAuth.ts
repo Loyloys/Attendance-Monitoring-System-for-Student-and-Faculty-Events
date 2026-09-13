@@ -9,7 +9,7 @@ export const studentCredentials: Array<{
 }> = [
   {
     id: 'STU001',
-    email: 'edward@university',
+    email: 'student',
     password: 'student123',
     student: {
       id: '1',

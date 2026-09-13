@@ -28,11 +28,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = (userData: any) => {
     setUser(userData);
+    localStorage.setItem('authUser', JSON.stringify(userData));
+    localStorage.setItem('currentUser', JSON.stringify(userData));
+    localStorage.setItem('isAuthenticated', 'true');
+    localStorage.setItem('userType', userData.type);
   };
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('umu_user'); // Or however you handle persistence
+    localStorage.removeItem('authUser');
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('isAuthenticated');
+    localStorage.removeItem('userType');
   };
 
   if (loading) return null; // Prevents flickering during auth check

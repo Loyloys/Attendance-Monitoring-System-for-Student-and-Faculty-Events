@@ -5,7 +5,7 @@ import { AuthService } from '../../data/authService';
 
 interface NavbarProps {
   onMenuClick: () => void;
-  userRole: 'student' | 'lecturer' | 'admin';
+  userRole: 'student' | 'faculty' | 'lecturer' | 'admin';
 }
 
 const Navbar: React.FC<NavbarProps> = ({ onMenuClick, userRole }) => {
@@ -14,7 +14,8 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick, userRole }) => {
   const getRoleDisplay = () => {
     switch (userRole) {
       case 'student': return 'Student Portal';
-      case 'lecturer': return 'Lecturer Portal';
+      case 'faculty':
+      case 'lecturer': return 'Faculty Portal';
       case 'admin': return 'Admin Portal';
       default: return 'UMU Present';
     }

@@ -4,14 +4,19 @@ import { AuthService } from "../data/authService";
 
 interface RequireAuthProps {
   children: ReactNode;
+  allowedRoles?: Array<'student' | 'faculty' | 'lecturer' | 'admin'>;
 }
 
-export default function RequireAuth({ children }: RequireAuthProps) {
+export default function RequireAuth({ children, allowedRoles }: RequireAuthProps) {
   const location = useLocation();
+  const currentRole = AuthService.getUserType();
 
-  if (!AuthService.isAuthenticated()) {
-    // Redirect to login page with return url
+  if (!AuthService.isAuthenticated() || !currentRole) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(currentRole)) {
+    return <Navigate to="/unauthorized" replace />;
   }
 
   return <>{children}</>;

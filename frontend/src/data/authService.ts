@@ -5,7 +5,14 @@ import type { Student } from '../types/student';
 import type { Lecturer } from '../types/lecturer';
 import type { Admin } from '../types/admin';
 
-export type UserType = 'student' | 'lecturer' | 'admin';
+export type UserType = 'student' | 'faculty' | 'lecturer' | 'admin';
+
+export const normalizeUserType = (userType?: string): UserType => {
+  if (userType === 'faculty') return 'faculty';
+  if (userType === 'lecturer') return 'lecturer';
+  if (userType === 'admin') return 'admin';
+  return 'student';
+};
 
 export interface AuthUser {
   id: string;
@@ -19,7 +26,7 @@ export type User = AuthUser; // Alias for backward compatibility
 
 // Helper function to get current user from localStorage
 export const getCurrentUser = (): AuthUser | null => {
-  const userData = localStorage.getItem('currentUser');
+  const userData = localStorage.getItem('authUser') || localStorage.getItem('currentUser');
   if (userData) {
     try {
       return JSON.parse(userData);
@@ -56,8 +63,9 @@ export interface RegisterCredentials {
 export class AuthService {
   static login(credentials: LoginCredentials): AuthUser | null {
     const { email, password, userType } = credentials;
+    const normalizedType = normalizeUserType(userType);
 
-    switch (userType) {
+    switch (normalizedType) {
       case 'student': {
         const studentCred = authenticateStudent(email, password);
         if (studentCred) {
@@ -71,6 +79,7 @@ export class AuthService {
         }
         break;
       }
+      case 'faculty':
       case 'lecturer': {
         const lecturerCred = authenticateLecturer(email, password);
         if (lecturerCred) {
@@ -78,7 +87,7 @@ export class AuthService {
             id: lecturerCred.id,
             email: lecturerCred.email,
             name: lecturerCred.lecturer.name,
-            type: 'lecturer',
+            type: 'faculty',
             data: lecturerCred.lecturer
           };
         }
@@ -131,13 +140,14 @@ export class AuthService {
 
   static logout(): void {
     localStorage.removeItem('authUser');
+    localStorage.removeItem('currentUser');
     localStorage.removeItem('isAuthenticated');
     localStorage.removeItem('userType');
   }
 
   static getCurrentUser(): AuthUser | null {
     try {
-      const userJson = localStorage.getItem('authUser');
+      const userJson = localStorage.getItem('authUser') || localStorage.getItem('currentUser');
       return userJson ? JSON.parse(userJson) : null;
     } catch {
       return null;
@@ -149,11 +159,14 @@ export class AuthService {
   }
 
   static getUserType(): UserType | null {
-    return localStorage.getItem('userType') as UserType | null;
+    const storedType = localStorage.getItem('userType');
+    return storedType ? normalizeUserType(storedType) : null;
   }
 
   static saveUser(user: AuthUser): void {
-    localStorage.setItem('authUser', JSON.stringify(user));
+    const serializedUser = JSON.stringify(user);
+    localStorage.setItem('authUser', serializedUser);
+    localStorage.setItem('currentUser', serializedUser);
     localStorage.setItem('isAuthenticated', 'true');
     localStorage.setItem('userType', user.type);
   }
@@ -167,7 +180,7 @@ export const getCurrentStudent = (): Student | null => {
 
 export const getCurrentLecturer = (): Lecturer | null => {
   const user = AuthService.getCurrentUser();
-  return user?.type === 'lecturer' ? user.data as Lecturer : null;
+  return user && (user.type === 'faculty' || user.type === 'lecturer') ? user.data as Lecturer : null;
 };
 
 export const getCurrentAdmin = (): Admin | null => {

@@ -133,6 +133,18 @@ frontend/
 
 ## 🚀 Getting Started
 
+### College of Technology demo accounts
+
+The current implementation includes a functional mock-data portal for demonstrating the requested role-based workflows. Start the frontend, then use one of these accounts:
+
+| Role | Username | Password |
+|---|---|---|
+| Student | `student` | `student123` |
+| Faculty | `faculty` | `faculty123` |
+| Administrator | `admin` | `admin123` |
+
+After login, each account is redirected to the same portal shell with role-specific navigation and permissions. Event, attendance, report, feedback, and profile data are currently stored in memory for the demo.
+
 ### Prerequisites
 - Node.js 18+
 - npm or yarn

@@ -32,12 +32,19 @@ const Login: React.FC = () => {
       const user = AuthService.login({ email, password, userType });
       if (user) {
         AuthService.saveUser(user);
-        const paths = { student: '/student/dashboard', lecturer: '/lecturer/dashboard', admin: '/admin/dashboard' };
-        navigate(paths[user.type]);
+
+        const dashboardMap: Record<string, string> = {
+          student: '/student/dashboard',
+          faculty: '/faculty/dashboard',
+          lecturer: '/lecturer/dashboard',
+          admin: '/admin/dashboard',
+        };
+
+        navigate(dashboardMap[user.type] || '/portal');
       } else {
         setError('Invalid credentials for selected role.');
       }
-    } catch (err) {
+    } catch {
       setError('Connection error. Please try again.');
     } finally {
       setIsLoading(false);
@@ -70,13 +77,13 @@ const Login: React.FC = () => {
               <div className="grid grid-cols-3 gap-2 bg-slate-200/30 p-1.5 rounded-2xl">
                 {[
                   { value: 'student', label: 'Student', icon: GraduationCap },
-                  { value: 'lecturer', label: 'Staff', icon: Briefcase },
+                  { value: 'faculty', label: 'Faculty', icon: Briefcase },
                   { value: 'admin', label: 'Admin', icon: ShieldCheck }
                 ].map((type) => (
                   <button
                     key={type.value}
                     type="button"
-                    onClick={() => setUserType(type.value as any)}
+                    onClick={() => setUserType(type.value as UserType)}
                     className={`flex flex-col items-center justify-center py-3 rounded-xl transition-all duration-300 ${
                       userType === type.value
                         ? 'bg-white shadow-md text-[#006838] scale-100'
@@ -167,6 +174,7 @@ const Login: React.FC = () => {
               </button>
             </p>
           </div>
+          <p className="mt-4 text-center text-xs text-slate-400">Demo accounts: student / student123, faculty / faculty123, admin / admin123</p>
         </div>
 
         {/* Credentials Tooltip - Optional for Production */}

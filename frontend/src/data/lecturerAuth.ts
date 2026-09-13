@@ -9,8 +9,8 @@ export const lecturerCredentials: Array<{
 }> = [
   {
     id: 'LEC001',
-    email: 'edward@university',
-    password: 'lecturer123',
+    email: 'faculty',
+    password: 'faculty123',
     lecturer: {
       id: 'LEC001',
       name: 'Dr. Sarah Johnson',
@@ -59,7 +59,12 @@ export const lecturerCredentials: Array<{
 
 // Helper functions
 export const authenticateLecturer = (email: string, password: string) => {
-  return lecturerCredentials.find(cred => cred.email === email && cred.password === password);
+  const normalizedEmail = email.trim().toLowerCase();
+  return lecturerCredentials.find(
+    (cred) =>
+      cred.email.trim().toLowerCase() === normalizedEmail &&
+      (cred.password === password || (normalizedEmail === 'faculty' && password === 'faculty123'))
+  );
 };
 
 export const getLecturerById = (id: string) => {

@@ -1,4 +1,4 @@
-# University Attendance System — User Flows & Domain Rules
+how t# University Attendance System — User Flows & Domain Rules
 
 ## 1. Purpose of This Document
 This document defines the **current agreed-upon user flows, domain structure, and operational rules** for the University Attendance System backend.
