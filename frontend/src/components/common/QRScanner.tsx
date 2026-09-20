@@ -92,7 +92,7 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
     <div className="space-y-3">
       <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
-          <Smartphone size={18} className="text-[#006838]" />
+          <Smartphone size={18} className="text-[#F97316]" />
           Camera
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex">
@@ -100,7 +100,7 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
             type="button"
             onClick={() => switchCamera('environment')}
             disabled={isSwitchingCamera}
-            className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${camera === 'environment' ? 'bg-[#006838] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${camera === 'environment' ? 'bg-[#F97316] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
           >
             <Camera size={15} /> Back camera
           </button>
@@ -108,7 +108,7 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
             type="button"
             onClick={() => switchCamera('user')}
             disabled={isSwitchingCamera}
-            className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${camera === 'user' ? 'bg-[#006838] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${camera === 'user' ? 'bg-[#F97316] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
           >
             <Camera size={15} /> Front camera
           </button>
@@ -129,17 +129,17 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
         <>
           {/* Liquid Scan Line Overlay */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-[#006838] to-transparent shadow-[0_0_15px_#006838] absolute top-0 animate-scan-move" />
+            <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-[#F97316] to-transparent shadow-[0_0_15px_#F97316] absolute top-0 animate-scan-move" />
           </div>
 
           {/* High-Tech Targeting Corners */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="relative w-48 h-48 border-2 sm:w-64 sm:h-64 border-white/20 rounded-3xl">
               {/* Corner L-Shapes */}
-              <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-[#F9A825] rounded-tl-lg" />
-              <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-[#F9A825] rounded-tr-lg" />
-              <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-[#F9A825] rounded-bl-lg" />
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-[#F9A825] rounded-br-lg" />
+              <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-[#EA580C] rounded-tl-lg" />
+              <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-[#EA580C] rounded-tr-lg" />
+              <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-[#EA580C] rounded-bl-lg" />
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-[#EA580C] rounded-br-lg" />
               
               <div className="absolute inset-0 flex items-center justify-center opacity-40">
                 <Focus className="text-white" size={40} strokeWidth={1} />
@@ -148,7 +148,7 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
           </div>
           
           <div className="absolute flex items-center gap-2 px-4 py-2 -translate-x-1/2 border rounded-full bottom-4 left-1/2 bg-black/40 backdrop-blur-md border-white/10">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
             <span className="text-[10px] font-bold text-white uppercase tracking-widest">Live Scanner</span>
           </div>
         </>

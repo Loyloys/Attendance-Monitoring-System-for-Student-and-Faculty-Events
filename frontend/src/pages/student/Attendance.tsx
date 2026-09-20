@@ -32,12 +32,12 @@ export default function StudentAttendance() {
         {/* 1. Immersive Header */}
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div>
-            <div className="flex items-center gap-2 mb-2 text-[#006838]">
+            <div className="flex items-center gap-2 mb-2 text-[#F97316]">
               <Calendar size={20} />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em]">Academic Year 2025/26</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em]">COT Event Attendance</span>
             </div>
             <h1 className="text-4xl font-black tracking-tight text-slate-900">Attendance Ledger</h1>
-            <p className="mt-1 font-medium text-slate-500">Official record of your presence in scheduled academic sessions.</p>
+            <p className="mt-1 font-medium text-slate-500">Your record of attendance at student and faculty events.</p>
           </div>
           
           
@@ -46,9 +46,9 @@ export default function StudentAttendance() {
         {/* 2. Compliance Vitals Grid */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: 'Classes Logged', val: stats.totalClasses, icon: Calendar, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'Verified Present', val: stats.presentCount, icon: CheckCircle, color: 'text-[#006838]', bg: 'bg-green-50' },
-            { label: 'Missed Sessions', val: stats.absentCount, icon: XCircle, color: 'text-red-600', bg: 'bg-red-50' },
+            { label: 'Events Logged', val: stats.totalClasses, icon: Calendar, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: 'Verified Present', val: stats.presentCount, icon: CheckCircle, color: 'text-[#F97316]', bg: 'bg-orange-50' },
+            { label: 'Missed Events', val: stats.absentCount, icon: XCircle, color: 'text-red-600', bg: 'bg-red-50' },
             { label: 'Compliance Rate', val: `${stats.attendanceRate}%`, icon: TrendingUp, color: 'text-purple-600', bg: 'bg-purple-50' },
           ].map((stat, i) => (
             <div key={i} className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm transition-transform hover:scale-[1.02]">
@@ -65,7 +65,7 @@ export default function StudentAttendance() {
         <div className="bg-white border border-slate-100 rounded-[40px] shadow-sm overflow-hidden">
           <div className="flex flex-col justify-between gap-4 p-8 border-b border-slate-50 md:flex-row md:items-center">
             <div className="flex items-center gap-4">
-              <h3 className="text-xl font-black text-slate-900">Session History</h3>
+              <h3 className="text-xl font-black text-slate-900">Event History</h3>
               <span className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black text-slate-500 uppercase">
                 {attendanceRecords.length} Entries
               </span>
@@ -91,8 +91,8 @@ export default function StudentAttendance() {
                   <tr key={record.id} className="transition-colors group hover:bg-slate-50/30">
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-slate-50 rounded-xl flex flex-col items-center justify-center border border-slate-100 group-hover:bg-[#006838]/5 group-hover:border-[#006838]/20 transition-colors">
-                          <span className="text-[10px] font-black text-[#006838] leading-none uppercase">
+                        <div className="w-10 h-10 bg-slate-50 rounded-xl flex flex-col items-center justify-center border border-slate-100 group-hover:bg-[#F97316]/5 group-hover:border-[#F97316]/20 transition-colors">
+                          <span className="text-[10px] font-black text-[#F97316] leading-none uppercase">
                             {new Date(record.date).toLocaleDateString('en-US', { month: 'short' })}
                           </span>
                           <span className="mt-1 text-sm font-black leading-none text-slate-900">
@@ -115,7 +115,7 @@ export default function StudentAttendance() {
                     </td>
                     <td className="px-8 py-5">
                       <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                        record.status === 'present' ? 'bg-green-50 text-green-600' : 
+                        record.status === 'present' ? 'bg-orange-50 text-orange-600' : 
                         record.status === 'absent' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${

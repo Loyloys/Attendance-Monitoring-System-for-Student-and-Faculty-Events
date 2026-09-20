@@ -41,7 +41,7 @@ export const mockAdmins: Admin[] = [
   {
     id: 'ADM001',
     name: 'System Administrator',
-    email: 'admin@umu.ac.ug',
+    email: 'admin@cot.edu',
     role: 'super_admin',
     permissions: ['all'],
     isApproved: true,
@@ -50,7 +50,7 @@ export const mockAdmins: Admin[] = [
   {
     id: 'ADM002',
     name: 'Science Faculty Admin',
-    email: 'science.admin@umu.ac.ug',
+    email: 'science.admin@cot.edu',
     role: 'faculty_admin',
     facultyId: 'science',
     permissions: ['manage_users', 'view_reports', 'manage_courses', 'approve_registrations'],
@@ -60,7 +60,7 @@ export const mockAdmins: Admin[] = [
   {
     id: 'ADM003',
     name: 'Education Faculty Admin',
-    email: 'education.admin@umu.ac.ug',
+    email: 'education.admin@cot.edu',
     role: 'faculty_admin',
     facultyId: 'education',
     permissions: ['manage_users', 'view_reports', 'manage_courses', 'approve_registrations'],
@@ -70,7 +70,7 @@ export const mockAdmins: Admin[] = [
   {
     id: 'ADM004',
     name: 'Business Faculty Admin',
-    email: 'business.admin@umu.ac.ug',
+    email: 'business.admin@cot.edu',
     role: 'faculty_admin',
     facultyId: 'business',
     permissions: ['manage_users', 'view_reports', 'manage_courses', 'approve_registrations'],
@@ -80,7 +80,7 @@ export const mockAdmins: Admin[] = [
   {
     id: 'ADM005',
     name: 'Health Sciences Faculty Admin',
-    email: 'health.admin@umu.ac.ug',
+    email: 'health.admin@cot.edu',
     role: 'faculty_admin',
     facultyId: 'health',
     permissions: ['manage_users', 'view_reports', 'manage_courses', 'approve_registrations'],
@@ -90,7 +90,7 @@ export const mockAdmins: Admin[] = [
   {
     id: 'ADM006',
     name: 'Arts Faculty Admin',
-    email: 'arts.admin@umu.ac.ug',
+    email: 'arts.admin@cot.edu',
     role: 'faculty_admin',
     facultyId: 'arts',
     permissions: ['manage_users', 'view_reports', 'manage_courses', 'approve_registrations'],

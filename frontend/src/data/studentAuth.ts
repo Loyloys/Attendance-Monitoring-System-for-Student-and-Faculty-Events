@@ -1,4 +1,5 @@
 import type { Student } from '../types/student';
+import { isApprovedCotProgram } from './cotPrograms';
 
 // Student Authentication Data
 export const studentCredentials: Array<{
@@ -48,7 +49,7 @@ export const studentCredentials: Array<{
       name: 'Charlie Brown',
       email: 'charlie.brown@university.edu',
       studentId: 'STU003',
-      course: 'Mathematics',
+      course: 'BSAT',
       year: 1,
       facultyId: 'science',
       isApproved: true,
@@ -64,7 +65,7 @@ export const studentCredentials: Array<{
       name: 'Diana Wilson',
       email: 'diana.wilson@university.edu',
       studentId: 'STU004',
-      course: 'Physics',
+      course: 'BSET',
       year: 4,
       facultyId: 'science',
       isApproved: true,
@@ -80,7 +81,7 @@ export const studentCredentials: Array<{
       name: 'Eve Davis',
       email: 'eve.davis@university.edu',
       studentId: 'STU005',
-      course: 'Chemistry',
+      course: 'BSFT',
       year: 2,
       facultyId: 'science',
       isApproved: true,
@@ -96,7 +97,7 @@ export const studentCredentials: Array<{
       name: 'Frank Miller',
       email: 'frank.miller@university.edu',
       studentId: 'STU006',
-      course: 'Biology',
+      course: 'BSEMC',
       year: 3,
       facultyId: 'science',
       isApproved: true,
@@ -112,7 +113,7 @@ export const studentCredentials: Array<{
       name: 'George Miller',
       email: 'george.miller@university.edu',
       studentId: 'STU007',
-      course: 'Engineering',
+      course: 'BSIT',
       year: 2,
       facultyId: 'engineering',
       isApproved: true,
@@ -128,7 +129,7 @@ export const studentCredentials: Array<{
       name: 'Helen Taylor',
       email: 'helen.taylor@university.edu',
       studentId: 'STU008',
-      course: 'Business',
+      course: 'BSFT',
       year: 3,
       facultyId: 'business',
       isApproved: true,
@@ -144,7 +145,7 @@ export const studentCredentials: Array<{
       name: 'Ian Anderson',
       email: 'ian.anderson@university.edu',
       studentId: 'STU009',
-      course: 'History',
+      course: 'BSEMC',
       year: 4,
       facultyId: 'arts',
       isApproved: true,
@@ -160,7 +161,7 @@ export const studentCredentials: Array<{
       name: 'Julia Martinez',
       email: 'julia.martinez@university.edu',
       studentId: 'STU010',
-      course: 'Literature',
+      course: 'BSET',
       year: 2,
       facultyId: 'arts',
       isApproved: true,
@@ -173,7 +174,7 @@ export const studentCredentials: Array<{
 export const authenticateStudent = (email: string, password: string) => {
   const normalizedEmail = email.trim().toLowerCase();
   return studentCredentials.find(
-    cred => cred.email.trim().toLowerCase() === normalizedEmail && cred.password === password
+    cred => cred.email.trim().toLowerCase() === normalizedEmail && cred.password === password && isApprovedCotProgram(cred.student.course)
   );
 };
 

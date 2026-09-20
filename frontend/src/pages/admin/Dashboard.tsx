@@ -35,7 +35,7 @@ export default function AdminDashboard() {
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="text-3xl font-black tracking-tight text-slate-900">System Command</h1>
-          <p className="font-medium text-slate-500">Global overview of University attendance metrics.</p>
+          <p className="font-medium text-slate-500">College of Technologies attendance overview.</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="primary" onClick={() => navigate('/portal')}>
@@ -62,7 +62,7 @@ export default function AdminDashboard() {
         
         {/* System Health Module */}
         <div className="xl:col-span-2 bg-white rounded-[32px] border border-slate-100 p-8 shadow-sm relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-[#006838]/5 rounded-full blur-[80px] -mr-32 -mt-32" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#F97316]/5 rounded-full blur-[80px] -mr-32 -mt-32" />
           
           <div className="relative flex items-center justify-between mb-8">
             <div>
@@ -76,9 +76,9 @@ export default function AdminDashboard() {
 
           <div className="relative grid grid-cols-1 gap-6 md:grid-cols-3">
             {[
-              { label: 'Total Records', val: systemStats.totalAttendanceRecords.toLocaleString(), icon: Activity, col: 'text-[#006838]' },
+              { label: 'Total Records', val: systemStats.totalAttendanceRecords.toLocaleString(), icon: Activity, col: 'text-[#F97316]' },
               { label: 'Service Uptime', val: '99.98%', icon: ShieldCheck, col: 'text-blue-600' },
-              { label: 'Latency', val: '< 42ms', icon: Zap, col: 'text-[#F9A825]' },
+              { label: 'Latency', val: '< 42ms', icon: Zap, col: 'text-[#EA580C]' },
             ].map((metric, i) => (
               <div key={i} className="p-5 border bg-slate-50/50 border-slate-100 rounded-2xl">
                 <div className={`${metric.col} mb-3`}><metric.icon size={20} /></div>
@@ -94,7 +94,7 @@ export default function AdminDashboard() {
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Quick Commands</h3>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'Add User', icon: UserPlus, key: 'addUser', bg: 'bg-[#006838]', text: 'text-white' },
+              { label: 'Add User', icon: UserPlus, key: 'addUser', bg: 'bg-[#F97316]', text: 'text-white' },
               { label: 'New Course', icon: PlusCircle, key: 'createCourse', bg: 'bg-slate-900', text: 'text-white' },
               { label: 'Audit Scan', icon: QrCode, key: 'scanner', bg: 'bg-white', text: 'text-slate-900' },
               { label: 'Find Data', icon: Search, key: 'viewReports', bg: 'bg-white', text: 'text-slate-900' },
@@ -123,9 +123,9 @@ export default function AdminDashboard() {
           </div>
           <div className="space-y-3">
             {recentActivity.map((log) => (
-              <div key={log.id} className="group flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-transparent hover:border-[#006838]/20 transition-all">
+              <div key={log.id} className="group flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-transparent hover:border-[#F97316]/20 transition-all">
                 <div className="flex items-center gap-4">
-                  <div className={`w-2 h-2 rounded-full ${log.userType === 'student' ? 'bg-[#006838]' : 'bg-[#F9A825]'}`} />
+                  <div className={`w-2 h-2 rounded-full ${log.userType === 'student' ? 'bg-[#F97316]' : 'bg-[#EA580C]'}`} />
                   <div>
                     <p className="text-xs font-bold capitalize text-slate-900">{log.action.replace('_', ' ')}</p>
                     <p className="text-[10px] font-medium text-slate-500">{log.details}</p>
@@ -140,7 +140,7 @@ export default function AdminDashboard() {
         {/* Top Performing Courses */}
         <div className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-sm">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-black text-slate-900">Course Ranks</h3>
+            <h3 className="text-lg font-black text-slate-900">Event Attendance</h3>
             <ArrowUpRight size={18} className="text-slate-300" />
           </div>
           <div className="space-y-4">
@@ -149,11 +149,11 @@ export default function AdminDashboard() {
                 <div className="flex-1">
                   <div className="flex justify-between mb-1.5">
                     <p className="text-xs font-black text-slate-800">{course.courseName}</p>
-                    <p className="text-xs font-black text-[#006838]">{course.averageAttendance}%</p>
+                    <p className="text-xs font-black text-[#F97316]">{course.averageAttendance}%</p>
                   </div>
                   <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-[#006838] to-[#006838]/60 rounded-full transition-all duration-1000" 
+                      className="h-full bg-gradient-to-r from-[#F97316] to-[#F97316]/60 rounded-full transition-all duration-1000" 
                       style={{ width: `${course.averageAttendance}%` }} 
                     />
                   </div>

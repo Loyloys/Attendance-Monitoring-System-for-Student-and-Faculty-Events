@@ -14,7 +14,7 @@ export default function PageWrapper({ children }: PageWrapperProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-[#FFFBEB] flex flex-col overflow-hidden">
       {/* 1. The Global Navbar */}
       <Navbar onMenuClick={toggleSidebar} userRole="lecturer" />
 
@@ -55,7 +55,7 @@ export default function PageWrapper({ children }: PageWrapperProps) {
           border-radius: 10px;
         }
         main::-webkit-scrollbar-thumb:hover {
-          background: #006838;
+          background: #F97316;
         }
       `}</style>
     </div>

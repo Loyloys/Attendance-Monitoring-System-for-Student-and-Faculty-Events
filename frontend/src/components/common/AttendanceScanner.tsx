@@ -34,7 +34,7 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose, geofenc
     setIsProcessing(true);
 
     try {
-      // Simulate network delay for UMU backend validation
+      // Simulate network delay for COT backend validation
       await new Promise(resolve => setTimeout(resolve, 1200));
 
       if (validateQRCode(result)) {
@@ -82,12 +82,12 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose, geofenc
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between p-6 border-b border-slate-200/50 bg-white/40 backdrop-blur-sm">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#006838] rounded-xl flex items-center justify-center shadow-lg shadow-[#006838]/20">
+            <div className="w-10 h-10 bg-[#F97316] rounded-xl flex items-center justify-center shadow-lg shadow-[#F97316]/20">
               <QrCode className="text-white" size={20} strokeWidth={2.5} />
             </div>
             <div>
               <h2 className="text-xl font-bold tracking-tight text-slate-900">Mark Attendance</h2>
-              <p className="text-[10px] font-bold text-[#F9A825] uppercase tracking-widest">Nkozi Main Campus</p>
+              <p className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">College of Technologies</p>
             </div>
           </div>
           <button
@@ -101,9 +101,9 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose, geofenc
         <div className="p-6 space-y-6">
           {/* Liquid Instructions */}
           {!scanResult && !error && (
-            <div className="p-4 bg-[#F9A825]/10 border border-[#F9A825]/20 rounded-2xl">
+            <div className="p-4 bg-[#EA580C]/10 border border-[#EA580C]/20 rounded-2xl">
               <div className="flex items-start gap-3">
-                <Info className="text-[#F9A825] shrink-0 mt-0.5" size={18} />
+                <Info className="text-[#EA580C] shrink-0 mt-0.5" size={18} />
                 <div>
                   <p className="text-sm font-bold text-slate-800">Camera is active!</p>
                   <ol className="mt-1 space-y-1 text-xs font-medium text-slate-600">
@@ -135,7 +135,7 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose, geofenc
             {/* Scanning Animation */}
             {isScanning && (
               <div className="absolute inset-0 pointer-events-none">
-                <div className="w-full h-1 bg-[#006838] absolute top-0 shadow-[0_0_15px_#006838] animate-scan-line" />
+                <div className="w-full h-1 bg-[#F97316] absolute top-0 shadow-[0_0_15px_#F97316] animate-scan-line" />
               </div>
             )}
           </div>
@@ -153,10 +153,10 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose, geofenc
                 value={manualCode}
                 onChange={(event) => setManualCode(event.target.value)}
                 placeholder="Enter decoded QR text"
-                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#006838]"
+                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#F97316]"
                 disabled={isProcessing}
               />
-              <button type="submit" disabled={isProcessing || !manualCode.trim()} className="rounded-xl bg-[#006838] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+              <button type="submit" disabled={isProcessing || !manualCode.trim()} className="rounded-xl bg-[#F97316] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
                 Submit
               </button>
             </div>
@@ -173,8 +173,8 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose, geofenc
             )}
 
             {scanResult && !error && (
-              <div className="flex items-center gap-3 p-4 bg-[#006838]/10 border border-[#006838]/20 rounded-2xl animate-in slide-in-from-bottom-2">
-                <div className="w-10 h-10 bg-[#006838] rounded-full flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-3 p-4 bg-[#F97316]/10 border border-[#F97316]/20 rounded-2xl animate-in slide-in-from-bottom-2">
+                <div className="w-10 h-10 bg-[#F97316] rounded-full flex items-center justify-center shrink-0">
                   <CheckCircle2 className="text-white" size={24} />
                 </div>
                 <div>
@@ -186,7 +186,7 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose, geofenc
 
             {isProcessing && (
               <div className="flex flex-col items-center justify-center gap-3 py-6">
-                <Loader2 className="animate-spin text-[#006838]" size={32} />
+                <Loader2 className="animate-spin text-[#F97316]" size={32} />
                 <span className="text-sm font-bold tracking-wide uppercase text-slate-500">Validating Session...</span>
               </div>
             )}
@@ -200,7 +200,7 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose, geofenc
                 className={`w-full py-4 rounded-[20px] font-bold shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95 ${
                   isScanning 
                     ? 'bg-slate-100 text-slate-600 shadow-slate-100/20' 
-                    : 'bg-[#006838] text-white shadow-[#006838]/20'
+                    : 'bg-[#F97316] text-white shadow-[#F97316]/20'
                 }`}
               >
                 {isScanning ? <CameraOff size={20} /> : <Camera size={20} />}

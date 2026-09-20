@@ -38,16 +38,16 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
       <div className="flex items-center justify-between h-20 px-6 border-b border-slate-200/50">
         {isOpen ? (
           <div className="flex items-center gap-3 duration-500 animate-in fade-in">
-            <div className="w-9 h-9 bg-[#006838] rounded-xl flex items-center justify-center shadow-lg shadow-[#006838]/20">
+            <div className="w-9 h-9 bg-[#F97316] rounded-xl flex items-center justify-center shadow-lg shadow-[#F97316]/20">
               <ShieldCheck className="text-white" size={20} strokeWidth={2.5} />
             </div>
             <div>
               <h2 className="text-lg font-black leading-none tracking-tight text-slate-900">Present</h2>
-              <span className="text-[10px] font-bold text-[#F9A825] uppercase tracking-[0.2em]">Student</span>
+              <span className="text-[10px] font-bold text-[#EA580C] uppercase tracking-[0.2em]">Student</span>
             </div>
           </div>
         ) : (
-          <div className="w-full flex justify-center text-[#006838]">
+          <div className="w-full flex justify-center text-[#F97316]">
             <ShieldCheck size={24} strokeWidth={2.5} />
           </div>
         )}
@@ -56,7 +56,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
       {/* 2. Floating Toggle Button */}
       <button
         onClick={onToggle}
-        className="absolute -right-3.5 top-24 bg-white border border-slate-200 rounded-full p-1.5 shadow-md hover:shadow-lg hover:scale-110 transition-all duration-300 text-slate-400 hover:text-[#006838]"
+        className="absolute -right-3.5 top-24 bg-white border border-slate-200 rounded-full p-1.5 shadow-md hover:shadow-lg hover:scale-110 transition-all duration-300 text-slate-400 hover:text-[#F97316]"
       >
         <ChevronLeft size={14} className={`transition-transform duration-500 ${!isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -75,13 +75,13 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                   onClick={() => window.innerWidth < 1024 && onToggle()}
                   className={`group flex items-center rounded-2xl transition-all duration-300 h-12 ${
                     isActive
-                      ? "bg-[#006838] text-white shadow-lg shadow-[#006838]/20"
+                      ? "bg-[#F97316] text-white shadow-lg shadow-[#F97316]/20"
                       : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                   } ${isOpen ? "px-4" : "justify-center px-0"}`}
                 >
                   <Icon 
                     size={20} 
-                    className={`shrink-0 transition-transform duration-300 ${isActive ? "text-white" : "text-slate-400 group-hover:text-[#006838] group-hover:scale-110"}`} 
+                    className={`shrink-0 transition-transform duration-300 ${isActive ? "text-white" : "text-slate-400 group-hover:text-[#F97316] group-hover:scale-110"}`} 
                     strokeWidth={isActive ? 2.5 : 2}
                   />
                   
@@ -113,7 +113,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
               S
             </div>
             <div>
-              <p className="text-xs font-black truncate text-slate-900">UMU Student</p>
+              <p className="text-xs font-black truncate text-slate-900">COT Student</p>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Verified Session</p>
             </div>
           </div>

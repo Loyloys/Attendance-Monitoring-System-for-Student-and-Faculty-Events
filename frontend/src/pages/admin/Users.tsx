@@ -48,7 +48,7 @@ const Users: React.FC = () => {
 
   const getRoleBranding = (tab: UserTab) => {
     switch (tab) {
-      case 'students': return { color: 'text-[#006838]', bg: 'bg-[#006838]/10' };
+      case 'students': return { color: 'text-[#F97316]', bg: 'bg-[#F97316]/10' };
       case 'lecturers': return { color: 'text-blue-600', bg: 'bg-blue-50' };
       case 'admins': return { color: 'text-purple-600', bg: 'bg-purple-50' };
     }
@@ -60,22 +60,22 @@ const Users: React.FC = () => {
       <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
         <div>
           <h1 className="text-3xl font-black tracking-tight text-slate-900">Identity Directory</h1>
-          <p className="mt-1 font-medium text-slate-500">Manage credentials and access levels for the UMU community.</p>
+          <p className="mt-1 font-medium text-slate-500">Manage credentials and access levels for the COT community.</p>
         </div>
         <div className="flex items-center gap-3">
            <div className="relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#006838] transition-colors" size={18} />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#F97316] transition-colors" size={18} />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={`Search ${activeTab}...`}
-                className="pl-12 pr-6 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] outline-none w-full md:w-72 transition-all font-medium"
+                className="pl-12 pr-6 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-4 focus:ring-[#F97316]/5 focus:border-[#F97316] outline-none w-full md:w-72 transition-all font-medium"
               />
            </div>
            <Button 
             onClick={() => setShowAddUserModal(true)}
-            className="bg-[#006838] hover:bg-[#004d2a] text-white h-[52px] px-6 shadow-lg shadow-[#006838]/20"
+            className="bg-[#F97316] hover:bg-[#EA580C] text-white h-[52px] px-6 shadow-lg shadow-[#F97316]/20"
            >
              <UserPlus size={20} className="mr-2" />
              Add {activeTab.slice(0, -1)}
@@ -155,7 +155,7 @@ const Users: React.FC = () => {
                     </td>
                     <td className="px-8 py-5">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="p-2.5 text-slate-400 hover:text-[#006838] hover:bg-[#006838]/5 rounded-xl transition-all">
+                        <button className="p-2.5 text-slate-400 hover:text-[#F97316] hover:bg-[#F97316]/5 rounded-xl transition-all">
                           <Edit3 size={18} />
                         </button>
                         <button className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all">

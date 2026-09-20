@@ -17,7 +17,7 @@ const App: React.FC = () => {
         by all but editable only by owners.
       */}
       <AuthProvider>
-        <div className="min-h-screen bg-[#F8FAFC] font-sans antialiased text-slate-900 selection:bg-[#006838]/10 selection:text-[#006838]">
+        <div className="min-h-screen bg-[#fff7ed] font-sans antialiased text-slate-900 selection:bg-orange-500/10 selection:text-orange-700">
           
           {/* Global Toast Notifications styled with glassmorphism */}
           <Toaster 

@@ -73,7 +73,7 @@ export default function ViewReportsModal({ isOpen, onClose }: ViewReportsModalPr
 
   if (!isOpen) return null;
 
-  const inputClass = "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] transition-all outline-none font-medium text-slate-700";
+  const inputClass = "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-[#F97316]/5 focus:border-[#F97316] transition-all outline-none font-medium text-slate-700";
   const labelClass = "flex items-center gap-2 text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1";
 
   return (
@@ -86,12 +86,12 @@ export default function ViewReportsModal({ isOpen, onClose }: ViewReportsModalPr
         <div className="px-8 pt-8 pb-6 border-b border-slate-100">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-[#006838]/10 rounded-2xl flex items-center justify-center text-[#006838]">
+              <div className="w-12 h-12 bg-[#F97316]/10 rounded-2xl flex items-center justify-center text-[#F97316]">
                 <FileText size={24} />
               </div>
               <div>
                 <h3 className="text-xl font-black tracking-tight text-slate-900">Report Generator</h3>
-                <p className="text-xs font-bold text-[#F9A825] uppercase tracking-tighter">Academic Data Export</p>
+                <p className="text-xs font-bold text-[#EA580C] uppercase tracking-tighter">Academic Data Export</p>
               </div>
             </div>
             <button onClick={onClose} className="p-2 transition-colors rounded-full hover:bg-slate-100 text-slate-400"><X size={20} /></button>
@@ -116,7 +116,7 @@ export default function ViewReportsModal({ isOpen, onClose }: ViewReportsModalPr
                   onClick={() => setFormData(p => ({ ...p, reportType: item.id as any }))}
                   className={`flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all ${
                     formData.reportType === item.id 
-                    ? "border-[#006838] bg-[#006838]/5 text-[#006838] shadow-sm" 
+                    ? "border-[#F97316] bg-[#F97316]/5 text-[#F97316] shadow-sm" 
                     : "border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200"
                   }`}
                 >
@@ -146,7 +146,7 @@ export default function ViewReportsModal({ isOpen, onClose }: ViewReportsModalPr
                     key={f}
                     onClick={() => setFormData(p => ({ ...p, format: f as any }))}
                     className={`flex-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
-                      formData.format === f ? "bg-white text-[#006838] shadow-sm" : "text-slate-400"
+                      formData.format === f ? "bg-white text-[#F97316] shadow-sm" : "text-slate-400"
                     }`}
                   >
                     {f}
@@ -172,7 +172,7 @@ export default function ViewReportsModal({ isOpen, onClose }: ViewReportsModalPr
           <Button 
             onClick={handleGenerateReport} 
             disabled={isGenerating}
-            className="flex-1 bg-[#006838] hover:bg-[#004d2a] shadow-[#006838]/20"
+            className="flex-1 bg-[#F97316] hover:bg-[#EA580C] shadow-[#F97316]/20"
           >
             {isGenerating ? <Loader2 className="animate-spin" /> : <><Download size={16} className="mr-2"/> Export Data</>}
           </Button>

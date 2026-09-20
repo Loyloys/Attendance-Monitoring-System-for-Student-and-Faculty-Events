@@ -1,188 +1,169 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  GraduationCap, 
-  Briefcase, 
-  ShieldCheck, 
-  Eye, 
-  EyeOff, 
-  LogIn, 
+import {
   AlertCircle,
+  BriefcaseBusiness,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  GraduationCap,
+  IdCard,
   Loader2,
-  Lock,
-  Mail
+  LockKeyhole,
+  LogIn,
+  ShieldCheck,
+  UserRound,
 } from 'lucide-react';
 import { AuthService, type UserType } from '../data/authService';
 
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 30_000;
+
+const roleOptions: Array<{ value: UserType; label: string; description: string; icon: typeof GraduationCap }> = [
+  { value: 'student', label: 'Student', description: 'Access events and attendance', icon: GraduationCap },
+  { value: 'faculty', label: 'Faculty', description: 'Organize and supervise events', icon: BriefcaseBusiness },
+  { value: 'admin', label: 'Administrator', description: 'Manage the whole system', icon: ShieldCheck },
+];
+
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [userType, setUserType] = useState<UserType>('student');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [fieldError, setFieldError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState(0);
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError('');
+    setFieldError('');
+    setRecoveryMessage('');
 
+    if (Date.now() < lockedUntil) {
+      setError('Too many failed attempts. Please wait 30 seconds and try again.');
+      return;
+    }
+
+    const normalizedIdentifier = identifier.trim();
+    if (!normalizedIdentifier) {
+      setFieldError('Enter your email, username, or ID number.');
+      return;
+    }
+    if (normalizedIdentifier.length < 3) {
+      setFieldError('Enter a valid email, username, or ID number.');
+      return;
+    }
+    if (!password) {
+      setError('Enter your password to continue.');
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      const user = AuthService.login({ email, password, userType });
-      if (user) {
-        AuthService.saveUser(user);
-
-        const dashboardMap: Record<string, string> = {
-          student: '/student/dashboard',
-          faculty: '/faculty/dashboard',
-          lecturer: '/lecturer/dashboard',
-          admin: '/admin/dashboard',
-        };
-
-        navigate(dashboardMap[user.type] || '/portal');
-      } else {
-        setError('Invalid credentials for selected role.');
+      await new Promise(resolve => setTimeout(resolve, 350));
+      const user = AuthService.login({ email: normalizedIdentifier, password, userType });
+      if (!user) {
+        const nextAttempts = failedAttempts + 1;
+        setFailedAttempts(nextAttempts);
+        if (nextAttempts >= MAX_ATTEMPTS) setLockedUntil(Date.now() + LOCKOUT_MS);
+        setError('The credentials do not match an active account for this role.');
+        return;
       }
+
+      setFailedAttempts(0);
+      AuthService.saveUser(user);
+      const dashboardMap: Record<UserType, string> = {
+        student: '/student/dashboard',
+        faculty: '/portal',
+        lecturer: '/portal',
+        admin: '/admin/dashboard',
+      };
+      navigate(dashboardMap[user.type] || '/portal', { replace: true });
     } catch {
-      setError('Connection error. Please try again.');
+      setError('We could not complete sign in. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleRecovery = () => {
+    setRecoveryMessage('Password recovery requires a registered COT email or ID. Contact a COT administrator to reset your account.');
+    setError('');
+  };
+
   return (
-    <div className="relative min-h-screen flex items-center justify-center p-4 bg-[#f8faf8] overflow-hidden">
-      {/* --- LIQUID UI ELEMENTS --- */}
-      <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-[#006838]/10 rounded-full blur-[120px] animate-pulse" />
-      <div className="absolute bottom-[-5%] right-[-5%] w-[400px] h-[400px] bg-[#F9A825]/10 rounded-full blur-[100px]" />
-
-      {/* --- MAIN LOGIN CARD (GLASS) --- */}
-      <div className="relative w-full max-w-[450px] z-10">
-        <div className="bg-white/40 backdrop-blur-2xl border border-white/40 shadow-2xl rounded-[32px] p-8 lg:p-10">
-          
-          {/* Logo Section */}
-          <div className="mb-8 text-center">
-            <div className="mx-auto w-20 h-20 bg-gradient-to-br from-[#006838] to-[#004d2a] rounded-[24px] flex items-center justify-center mb-4 shadow-xl shadow-[#006838]/20 ring-4 ring-white/30">
-              <span className="text-2xl font-black tracking-tighter text-white">UMU</span>
-            </div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Welcome Back</h2>
-            <p className="text-sm font-medium text-slate-500">Attendance Monitoring System for Student and Faculty Events</p>
-          </div>
-
-          <form className="space-y-5" onSubmit={handleSubmit}>
-            {/* User Type - Modern Apple-style Segmented Control */}
-            <div className="space-y-3">
-              <label className="text-[13px] font-semibold text-slate-600 uppercase tracking-wider ml-1">Role</label>
-              <div className="grid grid-cols-3 gap-2 bg-slate-200/30 p-1.5 rounded-2xl">
-                {[
-                  { value: 'student', label: 'Student', icon: GraduationCap },
-                  { value: 'faculty', label: 'Faculty', icon: Briefcase },
-                  { value: 'admin', label: 'Admin', icon: ShieldCheck }
-                ].map((type) => (
-                  <button
-                    key={type.value}
-                    type="button"
-                    onClick={() => setUserType(type.value as UserType)}
-                    className={`flex flex-col items-center justify-center py-3 rounded-xl transition-all duration-300 ${
-                      userType === type.value
-                        ? 'bg-white shadow-md text-[#006838] scale-100'
-                        : 'text-slate-500 hover:bg-white/50 scale-95 opacity-70'
-                    }`}
-                  >
-                    <type.icon size={20} className="mb-1" strokeWidth={2.5} />
-                    <span className="text-[11px] font-bold">{type.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Email or username field */}
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-semibold text-slate-600 ml-1">Email or username</label>
-              <div className="relative group">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#006838] transition-colors" size={18} />
-                <input
-                  type="text"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] transition-all placeholder:text-slate-400"
-                  placeholder="student or name@umu.ac.ug"
-                />
-              </div>
-            </div>
-
-            {/* Password Field */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between ml-1">
-                <label className="text-[13px] font-semibold text-slate-600">Password</label>
-                <a href="#" className="text-[12px] font-bold text-[#006838] hover:underline">Forgot?</a>
-              </div>
-              <div className="relative group">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#006838] transition-colors" size={18} />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-12 py-3.5 bg-white/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] transition-all placeholder:text-slate-400"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute transition-colors -translate-y-1/2 right-4 top-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-[#006838] hover:bg-[#004d2a] text-white py-4 rounded-2xl font-bold text-lg shadow-xl shadow-[#006838]/20 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isLoading ? (
-                <Loader2 className="animate-spin" size={22} />
-              ) : (
-                <>
-                  <span>Sign In</span>
-                  <LogIn size={20} />
-                </>
-              )}
-            </button>
-
-            {error && (
-              <div className="flex items-center gap-2 p-3 text-red-600 border border-red-100 bg-red-50 rounded-xl animate-in fade-in slide-in-from-top-2">
-                <AlertCircle size={18} />
-                <span className="text-sm font-medium">{error}</span>
-              </div>
-            )}
-          </form>
-
-          <div className="pt-6 mt-8 text-center border-t border-slate-200/50">
-            <p className="text-sm font-medium text-slate-500">
-              New to the system?{' '}
-              <button 
-                onClick={() => navigate('/register')}
-                className="text-[#006838] font-bold hover:underline"
-              >
-                Create Account
-              </button>
-            </p>
-          </div>
-          <p className="mt-4 text-center text-xs text-slate-400">Demo accounts: student / student123, faculty / faculty123, admin / admin123</p>
-        </div>
-
-        {/* Credentials Tooltip - Optional for Production */}
-        <div className="mt-6 text-center">
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Uganda Martyrs University © 2026</p>
-        </div>
+    <main className="flex min-h-screen items-center justify-center bg-[#fff7ed] px-4 py-8 text-[#17212b] sm:px-6">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute -left-24 -top-24 h-72 w-72 rounded-full bg-orange-200/40 blur-3xl" />
+        <div className="absolute -bottom-28 -right-20 h-80 w-80 rounded-full bg-amber-100/60 blur-3xl" />
       </div>
-    </div>
+
+      <section className="relative w-full max-w-[480px] rounded-[28px] border border-white bg-white px-6 py-8 shadow-[0_24px_70px_rgba(20,64,48,0.14)] sm:px-10 sm:py-10" aria-labelledby="login-title">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-900/20">
+            <span className="text-xl font-black tracking-tight">COT</span>
+          </div>
+          <p className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-orange-600">COT Attendance Web</p>
+          <h1 id="login-title" className="text-3xl font-black tracking-tight text-[#17212b]">Welcome Back</h1>
+          <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-500">Sign in to manage and track event attendance.</p>
+        </div>
+
+        <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+          <fieldset>
+            <legend className="mb-3 text-sm font-bold text-[#142b36]">Sign in as</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {roleOptions.map(({ value, label, description, icon: Icon }) => (
+                <button key={value} type="button" aria-pressed={userType === value} onClick={() => setUserType(value)} className={`rounded-2xl border px-3 py-3 text-left transition focus:outline-none focus:ring-4 focus:ring-orange-100 ${userType === value ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 bg-white text-slate-500 hover:border-orange-300'}`}>
+                  <Icon size={18} aria-hidden="true" />
+                  <span className="mt-2 block text-xs font-black">{label}</span>
+                  <span className="mt-1 block text-[10px] leading-4">{description}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          <div>
+            <label htmlFor="identifier" className="mb-2 block text-sm font-bold text-[#142b36]">Email, username, or ID number</label>
+            <div className="relative">
+              <IdCard className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} aria-hidden="true" />
+              <input id="identifier" name="identifier" type="text" autoComplete="username" value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="e.g. student or COT-STU001" className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-orange-500 focus:bg-white focus:ring-4 focus:ring-orange-100" aria-invalid={Boolean(fieldError)} aria-describedby={fieldError ? 'identifier-error' : undefined} />
+            </div>
+            {fieldError && <p id="identifier-error" className="mt-2 flex items-center gap-1 text-xs font-semibold text-rose-600"><AlertCircle size={14} />{fieldError}</p>}
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label htmlFor="password" className="text-sm font-bold text-[#142b36]">Password</label>
+              <button type="button" onClick={handleRecovery} className="text-xs font-bold text-orange-600 hover:underline focus:outline-none focus:ring-2 focus:ring-orange-200">Forgot Password?</button>
+            </div>
+            <div className="relative">
+              <LockKeyhole className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} aria-hidden="true" />
+              <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-12 text-sm outline-none transition placeholder:text-slate-400 focus:border-orange-500 focus:bg-white focus:ring-4 focus:ring-orange-100" />
+              <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(value => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 hover:text-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200">
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          {recoveryMessage && <p className="flex items-start gap-2 rounded-xl border border-orange-200 bg-orange-50 p-3 text-xs font-semibold leading-5 text-orange-800"><CheckCircle2 size={16} className="mt-0.5 shrink-0" />{recoveryMessage}</p>}
+          {error && <p role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold leading-5 text-rose-700"><AlertCircle size={16} className="mt-0.5 shrink-0" />{error}</p>}
+
+          <button type="submit" disabled={isLoading || Date.now() < lockedUntil} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-4 text-sm font-black text-white shadow-lg shadow-orange-900/15 transition hover:bg-orange-600 focus:outline-none focus:ring-4 focus:ring-orange-200 disabled:cursor-not-allowed disabled:opacity-60">
+            {isLoading ? <><Loader2 size={18} className="animate-spin" /> Signing in...</> : <><LogIn size={18} /> Sign In</>}
+          </button>
+        </form>
+
+        <div className="mt-8 border-t border-slate-100 pt-6 text-center">
+          <p className="text-sm text-slate-500">COT accounts are created and approved by an administrator.</p>
+          <p className="mt-5 flex items-center justify-center gap-2 text-[11px] text-slate-400"><UserRound size={13} /> Secure access for COT students, faculty, and administrators</p>
+        </div>
+      </section>
+    </main>
   );
 };
 

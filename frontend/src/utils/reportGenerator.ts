@@ -3,16 +3,16 @@ import { mockStudents } from '../data/mockStudentData';
 import { mockLecturers, mockCourses } from '../data/mockLecturerData';
 
 /**
- * Formats data for UMU official documentation standards.
- * Includes University Branding Header and structured sections.
+ * Formats data for COT official documentation standards.
+ * Includes COT branding header and structured sections.
  */
-const getUMUHeader = (title: string) => `
+const getCOTHeader = (title: string) => `
 --------------------------------------------------------------------------------
-         UNIVERSITY - ACADEMIC REGISTRY SYSTEM
+        COLLEGE OF TECHNOLOGIES - COT ATTENDANCE WEB
                      OFFICIAL ${title.toUpperCase()}
 --------------------------------------------------------------------------------
 Generated: ${new Date().toLocaleDateString('en-GB')} | ${new Date().toLocaleTimeString()}
-Reference: UMU-AS-REV-${Math.floor(Math.random() * 10000)}
+Reference: COT-AS-REV-${Math.floor(Math.random() * 10000)}
 --------------------------------------------------------------------------------
 `;
 
@@ -21,7 +21,7 @@ export const generateAttendanceReport = (_facultyId?: string, _courseId?: string
   const courseStats = getCourseStats();
   const recentActivity = getRecentActivity(20);
 
-  let content = getUMUHeader('Attendance Analytics Report');
+  let content = getCOTHeader('Attendance Analytics Report');
 
   content += `\n[SYSTEM VITALS]\n`;
   content += `Overall System Health: ${systemStats.systemHealth.toUpperCase()}\n`;
@@ -51,7 +51,7 @@ export const generateAttendanceReport = (_facultyId?: string, _courseId?: string
  * Note: Profile data is public for viewing but requires owner status for edits.
  */
 export const generateStudentsReport = (facultyId?: string) => {
-  let content = getUMUHeader('Student Enrollment Census');
+  let content = getCOTHeader('Student Enrollment Census');
   
   const filtered = facultyId 
     ? mockStudents.filter((s: any) => s.facultyId === facultyId) 
@@ -73,7 +73,7 @@ export const generateStudentsReport = (facultyId?: string) => {
  * Generates a Lecturers report
  */
 export const generateLecturersReport = (facultyId?: string) => {
-  let content = getUMUHeader('Lecturer Directory');
+  let content = getCOTHeader('Lecturer Directory');
   
   const filtered = facultyId 
     ? mockLecturers.filter((l: any) => l.facultyId === facultyId) 
@@ -97,7 +97,7 @@ export const generateLecturersReport = (facultyId?: string) => {
  * Generates a Courses report
  */
 export const generateCoursesReport = (facultyId?: string) => {
-  let content = getUMUHeader('Course Catalog');
+  let content = getCOTHeader('Course Catalog');
   
   const filtered = facultyId 
     ? mockCourses.filter((c: any) => c.facultyId === facultyId) 
@@ -133,7 +133,7 @@ export const downloadReport = (content: string, filename: string, format: 'txt' 
   
   const link = document.createElement('a');
   link.href = url;
-  link.download = `UMU_Report_${filename.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.${format}`;
+  link.download = `COT_Report_${filename.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.${format}`;
   
   document.body.appendChild(link);
   link.click();

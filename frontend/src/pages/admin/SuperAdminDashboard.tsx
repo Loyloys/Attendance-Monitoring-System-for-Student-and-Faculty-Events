@@ -40,7 +40,7 @@ const SuperAdminDashboard: React.FC = () => {
             <span className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em]">Root Level Access</span>
           </div>
           <h1 className="text-4xl font-black tracking-tight text-slate-900">System Oversight</h1>
-          <p className="font-medium text-slate-500">Global management of University faculties, domains, and administrative tiering.</p>
+          <p className="font-medium text-slate-500">Management of COT programs, users, events, and access.</p>
         </div>
         <Button 
           onClick={() => setShowAddAdminModal(true)}
@@ -55,7 +55,7 @@ const SuperAdminDashboard: React.FC = () => {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         {[
           { label: 'Total Faculties', val: faculties.length, icon: Landmark, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: 'Faculty Admins', val: facultyAdmins.length, icon: Users, color: 'text-[#006838]', bg: 'bg-[#006838]/5' },
+          { label: 'Faculty Admins', val: facultyAdmins.length, icon: Users, color: 'text-[#F97316]', bg: 'bg-[#F97316]/5' },
           { label: 'Super Admins', val: superAdmins.length, icon: ShieldAlert, color: 'text-purple-600', bg: 'bg-purple-50' },
         ].map((stat, i) => (
           <div key={i} className="bg-white/60 backdrop-blur-md border border-white p-6 rounded-[32px] shadow-sm flex items-center gap-5">
@@ -74,7 +74,7 @@ const SuperAdminDashboard: React.FC = () => {
       <section>
         <div className="flex items-center justify-between px-2 mb-6">
           <h3 className="flex items-center gap-2 text-lg font-black text-slate-900">
-            <Globe size={20} className="text-[#006838]" /> Faculty Domains
+            <Globe size={20} className="text-[#F97316]" /> Faculty Domains
           </h3>
         </div>
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -83,7 +83,7 @@ const SuperAdminDashboard: React.FC = () => {
             return (
               <div key={faculty.id} className="group bg-white border border-slate-100 p-6 rounded-[30px] hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-500">
                 <div className="flex items-start justify-between mb-4">
-                  <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-[#006838] transition-colors">
+                  <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-[#F97316] transition-colors">
                     <Landmark size={20} />
                   </div>
                   <span className="px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-black uppercase rounded-lg">
@@ -146,7 +146,7 @@ const SuperAdminDashboard: React.FC = () => {
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     admin.isApproved 
                     ? 'text-red-500 hover:bg-red-50' 
-                    : 'text-green-600 hover:bg-green-50'
+                    : 'text-orange-600 hover:bg-orange-50'
                   }`}
                 >
                   {admin.isApproved ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}

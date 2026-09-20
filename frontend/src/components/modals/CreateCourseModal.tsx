@@ -49,7 +49,7 @@ export default function CreateCourseModal({ isOpen, onClose, onCourseCreated }: 
 
   if (!isOpen) return null;
 
-  const inputClass = "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] transition-all outline-none font-medium text-slate-700 placeholder:text-slate-400";
+  const inputClass = "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-[#F97316]/5 focus:border-[#F97316] transition-all outline-none font-medium text-slate-700 placeholder:text-slate-400";
   const labelClass = "flex items-center gap-2 text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1";
 
   return (
@@ -67,12 +67,12 @@ export default function CreateCourseModal({ isOpen, onClose, onCourseCreated }: 
         <div className="relative px-8 pt-8 pb-6 border-b border-slate-100 bg-gradient-to-br from-white to-slate-50/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-[#006838] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-[#006838]/20">
+              <div className="w-12 h-12 bg-[#F97316] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-[#F97316]/20">
                 <BookPlus size={24} />
               </div>
               <div>
                 <h3 className="text-xl font-black leading-tight tracking-tight text-slate-900">Create Course</h3>
-                <p className="text-xs font-bold text-[#F9A825] uppercase tracking-tighter">Academic Registry</p>
+                <p className="text-xs font-bold text-[#EA580C] uppercase tracking-tighter">Academic Registry</p>
               </div>
             </div>
             <button onClick={onClose} className="p-2 transition-all border border-transparent rounded-full hover:bg-white hover:shadow-sm text-slate-400 hover:border-slate-100">
@@ -143,7 +143,7 @@ export default function CreateCourseModal({ isOpen, onClose, onCourseCreated }: 
           <Button variant="glass" className="flex-1" onClick={onClose} type="button">Discard</Button>
           <Button 
             variant="primary" 
-            className="flex-1 bg-[#006838] hover:bg-[#004d2a]" 
+            className="flex-1 bg-[#F97316] hover:bg-[#EA580C]" 
             type="submit" 
             disabled={isLoading}
           >

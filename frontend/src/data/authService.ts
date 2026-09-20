@@ -4,6 +4,7 @@ import { authenticateAdmin } from './adminAuth';
 import type { Student } from '../types/student';
 import type { Lecturer } from '../types/lecturer';
 import type { Admin } from '../types/admin';
+import { isApprovedCotProgram } from './cotPrograms';
 
 export type UserType = 'student' | 'faculty' | 'lecturer' | 'admin';
 
@@ -117,7 +118,7 @@ export class AuthService {
     try {
       switch (userType) {
         case 'student': {
-          if (!studentId || !course || !year) return false;
+          if (!studentId || !course || !year || !isApprovedCotProgram(course)) return false;
           // This would normally save to a database
           // For now, we'll just return true to simulate success
           console.log('Student registration:', { name, email, facultyId, studentId, course, year });

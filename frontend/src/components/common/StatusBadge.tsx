@@ -13,12 +13,12 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, children }) => {
     switch (status) {
       case 'success':
         return {
-          styles: 'bg-green-500/10 text-green-700 border-green-200/50 shadow-sm shadow-green-500/5',
+          styles: 'bg-orange-500/10 text-green-700 border-green-200/50 shadow-sm shadow-green-500/5',
           icon: <CheckCircle2 size={12} className="mr-1" strokeWidth={3} />
         };
       case 'warning':
         return {
-          styles: 'bg-[#F9A825]/10 text-[#c7861e] border-[#F9A825]/20 shadow-sm shadow-[#F9A825]/5',
+          styles: 'bg-[#EA580C]/10 text-[#c7861e] border-[#EA580C]/20 shadow-sm shadow-[#EA580C]/5',
           icon: <Clock size={12} className="mr-1" strokeWidth={3} />
         };
       case 'error':

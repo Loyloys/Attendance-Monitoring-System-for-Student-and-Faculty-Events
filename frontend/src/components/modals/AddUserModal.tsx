@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, UserPlus, GraduationCap, Briefcase, Shield, Loader2 } from 'lucide-react';
 import { AuthService, type UserType } from '../../data/authService';
 import Button from '../common/Button';
+import { COT_PROGRAMS, isApprovedCotProgram } from '../../data/cotPrograms';
 
 interface UserFormData {
   name: string;
@@ -42,6 +43,11 @@ export default function AddUserModal({ isOpen, onClose, onUserCreated, userType 
     e.preventDefault();
     setIsLoading(true);
     try {
+      if (formData.userType === 'student' && !isApprovedCotProgram(formData.course || '')) {
+        setError('Select one of the approved COT programs.');
+        setIsLoading(false);
+        return;
+      }
       const success = AuthService.register({
         ...formData,
         isApproved: true,
@@ -64,7 +70,7 @@ export default function AddUserModal({ isOpen, onClose, onUserCreated, userType 
 
   if (!isOpen) return null;
 
-  const inputClass = "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] transition-all outline-none font-medium text-slate-700 placeholder:text-slate-400";
+  const inputClass = "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-[#F97316]/5 focus:border-[#F97316] transition-all outline-none font-medium text-slate-700 placeholder:text-slate-400";
   const labelClass = "block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1";
 
   return (
@@ -82,11 +88,11 @@ export default function AddUserModal({ isOpen, onClose, onUserCreated, userType 
         <div className="relative px-8 pt-8 pb-6 border-b border-slate-100">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-[#006838]/10 rounded-xl flex items-center justify-center text-[#006838]">
+              <div className="w-10 h-10 bg-[#F97316]/10 rounded-xl flex items-center justify-center text-[#F97316]">
                 <UserPlus size={20} />
               </div>
               <div>
-                <h3 className="text-xl font-black tracking-tight text-slate-900">Add University Member</h3>
+                <h3 className="text-xl font-black tracking-tight text-slate-900">Add COT Member</h3>
                 <p className="text-xs font-bold tracking-tighter uppercase text-slate-400">Identity Management</p>
               </div>
             </div>
@@ -110,7 +116,7 @@ export default function AddUserModal({ isOpen, onClose, onUserCreated, userType 
                     onClick={() => setFormData(p => ({ ...p, userType: type }))}
                     className={`flex flex-col items-center gap-1 py-2 rounded-xl transition-all ${
                       formData.userType === type 
-                      ? "bg-white text-[#006838] shadow-sm" 
+                      ? "bg-white text-[#F97316] shadow-sm" 
                       : "text-slate-400 hover:text-slate-600"
                     }`}
                   >
@@ -142,7 +148,7 @@ export default function AddUserModal({ isOpen, onClose, onUserCreated, userType 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelClass}>Email Address</label>
-                <input type="email" name="email" value={formData.email} onChange={handleInputChange} className={inputClass} placeholder="name@umu.ac.ug" required />
+                <input type="email" name="email" value={formData.email} onChange={handleInputChange} className={inputClass} placeholder="name@cot.edu" required />
               </div>
               <div>
                 <label className={labelClass}>Access Password</label>
@@ -155,13 +161,15 @@ export default function AddUserModal({ isOpen, onClose, onUserCreated, userType 
               {formData.userType === 'student' && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2">
                   <div className="sm:col-span-2">
-                    <label className={labelClass}>Course Program</label>
-                    <input type="text" name="course" value={formData.course} onChange={handleInputChange} className={inputClass} placeholder="e.g. BSIT" required />
-                    <input type="text" name="course" value={formData.course} onChange={handleInputChange} className={inputClass} placeholder="e.g. BSIT" required />
+                    <label className={labelClass}>COT Program</label>
+                    <select name="course" value={formData.course} onChange={handleInputChange} className={inputClass} required>
+                      <option value="">Select program</option>
+                      {COT_PROGRAMS.map(program => <option key={program.code} value={program.code}>{program.code} - {program.name}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className={labelClass}>Student Reg No.</label>
-                    <input type="text" name="studentId" value={formData.studentId} onChange={handleInputChange} className={inputClass} placeholder="23/UMU/SCI/001" required />
+                    <input type="text" name="studentId" value={formData.studentId} onChange={handleInputChange} className={inputClass} placeholder="23/COT/SCI/001" required />
                   </div>
                   <div>
                     <label className={labelClass}>Academic Year</label>
@@ -201,7 +209,7 @@ export default function AddUserModal({ isOpen, onClose, onUserCreated, userType 
             type="submit" 
             onClick={handleSubmit} 
             disabled={isLoading}
-            className="flex-1 bg-[#006838] hover:bg-[#004d2a]"
+            className="flex-1 bg-[#F97316] hover:bg-[#EA580C]"
           >
             {isLoading ? <Loader2 className="animate-spin" /> : 'Create Identity'}
           </Button>

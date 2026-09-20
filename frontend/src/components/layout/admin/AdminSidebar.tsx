@@ -50,12 +50,12 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onToggle }) => {
         {/* Branding Header */}
         <div className="flex items-center justify-between h-20 px-6 border-b border-slate-200/50">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-[#006838] to-[#004d2a] rounded-xl flex items-center justify-center shadow-lg shadow-[#006838]/20">
+            <div className="w-9 h-9 bg-gradient-to-br from-[#F97316] to-[#EA580C] rounded-xl flex items-center justify-center shadow-lg shadow-[#F97316]/20">
               <ShieldCheck className="text-white" size={20} />
             </div>
             <div>
               <h2 className="text-lg font-black leading-none tracking-tight text-slate-900">Admin</h2>
-              <span className="text-[10px] font-bold text-[#F9A825] uppercase tracking-[0.2em]">UMU Portal</span>
+              <span className="text-[10px] font-bold text-[#EA580C] uppercase tracking-[0.2em]">COT Portal</span>
             </div>
           </div>
           <button onClick={onToggle} className="p-2 transition-colors rounded-full text-slate-400 lg:hidden hover:bg-slate-100">
@@ -76,13 +76,13 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onToggle }) => {
                     className={`
                       group flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300
                       ${isActive
-                        ? 'bg-[#006838] text-white shadow-lg shadow-[#006838]/20 translate-x-1'
+                        ? 'bg-[#F97316] text-white shadow-lg shadow-[#F97316]/20 translate-x-1'
                         : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
                       }
                     `}
                   >
                     <div className="flex items-center">
-                      <item.icon className={`mr-3 transition-colors ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-[#006838]'}`} size={20} strokeWidth={2.5} />
+                      <item.icon className={`mr-3 transition-colors ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-[#F97316]'}`} size={20} strokeWidth={2.5} />
                       <span className="text-sm font-bold tracking-wide">{item.name}</span>
                     </div>
                     {isActive && <ChevronRight size={14} className="opacity-50" />}
@@ -101,7 +101,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onToggle }) => {
                 <div className="flex items-center justify-center w-10 h-10 font-bold border-2 border-white rounded-full shadow-sm bg-slate-200 text-slate-600">
                   SA
                 </div>
-                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                <div className="absolute bottom-0 right-0 w-3 h-3 bg-orange-500 border-2 border-white rounded-full"></div>
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-black truncate text-slate-900">System Admin</p>

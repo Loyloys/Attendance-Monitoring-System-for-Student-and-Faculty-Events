@@ -44,16 +44,16 @@ const Courses: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
            <div className="relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#006838] transition-colors" size={18} />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#F97316] transition-colors" size={18} />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Find course or lecturer..."
-                className="pl-12 pr-6 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] outline-none w-full md:w-80 transition-all font-medium"
+                className="pl-12 pr-6 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-4 focus:ring-[#F97316]/5 focus:border-[#F97316] outline-none w-full md:w-80 transition-all font-medium"
               />
            </div>
-           <Button variant="primary" className="bg-[#006838] hover:bg-[#004d2a] shadow-lg shadow-[#006838]/20 h-[50px] px-6">
+           <Button variant="primary" className="bg-[#F97316] hover:bg-[#EA580C] shadow-lg shadow-[#F97316]/20 h-[50px] px-6">
              <Plus size={20} className="mr-2" />
              New Course
            </Button>
@@ -64,7 +64,7 @@ const Courses: React.FC = () => {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 sm:gap-6">
         {[
           { label: 'Active Courses', val: mockCourses.length, icon: BookOpen, col: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: 'Enrollments', val: courseStats.reduce((s, st) => s + st.totalStudents, 0), icon: Users, col: 'text-[#006838]', bg: 'bg-[#006838]/5' },
+          { label: 'Enrollments', val: courseStats.reduce((s, st) => s + st.totalStudents, 0), icon: Users, col: 'text-[#F97316]', bg: 'bg-[#F97316]/5' },
           { label: 'Avg Attendance', val: `${Math.round(courseStats.reduce((s, st) => s + st.averageAttendance, 0) / courseStats.length)}%`, icon: TrendingUp, col: 'text-purple-600', bg: 'bg-purple-50' },
           { label: 'At Risk', val: courseStats.filter(s => s.averageAttendance < 75).length, icon: AlertCircle, col: 'text-orange-600', bg: 'bg-orange-50' },
         ].map((stat, i) => (
@@ -87,12 +87,12 @@ const Courses: React.FC = () => {
           return (
             <div key={course.id} className="group relative bg-white border border-slate-100 rounded-[32px] p-6 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-500 overflow-hidden">
               {/* Background Glow */}
-              <div className="absolute -right-4 -top-4 w-24 h-24 bg-[#006838]/5 rounded-full blur-2xl group-hover:bg-[#F9A825]/10 transition-colors" />
+              <div className="absolute -right-4 -top-4 w-24 h-24 bg-[#F97316]/5 rounded-full blur-2xl group-hover:bg-[#EA580C]/10 transition-colors" />
 
               <div className="flex items-start justify-between mb-6">
                 <div className="max-w-[70%]">
-                  <span className="text-[10px] font-black text-[#F9A825] uppercase tracking-widest">{course.code}</span>
-                  <h3 className="text-lg font-black text-slate-900 leading-tight group-hover:text-[#006838] transition-colors truncate">{course.name}</h3>
+                  <span className="text-[10px] font-black text-[#EA580C] uppercase tracking-widest">{course.code}</span>
+                  <h3 className="text-lg font-black text-slate-900 leading-tight group-hover:text-[#F97316] transition-colors truncate">{course.name}</h3>
                 </div>
                 <StatusBadge status="success">Live</StatusBadge>
               </div>
@@ -122,7 +122,7 @@ const Courses: React.FC = () => {
                   </div>
                   <div className="p-3 border bg-slate-50 rounded-2xl border-slate-100/50">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Avg Att.</p>
-                    <p className={`text-lg font-black ${stats.averageAttendance < 75 ? 'text-orange-500' : 'text-[#006838]'}`}>
+                    <p className={`text-lg font-black ${stats.averageAttendance < 75 ? 'text-orange-500' : 'text-[#F97316]'}`}>
                       {stats.averageAttendance}%
                     </p>
                   </div>

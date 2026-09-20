@@ -6,7 +6,7 @@ export const mockStudents: Student[] = [
   {
     id: '1',
     name: 'Edward Kayiira',
-    email: 'kayiira@umu.ac.ug',
+    email: 'kayiira@cot.edu',
     studentId: 'STU001',
     course: 'BSIT',
     year: 3,
@@ -17,7 +17,7 @@ export const mockStudents: Student[] = [
   {
     id: '2',
     name: 'Bob Smith',
-    email: 'bob.smith@umu.ac.ug',
+    email: 'bob.smith@cot.edu',
     studentId: 'STU002',
     course: 'BSIT',
     year: 2,
@@ -28,7 +28,7 @@ export const mockStudents: Student[] = [
   {
     id: '3',
     name: 'Charlie Brown',
-    email: 'charlie.brown@umu.ac.ug',
+    email: 'charlie.brown@cot.edu',
     studentId: 'STU003',
     course: 'Mathematics',
     year: 3,
@@ -39,7 +39,7 @@ export const mockStudents: Student[] = [
   {
     id: '4',
     name: 'Diana Wilson',
-    email: 'diana.wilson@umu.ac.ug',
+    email: 'diana.wilson@cot.edu',
     studentId: 'STU004',
     course: 'Physics',
     year: 2,
@@ -50,7 +50,7 @@ export const mockStudents: Student[] = [
   {
     id: '5',
     name: 'Edward Davis',
-    email: 'edward.davis@umu.ac.ug',
+    email: 'edward.davis@cot.edu',
     studentId: 'STU005',
     course: 'Chemistry',
     year: 4,
@@ -61,7 +61,7 @@ export const mockStudents: Student[] = [
   {
     id: '6',
     name: 'Fiona Garcia',
-    email: 'fiona.garcia@umu.ac.ug',
+    email: 'fiona.garcia@cot.edu',
     studentId: 'STU006',
     course: 'Biology',
     year: 3,
@@ -72,7 +72,7 @@ export const mockStudents: Student[] = [
   {
     id: '7',
     name: 'George Miller',
-    email: 'george.miller@umu.ac.ug',
+    email: 'george.miller@cot.edu',
     studentId: 'STU007',
     course: 'Engineering',
     year: 2,
@@ -83,7 +83,7 @@ export const mockStudents: Student[] = [
   {
     id: '8',
     name: 'Helen Taylor',
-    email: 'helen.taylor@umu.ac.ug',
+    email: 'helen.taylor@cot.edu',
     studentId: 'STU008',
     course: 'Business',
     year: 3,
@@ -94,7 +94,7 @@ export const mockStudents: Student[] = [
   {
     id: '9',
     name: 'Ian Anderson',
-    email: 'ian.anderson@umu.ac.ug',
+    email: 'ian.anderson@cot.edu',
     studentId: 'STU009',
     course: 'History',
     year: 4,
@@ -105,7 +105,7 @@ export const mockStudents: Student[] = [
   {
     id: '10',
     name: 'Julia Martinez',
-    email: 'julia.martinez@umu.ac.ug',
+    email: 'julia.martinez@cot.edu',
     studentId: 'STU010',
     course: 'Literature',
     year: 2,

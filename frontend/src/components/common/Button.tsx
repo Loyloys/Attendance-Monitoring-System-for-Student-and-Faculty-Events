@@ -18,11 +18,11 @@ export default function Button({
   const baseClasses = 'relative overflow-hidden px-6 py-3 rounded-[18px] font-bold transition-all duration-300 active:scale-[0.96] focus:outline-none focus:ring-4 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2';
 
   const variantClasses = {
-    // UMU Primary Green with a deep liquid gradient
-    primary: 'bg-gradient-to-br from-[#006838] to-[#004d2a] text-white shadow-lg shadow-[#006838]/20 hover:shadow-[#006838]/30 focus:ring-[#006838]/20',
+    // COT primary orange gradient
+    primary: 'bg-gradient-to-br from-[#F97316] to-[#EA580C] text-white shadow-lg shadow-[#F97316]/20 hover:shadow-[#F97316]/30 focus:ring-[#F97316]/20',
     
-    // UMU Accent Gold for high-priority secondary actions
-    gold: 'bg-gradient-to-br from-[#F9A825] to-[#e69615] text-white shadow-lg shadow-[#F9A825]/20 hover:shadow-[#F9A825]/30 focus:ring-[#F9A825]/20',
+    // COT dark orange for secondary actions
+    gold: 'bg-gradient-to-br from-[#EA580C] to-[#e69615] text-white shadow-lg shadow-[#EA580C]/20 hover:shadow-[#EA580C]/30 focus:ring-[#EA580C]/20',
     
     // Subtle secondary for less important actions
     secondary: 'bg-slate-100 text-slate-600 hover:bg-slate-200 focus:ring-slate-200',

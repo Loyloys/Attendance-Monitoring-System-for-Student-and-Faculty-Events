@@ -38,10 +38,10 @@ export default function LecturerDashboard() {
       <div className="pb-20 mx-auto space-y-10 max-w-7xl">
         
         {/* 1. Immersive Hero Section */}
-        <div className="relative overflow-hidden bg-[#006838] rounded-[40px] p-8 md:p-12 shadow-2xl shadow-[#006838]/20 group">
+        <div className="relative overflow-hidden bg-[#F97316] rounded-[40px] p-8 md:p-12 shadow-2xl shadow-[#F97316]/20 group">
           {/* Animated Background Elements */}
           <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-[100px] -mr-48 -mt-48 transition-transform group-hover:scale-110 duration-700" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#F9A825]/20 rounded-full blur-[80px] -ml-32 -mb-32" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#EA580C]/20 rounded-full blur-[80px] -ml-32 -mb-32" />
 
           <div className="relative flex flex-col items-center justify-between gap-8 md:flex-row">
             <div className="text-center md:text-left">
@@ -59,7 +59,7 @@ export default function LecturerDashboard() {
                   { icon: BookOpen, text: `${courses.length} Active Courses` }
                 ].map((tag, i) => (
                   <span key={i} className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white border bg-white/10 backdrop-blur-lg rounded-2xl border-white/10">
-                    <tag.icon size={14} className="text-[#F9A825]" />
+                    <tag.icon size={14} className="text-[#EA580C]" />
                     {tag.text}
                   </span>
                 ))}
@@ -76,7 +76,7 @@ export default function LecturerDashboard() {
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
           {[
             { label: 'Managed Modules', val: courses.length, icon: BookOpen, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'Active QR Streams', val: activeSessions.length, icon: Zap, color: 'text-[#006838]', bg: 'bg-green-50' },
+            { label: 'Active QR Streams', val: activeSessions.length, icon: Zap, color: 'text-[#F97316]', bg: 'bg-orange-50' },
             { label: 'Scheduled Today', val: courses.reduce((t, c) => t + c.schedule.length, 0), icon: Calendar, color: 'text-purple-600', bg: 'bg-purple-50' },
           ].map((stat, i) => (
             <div key={i} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5 transition-transform hover:scale-[1.02]">
@@ -93,7 +93,7 @@ export default function LecturerDashboard() {
 
         {/* 3. The Generator Engine */}
         <div className="relative">
-          <div className="absolute -left-4 top-1/2 -translate-y-1/2 w-1 h-20 bg-[#006838] rounded-full hidden lg:block" />
+          <div className="absolute -left-4 top-1/2 -translate-y-1/2 w-1 h-20 bg-[#F97316] rounded-full hidden lg:block" />
           <QRCodeGenerator
             lecturerId={currentLecturer.id}
             onQRGenerated={handleQRGenerated}
@@ -107,7 +107,7 @@ export default function LecturerDashboard() {
           <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between p-8 border-b border-slate-50">
               <h3 className="flex items-center gap-3 text-xl font-black text-slate-900">
-                <History className="text-[#006838]" size={24} /> Stream History
+                <History className="text-[#F97316]" size={24} /> Stream History
               </h3>
             </div>
             <div className="divide-y divide-slate-50">
@@ -115,16 +115,16 @@ export default function LecturerDashboard() {
                 <div key={session.id} className="p-6 transition-colors hover:bg-slate-50 group">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className={`w-3 h-3 rounded-full ${session.isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`} />
+                      <div className={`w-3 h-3 rounded-full ${session.isActive ? 'bg-orange-500 animate-pulse' : 'bg-slate-300'}`} />
                       <div>
-                        <h4 className="font-black text-slate-900 group-hover:text-[#006838] transition-colors">{session.courseName}</h4>
+                        <h4 className="font-black text-slate-900 group-hover:text-[#F97316] transition-colors">{session.courseName}</h4>
                         <p className="flex items-center gap-2 mt-1 text-xs font-bold tracking-tighter uppercase text-slate-400">
                           <MapPin size={10} /> {session.location} • <Clock size={10} /> {session.time}
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${session.isActive ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-400'}`}>
+                      <div className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${session.isActive ? 'bg-orange-50 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>
                         {session.isActive ? 'Live' : 'Expired'}
                       </div>
                       <p className="text-[10px] font-bold text-slate-300 mt-2">{new Date(session.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
@@ -141,15 +141,15 @@ export default function LecturerDashboard() {
           <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between p-8 border-b border-slate-50">
               <h3 className="flex items-center gap-3 text-xl font-black text-slate-900">
-                <BookOpen className="text-[#F9A825]" size={24} /> My Modules
+                <BookOpen className="text-[#EA580C]" size={24} /> My Modules
               </h3>
             </div>
             <div className="divide-y divide-slate-50">
               {courses.map((course) => (
                 <div key={course.id} className="flex items-center justify-between p-6 transition-all cursor-pointer group hover:bg-slate-50">
                   <div>
-                    <span className="text-[9px] font-black text-[#F9A825] uppercase tracking-[0.2em]">{course.code}</span>
-                    <h4 className="text-base font-black text-slate-900 group-hover:text-[#006838] transition-colors">{course.name}</h4>
+                    <span className="text-[9px] font-black text-[#EA580C] uppercase tracking-[0.2em]">{course.code}</span>
+                    <h4 className="text-base font-black text-slate-900 group-hover:text-[#F97316] transition-colors">{course.name}</h4>
                     <div className="flex gap-1.5 mt-3">
                       {course.schedule.map((s) => (
                         <span key={s.id} className="px-2.5 py-1 bg-slate-100 text-[9px] font-black text-slate-500 rounded-lg uppercase">

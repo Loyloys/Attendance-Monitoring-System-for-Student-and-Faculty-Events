@@ -78,23 +78,23 @@ const Register: React.FC = () => {
     }
   };
 
-  const inputStyle = "w-full pl-11 pr-4 py-3 bg-white/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] transition-all placeholder:text-slate-400 text-sm";
-  const iconStyle = "absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#006838] transition-colors";
+  const inputStyle = "w-full pl-11 pr-4 py-3 bg-white/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-[#F97316]/5 focus:border-[#F97316] transition-all placeholder:text-slate-400 text-sm";
+  const iconStyle = "absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#F97316] transition-colors";
 
   return (
     <div className="relative min-h-screen flex items-center justify-center p-4 bg-[#f8faf8] overflow-x-hidden">
       {/* Liquid UI Background Blobs */}
-      <div className="absolute top-[-5%] right-[-10%] w-[500px] h-[500px] bg-[#006838]/10 rounded-full blur-[120px] animate-pulse" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-[#F9A825]/10 rounded-full blur-[100px]" />
+      <div className="absolute top-[-5%] right-[-10%] w-[500px] h-[500px] bg-[#F97316]/10 rounded-full blur-[120px] animate-pulse" />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-[#EA580C]/10 rounded-full blur-[100px]" />
 
       <div className="relative w-full max-w-[550px] z-10 my-8">
         <div className="bg-white/40 backdrop-blur-2xl border border-white/40 shadow-2xl rounded-[32px] p-6 lg:p-10">
           
           <div className="mb-8 text-center">
-            <div className="mx-auto w-16 h-16 bg-[#006838] rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-[#006838]/20">
+            <div className="mx-auto w-16 h-16 bg-[#F97316] rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-[#F97316]/20">
               <UserPlus className="text-white" size={32} />
             </div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Join UMU Present</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Join COT Attendance Web</h2>
             <p className="text-sm font-medium text-slate-500">Create your academic account</p>
           </div>
 
@@ -113,7 +113,7 @@ const Register: React.FC = () => {
                     onClick={() => setUserType(type.value as UserType)}
                     className={`flex items-center justify-center gap-2 py-3 rounded-xl transition-all duration-300 ${
                       userType === type.value
-                        ? 'bg-white shadow-md text-[#006838]'
+                        ? 'bg-white shadow-md text-[#F97316]'
                         : 'text-slate-500 hover:bg-white/50 opacity-70'
                     }`}
                   >
@@ -204,7 +204,7 @@ const Register: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-[#006838] hover:bg-[#004d2a] text-white py-4 rounded-2xl font-bold text-lg shadow-xl shadow-[#006838]/20 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2 mt-4"
+              className="w-full bg-[#F97316] hover:bg-[#EA580C] text-white py-4 rounded-2xl font-bold text-lg shadow-xl shadow-[#F97316]/20 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2 mt-4"
             >
               {isLoading ? <Loader2 className="animate-spin" size={22} /> : <span>Create Account</span>}
             </button>
@@ -220,7 +220,7 @@ const Register: React.FC = () => {
           <div className="pt-6 mt-8 text-center border-t border-slate-200/50">
             <p className="text-sm font-medium text-slate-500">
               Already a member?{' '}
-              <button onClick={() => navigate('/login')} className="text-[#006838] font-bold hover:underline">
+              <button onClick={() => navigate('/login')} className="text-[#F97316] font-bold hover:underline">
                 Sign In
               </button>
             </p>

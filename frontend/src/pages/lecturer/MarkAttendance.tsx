@@ -50,7 +50,7 @@ export default function LecturerMarkAttendance() {
         {/* 1. Dashboard Header */}
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div>
-            <div className="flex items-center gap-2 mb-2 text-[#006838]">
+            <div className="flex items-center gap-2 mb-2 text-[#F97316]">
               <UserCheck size={20} />
               <span className="text-[10px] font-black uppercase tracking-[0.2em]">Manual Override Portal</span>
             </div>
@@ -85,7 +85,7 @@ export default function LecturerMarkAttendance() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {[
             { label: 'Enrolled', val: stats.total, color: 'text-blue-600', bg: 'bg-blue-50', icon: Users },
-            { label: 'Present', val: stats.present, color: 'text-[#006838]', bg: 'bg-green-50', icon: Check },
+            { label: 'Present', val: stats.present, color: 'text-[#F97316]', bg: 'bg-orange-50', icon: Check },
             { label: 'Absent', val: stats.absent, color: 'text-red-600', bg: 'bg-red-50', icon: X },
             { label: 'Late', val: stats.late, color: 'text-amber-600', bg: 'bg-amber-50', icon: Clock },
           ].map((s, i) => (
@@ -104,13 +104,13 @@ export default function LecturerMarkAttendance() {
           <div className="flex flex-col justify-between gap-4 p-8 border-b border-slate-50 md:flex-row md:items-center bg-slate-50/30">
             <h3 className="text-lg font-black text-slate-900">Class Roster</h3>
             <div className="relative w-full group md:w-72">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#006838] transition-colors" size={16} />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#F97316] transition-colors" size={16} />
               <input 
                 type="text" 
                 placeholder="Search name or ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm font-medium focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] transition-all outline-none"
+                className="w-full pl-12 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm font-medium focus:ring-4 focus:ring-[#F97316]/5 focus:border-[#F97316] transition-all outline-none"
               />
             </div>
           </div>
@@ -131,7 +131,7 @@ export default function LecturerMarkAttendance() {
                     <tr key={student.id} className="transition-colors group hover:bg-slate-50/30">
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 group-hover:bg-[#006838]/10 group-hover:text-[#006838] transition-all duration-500">
+                          <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 group-hover:bg-[#F97316]/10 group-hover:text-[#F97316] transition-all duration-500">
                             {student.name.charAt(0)}
                           </div>
                           <div>
@@ -143,7 +143,7 @@ export default function LecturerMarkAttendance() {
                       <td className="px-8 py-5">
                         {record ? (
                           <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                            record.status === 'present' ? 'bg-green-50 text-green-600' :
+                            record.status === 'present' ? 'bg-orange-50 text-orange-600' :
                             record.status === 'absent' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
                           }`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${
@@ -160,7 +160,7 @@ export default function LecturerMarkAttendance() {
                       </td>
                       <td className="px-8 py-5">
                         <div className="flex items-center justify-end gap-2">
-                          <button className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest bg-green-50 text-green-600 hover:bg-green-600 hover:text-white transition-all">Present</button>
+                          <button className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest bg-orange-50 text-orange-600 hover:bg-green-600 hover:text-white transition-all">Present</button>
                           <button className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all">Absent</button>
                           <button className="flex items-center justify-center w-10 h-10 transition-colors rounded-xl bg-slate-50 text-slate-400 hover:text-slate-900">
                             <MoreHorizontal size={18} />

@@ -38,24 +38,24 @@ export default function LecturerSidebar({ isOpen, onToggle }: LecturerSidebarPro
       <div className="flex items-center justify-between h-20 px-6 border-b border-slate-200/50">
         {isOpen ? (
           <div className="flex items-center gap-3 duration-500 animate-in fade-in">
-            <div className="w-9 h-9 bg-gradient-to-br from-[#006838] to-[#004d2a] rounded-xl flex items-center justify-center shadow-lg shadow-[#006838]/20">
+            <div className="w-9 h-9 bg-gradient-to-br from-[#F97316] to-[#EA580C] rounded-xl flex items-center justify-center shadow-lg shadow-[#F97316]/20">
               <GraduationCap className="text-white" size={20} />
             </div>
             <div>
               <h2 className="text-lg font-black leading-none tracking-tight text-slate-900">Lecturer</h2>
-              <span className="text-[10px] font-bold text-[#F9A825] uppercase tracking-[0.2em]">UMU Present</span>
+              <span className="text-[10px] font-bold text-[#EA580C] uppercase tracking-[0.2em]">COT Attendance Web</span>
             </div>
           </div>
         ) : (
           <div className="flex justify-center w-full">
-             <GraduationCap className="text-[#006838]" size={24} />
+             <GraduationCap className="text-[#F97316]" size={24} />
           </div>
         )}
         
         {/* Toggle Button - Liquid Floating Style */}
         <button
           onClick={onToggle}
-          className={`absolute -right-3 top-20 bg-white border border-slate-200 rounded-full p-1.5 shadow-md hover:shadow-lg hover:scale-110 transition-all duration-300 text-slate-400 hover:text-[#006838] hidden lg:block`}
+          className={`absolute -right-3 top-20 bg-white border border-slate-200 rounded-full p-1.5 shadow-md hover:shadow-lg hover:scale-110 transition-all duration-300 text-slate-400 hover:text-[#F97316] hidden lg:block`}
         >
           <ChevronLeft size={14} className={`transition-transform duration-500 ${!isOpen ? 'rotate-180' : ''}`} />
         </button>
@@ -75,13 +75,13 @@ export default function LecturerSidebar({ isOpen, onToggle }: LecturerSidebarPro
                   onClick={() => window.innerWidth < 1024 && onToggle()}
                   className={`group flex items-center rounded-2xl transition-all duration-300 h-12 ${
                     isActive
-                      ? "bg-[#006838] text-white shadow-lg shadow-[#006838]/20"
+                      ? "bg-[#F97316] text-white shadow-lg shadow-[#F97316]/20"
                       : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                   } ${isOpen ? "px-4" : "justify-center px-0"}`}
                 >
                   <Icon 
                     size={20} 
-                    className={`shrink-0 transition-transform duration-300 ${isActive ? "text-white" : "text-slate-400 group-hover:text-[#006838] group-hover:scale-110"}`} 
+                    className={`shrink-0 transition-transform duration-300 ${isActive ? "text-white" : "text-slate-400 group-hover:text-[#F97316] group-hover:scale-110"}`} 
                     strokeWidth={isActive ? 2.5 : 2}
                   />
                   
@@ -111,7 +111,7 @@ export default function LecturerSidebar({ isOpen, onToggle }: LecturerSidebarPro
             {isOpen && (
               <div className="overflow-hidden">
                 <p className="text-sm font-black truncate text-slate-900">Staff Portal</p>
-                <p className="text-[10px] font-bold text-[#F9A825] uppercase tracking-tighter">Academic Year 25/26</p>
+                <p className="text-[10px] font-bold text-[#EA580C] uppercase tracking-tighter">Academic Year 25/26</p>
               </div>
             )}
           </div>

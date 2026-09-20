@@ -46,10 +46,10 @@ export default function LecturerClasses() {
           {courses.map((course) => (
             <div key={course.id} className="group relative bg-white border border-slate-100 rounded-[40px] p-8 transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200/60 overflow-hidden">
               {/* Contextual Accent */}
-              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-[#006838] to-[#006838]/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-[#F97316] to-[#F97316]/20 opacity-0 group-hover:opacity-100 transition-opacity" />
               
               <div className="flex items-start justify-between mb-6">
-                <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center font-black text-xl text-[#006838] group-hover:bg-[#006838] group-hover:text-white transition-all duration-500">
+                <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center font-black text-xl text-[#F97316] group-hover:bg-[#F97316] group-hover:text-white transition-all duration-500">
                   {course.code.charAt(0)}
                 </div>
                 <span className="px-3 py-1 bg-slate-50 text-slate-400 text-[9px] font-black uppercase tracking-widest rounded-lg border border-slate-100">
@@ -58,7 +58,7 @@ export default function LecturerClasses() {
               </div>
 
               <div className="mb-6 space-y-1">
-                <h3 className="text-xl font-black text-slate-900 leading-tight group-hover:text-[#006838] transition-colors">{course.name}</h3>
+                <h3 className="text-xl font-black text-slate-900 leading-tight group-hover:text-[#F97316] transition-colors">{course.name}</h3>
                 <p className="text-xs font-bold tracking-tighter uppercase text-slate-400">{course.code}</p>
               </div>
 
@@ -68,7 +68,7 @@ export default function LecturerClasses() {
                 {course.schedule.map((session) => (
                   <div key={session.id} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[#F9A825] shadow-sm">
+                      <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[#EA580C] shadow-sm">
                         <Clock size={14} />
                       </div>
                       <span className="text-xs font-bold text-slate-700">{session.day}</span>
@@ -88,7 +88,7 @@ export default function LecturerClasses() {
                 </button>
                 <button 
                   onClick={() => handleGenerateQR(course.id)}
-                  className="w-12 h-12 rounded-2xl bg-[#006838]/5 text-[#006838] hover:bg-[#006838] hover:text-white transition-all flex items-center justify-center"
+                  className="w-12 h-12 rounded-2xl bg-[#F97316]/5 text-[#F97316] hover:bg-[#F97316] hover:text-white transition-all flex items-center justify-center"
                 >
                   <QrCode size={20} />
                 </button>
@@ -100,7 +100,7 @@ export default function LecturerClasses() {
         {/* 3. Global Quick Actions Overlay */}
         <div className="bg-white border border-slate-100 rounded-[40px] p-8 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-6">
-            <div className="w-16 h-16 bg-[#F9A825]/10 text-[#F9A825] rounded-[24px] flex items-center justify-center">
+            <div className="w-16 h-16 bg-[#EA580C]/10 text-[#EA580C] rounded-[24px] flex items-center justify-center">
               <UserCheck size={32} />
             </div>
             <div>
@@ -112,7 +112,7 @@ export default function LecturerClasses() {
             <Button variant="glass" className="border-slate-200">
               <FileText size={18} className="mr-2" /> View Reports
             </Button>
-            <Button onClick={() => navigate('/lecturer/mark-attendance')} className="bg-[#006838] text-white px-8">
+            <Button onClick={() => navigate('/lecturer/mark-attendance')} className="bg-[#F97316] text-white px-8">
               Manual Override
             </Button>
           </div>

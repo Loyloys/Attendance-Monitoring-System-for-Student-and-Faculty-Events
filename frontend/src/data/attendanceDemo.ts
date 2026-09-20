@@ -1,6 +1,6 @@
 export type DemoRole = 'student' | 'faculty' | 'admin';
 export type DemoAttendanceStatus = 'Present' | 'Late' | 'Absent';
-export type DemoEventStatus = 'Upcoming' | 'Ongoing' | 'Completed' | 'Cancelled';
+export type DemoEventStatus = 'Approved' | 'Ongoing' | 'Completed' | 'Cancelled';
 
 export interface DemoEvent {
   id: string;
@@ -79,17 +79,17 @@ export const demoUsers: DemoUser[] = [
 export const demoEvents: DemoEvent[] = [
   {
     id: 'EVT-001',
-    name: 'College of Technology Seminar',
+    name: 'College of Technologies Seminar',
     description: 'A campus-wide seminar on digital transformation and academic innovation.',
     date: '2026-09-18',
     startTime: '08:00',
     endTime: '10:00',
     venue: 'Innovation Hall',
-    organizer: 'College of Technology',
+    organizer: 'College of Technologies',
     type: 'College Event',
     attendanceMethod: 'QR Code',
     cutoffTime: '08:15',
-    status: 'Upcoming',
+    status: 'Approved',
   },
   {
     id: 'EVT-002',
@@ -206,7 +206,7 @@ export const getAdminSummary = () => {
     totalStudents: demoUsers.filter((user) => user.role === 'student').length,
     totalFaculty: demoUsers.filter((user) => user.role === 'faculty').length,
     totalEvents: demoEvents.length,
-    upcomingEvents: demoEvents.filter((event) => event.status === 'Upcoming').length,
+    approvedEvents: demoEvents.filter((event) => event.status === 'Approved').length,
     ongoingEvents: demoEvents.filter((event) => event.status === 'Ongoing').length,
     present,
     late,

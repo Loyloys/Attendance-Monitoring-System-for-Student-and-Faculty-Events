@@ -8,7 +8,7 @@ export const mockLecturers: Lecturer[] = [
   {
     id: 'LEC001',
     name: 'Dr. Sarah Johnson',
-    email: 'sarah.johnson@umu.ac.ug',
+    email: 'sarah.johnson@cot.edu',
     department: 'Bachelor of Science in Information Technology (BSIT)',
     employeeId: 'EMP001',
     facultyId: 'science',
@@ -19,7 +19,7 @@ export const mockLecturers: Lecturer[] = [
   {
     id: 'LEC002',
     name: 'Prof. Michael Chen',
-    email: 'michael.chen@umu.ac.ug',
+    email: 'michael.chen@cot.edu',
     department: 'Mathematics',
     employeeId: 'EMP002',
     facultyId: 'science',
@@ -30,7 +30,7 @@ export const mockLecturers: Lecturer[] = [
   {
     id: 'LEC003',
     name: 'Dr. Emily Rodriguez',
-    email: 'emily.rodriguez@umu.ac.ug',
+    email: 'emily.rodriguez@cot.edu',
     department: 'Physics',
     employeeId: 'EMP003',
     facultyId: 'science',
