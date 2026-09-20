@@ -40,7 +40,10 @@ export const adminCredentials: Array<{
 
 // Helper functions
 export const authenticateAdmin = (email: string, password: string) => {
-  return adminCredentials.find(cred => cred.email === email && cred.password === password);
+  const normalizedEmail = email.trim().toLowerCase();
+  return adminCredentials.find(
+    cred => cred.email.trim().toLowerCase() === normalizedEmail && cred.password === password
+  );
 };
 
 export const getAdminById = (id: string) => {

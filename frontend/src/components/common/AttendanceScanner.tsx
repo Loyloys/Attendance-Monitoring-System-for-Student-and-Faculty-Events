@@ -12,17 +12,21 @@ import {
   Loader2
 } from 'lucide-react';
 import { validateQRCode, parseQRCode } from '../../data/mockStudentData';
+import { validateCurrentLocation, type GeofenceConfig } from '../../utils/geofencing';
+import { isEventQr, validateEventQr } from '../../utils/eventQr';
 
 interface AttendanceScannerProps {
   onAttendanceMarked: (qrData: string) => void;
   onClose: () => void;
+  geofence?: GeofenceConfig;
 }
 
-export default function AttendanceScanner({ onAttendanceMarked, onClose }: AttendanceScannerProps) {
+export default function AttendanceScanner({ onAttendanceMarked, onClose, geofence }: AttendanceScannerProps) {
   const [isScanning, setIsScanning] = useState(true); // Start scanning immediately
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [manualCode, setManualCode] = useState('');
 
   const handleScan = async (result: string) => {
     setScanResult(result);
@@ -34,13 +38,30 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose }: Atten
       await new Promise(resolve => setTimeout(resolve, 1200));
 
       if (validateQRCode(result)) {
-        parseQRCode(result);
+        if (isEventQr(result)) {
+          const eventQrValidation = validateEventQr(result);
+          if (!eventQrValidation.valid) {
+            setError(eventQrValidation.reason || 'Invalid or expired event QR code.');
+            return;
+          }
+        } else {
+          parseQRCode(result);
+        }
+
+        if (geofence) {
+          const locationValidation = await validateCurrentLocation(geofence);
+          if (!locationValidation.accepted) {
+            setError(locationValidation.reason);
+            return;
+          }
+        }
+
         onAttendanceMarked(result);
         setError(null);
       } else {
         setError('Invalid QR code. Please scan the official code displayed by your lecturer.');
       }
-    } catch (err) {
+    } catch {
       setError('Technical error. Please try again or check your internet.');
     } finally {
       setIsProcessing(false);
@@ -118,6 +139,29 @@ export default function AttendanceScanner({ onAttendanceMarked, onClose }: Atten
               </div>
             )}
           </div>
+
+          <form
+            className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (manualCode.trim()) handleScan(manualCode.trim());
+            }}
+          >
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Manual fallback</label>
+            <div className="flex gap-2">
+              <input
+                value={manualCode}
+                onChange={(event) => setManualCode(event.target.value)}
+                placeholder="Enter decoded QR text"
+                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#006838]"
+                disabled={isProcessing}
+              />
+              <button type="submit" disabled={isProcessing || !manualCode.trim()} className="rounded-xl bg-[#006838] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+                Submit
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">This is the text stored inside the QR code, not a website URL. Use it only when camera access is unavailable.</p>
+          </form>
 
           {/* Dynamic Feedback States */}
           <div className="space-y-4">

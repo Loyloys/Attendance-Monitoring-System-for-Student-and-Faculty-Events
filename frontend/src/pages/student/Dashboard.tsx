@@ -17,7 +17,7 @@ export default function StudentDashboard() {
   const [showScanner, setShowScanner] = useState(false);
   const [lastMarked, setLastMarked] = useState<string | null>(null);
 
-  const handleAttendanceMarked = (_qrData: string) => {
+  const handleAttendanceMarked = () => {
     setLastMarked(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     setShowScanner(false);
     // Real logic would include a toast notification here
@@ -68,9 +68,9 @@ export default function StudentDashboard() {
           {/* Main Scanner Trigger */}
           <div className="lg:col-span-2 relative overflow-hidden bg-gradient-to-br from-[#006838] to-[#004d2a] rounded-[40px] p-8 md:p-10 shadow-xl shadow-[#006838]/20 flex flex-col md:flex-row items-center gap-8 group">
             <div className="flex-1 text-center md:text-left">
-              <h3 className="mb-2 text-2xl font-black text-white">Class Attendance</h3>
+              <h3 className="mb-2 text-2xl font-black text-white">Event Attendance</h3>
               <p className="mb-6 text-sm font-medium leading-relaxed text-white/70">
-                Scan your lecturer's QR code to verify your presence for the current session.
+                Scan the event QR code to verify your presence. Your location must be within the approved event area.
               </p>
               {lastMarked && (
                 <div className="inline-flex items-center gap-2 px-4 py-2 mb-4 text-xs font-bold text-white bg-white/20 rounded-xl">
@@ -178,6 +178,10 @@ export default function StudentDashboard() {
               <AttendanceScanner
                 onAttendanceMarked={handleAttendanceMarked}
                 onClose={() => setShowScanner(false)}
+                geofence={{
+                  center: { latitude: -0.444, longitude: 32.000 },
+                  radiusMeters: 250,
+                }}
               />
               <p className="mt-8 text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] animate-pulse">
                 Align QR Code within the frame

@@ -1,4 +1,5 @@
 import type{ Student, AttendanceRecord, StudentStats } from '../types/student';
+import { isEventQr, validateEventQr } from '../utils/eventQr';
 
 // Student Mock Data
 export const mockStudents: Student[] = [
@@ -7,7 +8,7 @@ export const mockStudents: Student[] = [
     name: 'Edward Kayiira',
     email: 'kayiira@umu.ac.ug',
     studentId: 'STU001',
-    course: 'Computer Science',
+    course: 'BSIT',
     year: 3,
     facultyId: 'science',
     isApproved: true,
@@ -18,7 +19,7 @@ export const mockStudents: Student[] = [
     name: 'Bob Smith',
     email: 'bob.smith@umu.ac.ug',
     studentId: 'STU002',
-    course: 'Computer Science',
+    course: 'BSIT',
     year: 2,
     facultyId: 'science',
     isApproved: true,
@@ -115,7 +116,7 @@ export const mockStudents: Student[] = [
 ];
 
 export const mockAttendanceRecords: AttendanceRecord[] = [
-  // Alice Johnson's records
+  // STU001 attendance records
   {
     id: '1',
     studentId: '1',
@@ -392,6 +393,7 @@ export const mockQRCodes = [
 
 // Helper function to validate QR code data
 export const validateQRCode = (qrData: string): boolean => {
+  if (isEventQr(qrData)) return validateEventQr(qrData).valid;
   // Expected format: attendance:COURSE_ID:DATE:TIME:LECTURER_ID:LOCATION
   const parts = qrData.split(':');
   return parts.length === 6 && parts[0] === 'attendance';

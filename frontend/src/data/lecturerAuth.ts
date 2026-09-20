@@ -15,7 +15,7 @@ export const lecturerCredentials: Array<{
       id: 'LEC001',
       name: 'Dr. Sarah Johnson',
       email: 'sarah.johnson@university.edu',
-      department: 'Computer Science',
+      department: 'Bachelor of Science in Information Technology (BSIT)',
       employeeId: 'EMP001',
       facultyId: 'engineering',
       courses: ['CS101', 'CS201'],

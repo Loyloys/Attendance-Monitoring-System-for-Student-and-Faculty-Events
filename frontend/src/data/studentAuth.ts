@@ -16,7 +16,7 @@ export const studentCredentials: Array<{
       name: 'Alice Johnson',
       email: 'alice.johnson@university.edu',
       studentId: 'STU001',
-      course: 'Computer Science',
+      course: 'BSIT',
       year: 3,
       facultyId: 'engineering',
       isApproved: true,
@@ -32,7 +32,7 @@ export const studentCredentials: Array<{
       name: 'Bob Smith',
       email: 'bob.smith@university.edu',
       studentId: 'STU002',
-      course: 'Computer Science',
+      course: 'BSIT',
       year: 2,
       facultyId: 'engineering',
       isApproved: true,
@@ -171,7 +171,10 @@ export const studentCredentials: Array<{
 
 // Helper functions
 export const authenticateStudent = (email: string, password: string) => {
-  return studentCredentials.find(cred => cred.email === email && cred.password === password);
+  const normalizedEmail = email.trim().toLowerCase();
+  return studentCredentials.find(
+    cred => cred.email.trim().toLowerCase() === normalizedEmail && cred.password === password
+  );
 };
 
 export const getStudentById = (id: string) => {

@@ -67,7 +67,7 @@ const Login: React.FC = () => {
               <span className="text-2xl font-black tracking-tighter text-white">UMU</span>
             </div>
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">Welcome Back</h2>
-            <p className="text-sm font-medium text-slate-500">University Attendance System</p>
+            <p className="text-sm font-medium text-slate-500">Attendance Monitoring System for Student and Faculty Events</p>
           </div>
 
           <form className="space-y-5" onSubmit={handleSubmit}>
@@ -97,18 +97,18 @@ const Login: React.FC = () => {
               </div>
             </div>
 
-            {/* Email Field */}
+            {/* Email or username field */}
             <div className="space-y-1.5">
-              <label className="text-[13px] font-semibold text-slate-600 ml-1">Academic Email</label>
+              <label className="text-[13px] font-semibold text-slate-600 ml-1">Email or username</label>
               <div className="relative group">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#006838] transition-colors" size={18} />
                 <input
-                  type="email"
+                  type="text"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-12 pr-4 py-3.5 bg-white/50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-[#006838]/5 focus:border-[#006838] transition-all placeholder:text-slate-400"
-                  placeholder="name@umu.ac.ug"
+                  placeholder="student or name@umu.ac.ug"
                 />
               </div>
             </div>

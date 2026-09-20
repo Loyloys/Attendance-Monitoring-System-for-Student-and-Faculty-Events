@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { 
-  Users, Briefcase, BookOpen, Smartphone, 
+  Users, Briefcase, BookOpen, Smartphone, CalendarPlus,
   Activity, ShieldCheck, Zap, Clock, 
   UserPlus, FileBarChart, QrCode, PlusCircle,
   ArrowUpRight, Search, X
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { AttendanceStat } from '../../components/cards/AttendanceStat';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { getSystemStats, getRecentActivity, getCourseStats } from '../../data/mockAdminData';
@@ -15,6 +16,7 @@ import QRScanner from '../../components/common/QRScanner';
 import Button from '../../components/common/Button';
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const systemStats = getSystemStats();
   const recentActivity = getRecentActivity(6);
   const courseStats = getCourseStats();
@@ -36,6 +38,10 @@ export default function AdminDashboard() {
           <p className="font-medium text-slate-500">Global overview of University attendance metrics.</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button variant="primary" onClick={() => navigate('/portal')}>
+            <CalendarPlus size={18} className="mr-2" />
+            Create Event
+          </Button>
           <Button variant="glass" onClick={() => toggleModal('viewReports', true)} className="border-slate-200">
             <FileBarChart size={18} className="mr-2" />
             Intelligence Reports

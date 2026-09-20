@@ -9,7 +9,7 @@ export const mockLecturers: Lecturer[] = [
     id: 'LEC001',
     name: 'Dr. Sarah Johnson',
     email: 'sarah.johnson@umu.ac.ug',
-    department: 'Computer Science',
+    department: 'Bachelor of Science in Information Technology (BSIT)',
     employeeId: 'EMP001',
     facultyId: 'science',
     courses: ['CS101', 'CS201'],
@@ -45,7 +45,7 @@ export const mockCourses: Course[] = [
     id: 'CS101',
     name: 'Introduction to Programming',
     code: 'CS101',
-    department: 'Computer Science',
+    department: 'Bachelor of Science in Information Technology (BSIT)',
     facultyId: 'science',
     lecturerId: 'LEC001',
     schedule: [

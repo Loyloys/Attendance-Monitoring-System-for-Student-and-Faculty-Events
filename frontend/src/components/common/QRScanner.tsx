@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import QrScanner from 'qr-scanner';
-import { CameraOff, Focus, ShieldAlert } from 'lucide-react';
+import { CameraOff, Focus, ShieldAlert, Camera, Smartphone } from 'lucide-react';
 
 interface QRScannerProps {
   onScan: (result: string) => void;
@@ -12,6 +12,8 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
   const videoRef = useRef<HTMLVideoElement>(null);
   const [scanner, setScanner] = useState<QrScanner | null>(null);
   const [hasCamera, setHasCamera] = useState<boolean>(true);
+  const [camera, setCamera] = useState<'environment' | 'user'>('environment');
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -29,6 +31,7 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
             onError?.(errorMessage);
           }
         },
+        preferredCamera: 'environment',
         highlightScanRegion: true,
         highlightCodeOutline: true,
       }
@@ -56,6 +59,21 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
     }
   }, [scanner, isActive, onError]);
 
+  const switchCamera = async (nextCamera: 'environment' | 'user') => {
+    if (!scanner || nextCamera === camera) return;
+
+    setIsSwitchingCamera(true);
+    try {
+      await scanner.setCamera(nextCamera);
+      setCamera(nextCamera);
+    } catch (error) {
+      console.error('Failed to switch camera:', error);
+      onError?.('That camera is unavailable. Please choose another camera or check browser permissions.');
+    } finally {
+      setIsSwitchingCamera(false);
+    }
+  };
+
   if (!hasCamera) {
     return (
       <div className="py-12 px-6 text-center bg-white/40 backdrop-blur-xl rounded-[32px] border border-red-100 animate-in fade-in zoom-in-95">
@@ -64,19 +82,46 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
         </div>
         <h3 className="text-lg font-bold tracking-tight text-slate-900">Camera Unavailable</h3>
         <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">
-          UMU Present requires camera access to scan attendance. Please update your browser permissions.
+          Camera access is unavailable. Allow camera permission on this site, use HTTPS, or use the manual scan option below.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="relative group overflow-hidden rounded-[28px] bg-slate-950 aspect-square sm:aspect-video flex items-center justify-center shadow-2xl">
+    <div className="space-y-3">
+      <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+          <Smartphone size={18} className="text-[#006838]" />
+          Camera
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <button
+            type="button"
+            onClick={() => switchCamera('environment')}
+            disabled={isSwitchingCamera}
+            className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${camera === 'environment' ? 'bg-[#006838] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >
+            <Camera size={15} /> Back camera
+          </button>
+          <button
+            type="button"
+            onClick={() => switchCamera('user')}
+            disabled={isSwitchingCamera}
+            className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${camera === 'user' ? 'bg-[#006838] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >
+            <Camera size={15} /> Front camera
+          </button>
+        </div>
+      </div>
+
+      <div className="relative group overflow-hidden rounded-[28px] bg-slate-950 aspect-square sm:aspect-video flex items-center justify-center shadow-2xl">
       {/* The Video Feed */}
       <video
         ref={videoRef}
         className="object-cover w-full h-full transition-transform duration-700"
-        style={{ transform: 'scaleX(-1)' }} 
+        playsInline
+        muted
       />
 
       {/* Modern UI Overlay - Active State */}
@@ -130,6 +175,7 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
           animation: scan-move 3s ease-in-out infinite;
         }
       `}</style>
+      </div>
     </div>
   );
 }

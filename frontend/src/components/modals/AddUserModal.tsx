@@ -156,7 +156,8 @@ export default function AddUserModal({ isOpen, onClose, onUserCreated, userType 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2">
                   <div className="sm:col-span-2">
                     <label className={labelClass}>Course Program</label>
-                    <input type="text" name="course" value={formData.course} onChange={handleInputChange} className={inputClass} placeholder="e.g. BS Computer Science" required />
+                    <input type="text" name="course" value={formData.course} onChange={handleInputChange} className={inputClass} placeholder="e.g. BSIT" required />
+                    <input type="text" name="course" value={formData.course} onChange={handleInputChange} className={inputClass} placeholder="e.g. BSIT" required />
                   </div>
                   <div>
                     <label className={labelClass}>Student Reg No.</label>
