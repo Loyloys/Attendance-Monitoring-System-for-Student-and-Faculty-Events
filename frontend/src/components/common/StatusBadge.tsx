@@ -1,65 +1,26 @@
-import React from 'react';
-import { CheckCircle2, AlertCircle, Clock, Info } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { AlertCircle, CheckCircle2, Clock, Info } from 'lucide-react';
 
 type StatusType = 'success' | 'warning' | 'error' | 'info' | 'danger';
 
 interface StatusBadgeProps {
   status: StatusType;
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
-const StatusBadge: React.FC<StatusBadgeProps> = ({ status, children }) => {
-  const getStatusConfig = (status: StatusType) => {
-    switch (status) {
-      case 'success':
-        return {
-          styles: 'bg-orange-500/10 text-green-700 border-green-200/50 shadow-sm shadow-green-500/5',
-          icon: <CheckCircle2 size={12} className="mr-1" strokeWidth={3} />
-        };
-      case 'warning':
-        return {
-          styles: 'bg-[#EA580C]/10 text-[#c7861e] border-[#EA580C]/20 shadow-sm shadow-[#EA580C]/5',
-          icon: <Clock size={12} className="mr-1" strokeWidth={3} />
-        };
-      case 'error':
-        return {
-          styles: 'bg-red-500/10 text-red-700 border-red-200/50 shadow-sm shadow-red-500/5',
-          icon: <AlertCircle size={12} className="mr-1" strokeWidth={3} />
-        };
-      case 'danger':
-        return {
-          styles: 'bg-red-500/10 text-red-700 border-red-200/50 shadow-sm shadow-red-500/5',
-          icon: <AlertCircle size={12} className="mr-1" strokeWidth={3} />
-        };
-      case 'info':
-        return {
-          styles: 'bg-blue-500/10 text-blue-700 border-blue-200/50 shadow-sm shadow-blue-500/5',
-          icon: <Info size={12} className="mr-1" strokeWidth={3} />
-        };
-      default:
-        return {
-          styles: 'bg-slate-100 text-slate-600 border-slate-200',
-          icon: null
-        };
-    }
-  };
-
-  const { styles, icon } = getStatusConfig(status);
-
-  return (
-    <span className={`
-      inline-flex items-center 
-      px-3 py-1 
-      rounded-full 
-      text-[11px] font-black uppercase tracking-wider
-      backdrop-blur-md border
-      transition-all duration-300
-      ${styles}
-    `}>
-      {icon}
-      {children}
-    </span>
-  );
+const statusConfig: Record<StatusType, { styles: string; icon: ReactNode }> = {
+  success: { styles: 'border-emerald-400/15 bg-emerald-400/[0.08] text-emerald-300', icon: <CheckCircle2 size={12} /> },
+  warning: { styles: 'border-amber-400/15 bg-amber-400/[0.08] text-amber-300', icon: <Clock size={12} /> },
+  error: { styles: 'border-rose-400/15 bg-rose-400/[0.08] text-rose-300', icon: <AlertCircle size={12} /> },
+  danger: { styles: 'border-rose-400/15 bg-rose-400/[0.08] text-rose-300', icon: <AlertCircle size={12} /> },
+  info: { styles: 'border-blue-400/15 bg-blue-400/[0.08] text-blue-300', icon: <Info size={12} /> },
 };
 
-export { StatusBadge };
+export function StatusBadge({ status, children }: StatusBadgeProps) {
+  const config = statusConfig[status];
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${config.styles}`}>
+      {config.icon}{children}
+    </span>
+  );
+}

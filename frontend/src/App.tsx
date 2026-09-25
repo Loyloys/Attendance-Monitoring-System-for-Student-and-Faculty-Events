@@ -1,46 +1,34 @@
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import AppRoutes from './routes';
-import { AuthProvider } from './context/AuthContext'; // Essential for role-based logic
-import { Toaster } from 'react-hot-toast'; // For those sleek "Liquid Glass" notifications
+import { AuthProvider } from './context/AuthContext';
+import { Toaster } from 'react-hot-toast';
 
-const App: React.FC = () => {
-  return (
-    <BrowserRouter
-      future={{
-        v7_startTransition: true,
-        v7_relativeSplatPath: true,
-      }}
-    >
-      {/* The AuthProvider ensures that the 'currentLecturer' or 'currentStudent' 
-        state is consistent, supporting your rule that data is viewable 
-        by all but editable only by owners.
-      */}
-      <AuthProvider>
-        <div className="min-h-screen bg-[#fff7ed] font-sans antialiased text-slate-900 selection:bg-orange-500/10 selection:text-orange-700">
-          
-          {/* Global Toast Notifications styled with glassmorphism */}
-          <Toaster 
-            position="top-right"
-            toastOptions={{
-              className: 'glass-notification',
-              style: {
-                background: 'rgba(255, 255, 255, 0.8)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(226, 232, 240, 0.5)',
-                borderRadius: '16px',
-                fontWeight: '600',
-                fontSize: '14px'
-              }
-            }} 
-          />
-
-          <AppRoutes />
-          
-        </div>
-      </AuthProvider>
-    </BrowserRouter>
-  );
-};
+const App: React.FC = () => (
+  <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <AuthProvider>
+      <div className="min-h-screen bg-[#090b10] font-sans text-slate-100 selection:bg-blue-500/30 selection:text-white">
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            duration: 3500,
+            style: {
+              background: 'rgba(20, 25, 34, 0.94)',
+              color: '#f8fafc',
+              border: '1px solid rgba(255, 255, 255, 0.09)',
+              borderRadius: '14px',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.32)',
+              fontSize: '14px',
+              backdropFilter: 'blur(16px)',
+            },
+            success: { iconTheme: { primary: '#22c55e', secondary: '#0f172a' } },
+            error: { iconTheme: { primary: '#f43f5e', secondary: '#0f172a' } },
+          }}
+        />
+        <AppRoutes />
+      </div>
+    </AuthProvider>
+  </BrowserRouter>
+);
 
 export default App;

@@ -1,4 +1,5 @@
 import { type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
@@ -12,45 +13,21 @@ export default function Button({
   variant = 'primary',
   className = '',
   isLoading = false,
+  disabled,
+  type = 'button',
   ...props
 }: ButtonProps) {
-  // Base classes with Apple-style "squircle" rounding and haptic scale effect
-  const baseClasses = 'relative overflow-hidden px-6 py-3 rounded-[18px] font-bold transition-all duration-300 active:scale-[0.96] focus:outline-none focus:ring-4 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2';
-
-  const variantClasses = {
-    // COT primary orange gradient
-    primary: 'bg-gradient-to-br from-[#F97316] to-[#EA580C] text-white shadow-lg shadow-[#F97316]/20 hover:shadow-[#F97316]/30 focus:ring-[#F97316]/20',
-    
-    // COT dark orange for secondary actions
-    gold: 'bg-gradient-to-br from-[#EA580C] to-[#e69615] text-white shadow-lg shadow-[#EA580C]/20 hover:shadow-[#EA580C]/30 focus:ring-[#EA580C]/20',
-    
-    // Subtle secondary for less important actions
-    secondary: 'bg-slate-100 text-slate-600 hover:bg-slate-200 focus:ring-slate-200',
-    
-    // Transparent glass variant for modern overlays
-    glass: 'bg-white/20 backdrop-blur-md border border-white/30 text-slate-800 hover:bg-white/40 focus:ring-white/20'
+  const base = 'relative inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold outline-none transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
+  const variants = {
+    primary: 'app-button-primary',
+    secondary: 'app-button-secondary',
+    gold: 'border border-rose-400/20 bg-rose-500 text-white shadow-lg shadow-rose-950/30 hover:bg-rose-400 focus-visible:ring-2 focus-visible:ring-rose-300',
+    glass: 'app-button-secondary',
   };
 
   return (
-    <button
-      className={`${baseClasses} ${variantClasses[variant]} ${className}`}
-      disabled={isLoading || props.disabled}
-      {...props}
-    >
-      {/* Shine effect overlay - the "Liquid" touch */}
-      <span className="absolute inset-0 w-full h-full transition-transform duration-700 ease-in-out -translate-y-full pointer-events-none bg-gradient-to-t from-transparent via-white/10 to-transparent hover:translate-y-full" />
-      
-      {isLoading ? (
-        <div className="flex items-center gap-2">
-          <svg className="w-5 h-5 text-current animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          <span className="font-medium opacity-80">Processing...</span>
-        </div>
-      ) : (
-        children
-      )}
+    <button type={type} className={`${base} ${variants[variant]} ${className}`} disabled={isLoading || disabled} aria-busy={isLoading} {...props}>
+      {isLoading ? <><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /><span className="opacity-80">Processing…</span></> : children}
     </button>
   );
 }

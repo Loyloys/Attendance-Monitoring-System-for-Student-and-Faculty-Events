@@ -3,33 +3,152 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply antialiased bg-slate-50 text-slate-900;
-    /* Soft ambient background shapes to show off glass transparency */
-    background-image: 
-      radial-gradient(at 0% 0%, hsla(25, 95%, 53%, 0.08) 0, transparent 50%), 
-      radial-gradient(at 100% 0%, hsla(33, 100%, 60%, 0.06) 0, transparent 50%);
+  :root {
+    color-scheme: dark;
+    --app-bg: #090b10;
+    --app-surface: #11151d;
+    --app-border: rgba(255, 255, 255, 0.075);
   }
+
+  html {
+    min-width: 320px;
+    background: var(--app-bg);
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-[#090b10] font-sans text-slate-100 antialiased;
+    background-image:
+      radial-gradient(circle at 12% -10%, rgba(59, 130, 246, 0.08), transparent 30%),
+      radial-gradient(circle at 90% 110%, rgba(225, 29, 72, 0.055), transparent 32%);
+  }
+
+  button, input, select, textarea { font: inherit; }
+  button, a { -webkit-tap-highlight-color: transparent; }
+  ::selection { background: rgba(59, 130, 246, 0.35); color: #fff; }
 }
 
 @layer components {
-  /* The core Liquid Glass utility */
-  .glass-card {
-    @apply border shadow-xl bg-white/70 backdrop-blur-xl border-white/20;
+  .app-card {
+    border: 1px solid var(--app-border);
+    border-radius: 1rem;
+    background: rgba(17, 21, 29, 0.9);
+    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    backdrop-filter: blur(18px);
   }
 
-  .cot-gradient {
-    @apply bg-gradient-to-br from-orange-500 to-orange-700;
+  .app-card-hover { transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease; }
+  .app-card-hover:hover { transform: translateY(-2px); border-color: rgba(96, 165, 250, 0.18); background: rgba(23, 28, 38, 0.94); }
+  .app-page-title { @apply text-2xl font-bold tracking-[-0.025em] text-white sm:text-3xl; }
+  .app-page-subtitle { @apply mt-1 text-sm leading-6 text-white/40; }
+  .app-section-title { @apply text-base font-semibold tracking-tight text-white; }
+  .app-label { @apply mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/40; }
+
+  .app-input {
+    @apply w-full rounded-xl border border-white/[0.09] bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-blue-400/50 focus:bg-white/[0.06] focus:ring-4 focus:ring-blue-400/10;
+  }
+
+  .app-button-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 outline-none transition hover:bg-blue-400 focus-visible:ring-2 focus-visible:ring-blue-300 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55;
+  }
+
+  .app-button-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/[0.09] bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/70 outline-none transition hover:border-white/[0.15] hover:bg-white/[0.07] hover:text-white focus-visible:ring-2 focus-visible:ring-blue-400/60 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .app-table-wrap { @apply overflow-x-auto; }
+  .app-table { @apply w-full min-w-[720px] text-left text-sm; }
+  .app-table thead { @apply border-b border-white/[0.07] bg-white/[0.025] text-[10px] uppercase tracking-[0.13em] text-white/30; }
+  .app-table th { @apply px-5 py-4 font-semibold; }
+  .app-table td { @apply border-b border-white/[0.055] px-5 py-4 text-white/60; }
+  .app-table tbody tr { @apply transition-colors hover:bg-white/[0.025]; }
+  .app-empty-state { @apply flex flex-col items-center justify-center px-6 py-16 text-center; }
+
+  .app-grid {
+    background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(to bottom, black, transparent 80%);
+  }
+
+  .app-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.14) transparent; }
+  .app-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+  .app-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .app-scrollbar::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(255,255,255,.14); }
+  .app-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.24); }
+  .glass-card { @apply border border-white/[0.08] bg-[#11151d]/90 shadow-2xl backdrop-blur-xl; }
+
+  /* Compatibility layer for existing page components. It preserves their
+     markup and behavior while moving legacy light surfaces into the shell. */
+  .app-workspace .bg-white { background-color: rgba(17, 21, 29, .9) !important; }
+  .app-workspace [class*="bg-white/"],
+  .app-workspace [class*="bg-[#FFF7ED]"] { background-color: rgba(255, 255, 255, .035) !important; }
+  .app-workspace [class~="bg-slate-50"],
+  .app-workspace [class~="bg-slate-100"] { background-color: rgba(255, 255, 255, .045) !important; }
+  .app-workspace [class~="bg-orange-50"],
+  .app-workspace [class~="bg-amber-50"],
+  .app-workspace [class~="bg-rose-50"],
+  .app-workspace [class~="bg-sky-50"],
+  .app-workspace [class~="bg-blue-50"],
+  .app-workspace [class~="bg-purple-50"],
+  .app-workspace [class~="bg-green-50"] { background-color: rgba(255, 255, 255, .045) !important; }
+  .app-workspace [class~="text-slate-900"],
+  .app-workspace [class~="text-slate-800"] { color: #f8fafc !important; }
+  .app-workspace [class~="text-slate-700"],
+  .app-workspace [class~="text-slate-600"] { color: rgba(226, 232, 240, .78) !important; }
+  .app-workspace [class~="text-slate-500"],
+  .app-workspace [class~="text-slate-400"],
+  .app-workspace [class~="text-slate-300"] { color: rgba(148, 163, 184, .72) !important; }
+  .app-workspace [class~="border-slate-100"],
+  .app-workspace [class~="border-slate-200"],
+  .app-workspace [class~="border-slate-300"] { border-color: rgba(255, 255, 255, .08) !important; }
+  .app-workspace [class*="bg-orange-500"] { background-color: #2563eb !important; }
+  .app-workspace [class*="bg-[#EA580C]"],
+  .app-workspace [class*="bg-[#F97316]"] { background-color: rgba(37, 99, 235, .12) !important; }
+  .app-workspace button[class*="bg-[#EA580C]"],
+  .app-workspace button[class*="bg-[#F97316]"] { background-color: #2563eb !important; }
+  .app-workspace [class~="text-orange-600"],
+  .app-workspace [class~="text-orange-700"],
+  .app-workspace [class~="text-orange-800"],
+  .app-workspace [class*="text-[#EA580C]"],
+  .app-workspace [class*="text-[#F97316]"] { color: #93c5fd !important; }
+  .app-workspace input, .app-workspace select, .app-workspace textarea { color: #f8fafc; }
+  .app-workspace option { background: #11151d; color: #f8fafc; }
+
+  /* Keep the sign-in surface independent from the dark workspace overrides. */
+  .auth-screen {
+    background-image: radial-gradient(circle at 15% 0%, rgba(59, 130, 246, .18), transparent 34%), radial-gradient(circle at 90% 100%, rgba(219, 39, 119, .10), transparent 32%);
+    color: #f8fafc;
+  }
+
+  .auth-card {
+    background: rgba(17, 21, 29, .96);
+    color: #f8fafc;
+  }
+
+  .auth-screen input {
+    color-scheme: dark;
+    caret-color: #bfdbfe;
+  }
+
+  .auth-screen input::placeholder {
+    color: #94a3b8;
+    opacity: 1;
+  }
+
+  .auth-screen input:-webkit-autofill,
+  .auth-screen input:-webkit-autofill:hover,
+  .auth-screen input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #f8fafc;
+    caret-color: #bfdbfe;
+    box-shadow: 0 0 0 1000px #1f2937 inset;
   }
 }
 
-/* Custom scrollbar for a premium feel */
-::-webkit-scrollbar {
-  width: 6px;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
-}
-::-webkit-scrollbar-thumb {
-  @apply transition-colors rounded-full bg-slate-200 hover:bg-slate-300;
+
+@media print {
+  body { background: white !important; color: #0f172a !important; }
+  aside, header, button, .no-print { display: none !important; }
+  main { overflow: visible !important; }
 }

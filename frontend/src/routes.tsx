@@ -1,130 +1,52 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-
-// Pages
 import Login from './auth/Login';
-import StudentDashboard from './pages/student/Dashboard';
-import StudentAttendance from './pages/student/Attendance';
-import AdminDashboard from './pages/admin/Dashboard';
-import AdminUsers from './pages/admin/Users';
-import SuperAdminDashboard from './pages/admin/SuperAdminDashboard';
-import Portal from './pages/Portal';
-
-// Components
 import RequireAuth from './auth/RequireAuth';
+import Portal from './pages/Portal';
+import AdminWorkspace from './pages/admin/Workspace';
 import AdminPageWrapper from './components/layout/admin/PageWrapper';
 
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* Public Routes */}
       <Route path="/login" element={<Login />} />
-      <Route path="/unauthorized" element={<div className="flex min-h-screen items-center justify-center p-6"><div className="max-w-md rounded-2xl bg-white p-8 text-center shadow-xl"><h1 className="text-2xl font-black text-slate-900">Access restricted</h1><p className="mt-2 text-slate-500">Your role does not have permission to view this page.</p><a className="mt-6 inline-block rounded-xl bg-[#EA580C] px-5 py-3 font-bold text-white" href="/portal">Return to dashboard</a></div></div>} />
-      <Route path="/portal" element={<RequireAuth><Portal /></RequireAuth>} />
-
-      {/* Student Routes */}
       <Route
-        path="/student/dashboard"
+        path="/unauthorized"
         element={
-          <RequireAuth allowedRoles={['student']}>
-            <StudentDashboard />
-          </RequireAuth>
+          <main className="app-workspace flex min-h-screen items-center justify-center bg-[#090b10] p-6">
+            <section className="app-card max-w-md p-8 text-center">
+              <h1 className="text-2xl font-bold text-white">Access restricted</h1>
+              <p className="mt-2 text-sm text-white/50">Your assigned role does not have permission to view this page.</p>
+              <a href="/portal" className="app-button-primary mt-6">Return to event workspace</a>
+            </section>
+          </main>
         }
       />
       <Route
-        path="/student/attendance"
+        path="/portal"
         element={
-          <RequireAuth allowedRoles={['student']}>
-            <StudentAttendance />
-          </RequireAuth>
-        }
-      />
-
-      {/* Faculty Routes */}
-      <Route
-        path="/faculty/dashboard"
-        element={
-          <RequireAuth allowedRoles={['faculty', 'lecturer']}>
-            <Portal />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/faculty/classes"
-        element={
-          <RequireAuth allowedRoles={['faculty', 'lecturer']}>
-            <Portal />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/faculty/mark-attendance"
-        element={
-          <RequireAuth allowedRoles={['faculty', 'lecturer']}>
-            <Portal />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/lecturer/dashboard"
-        element={
-          <RequireAuth allowedRoles={['faculty', 'lecturer']}>
-            <Portal />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/lecturer/classes"
-        element={
-          <RequireAuth allowedRoles={['faculty', 'lecturer']}>
-            <Portal />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/lecturer/mark-attendance"
-        element={
-          <RequireAuth allowedRoles={['faculty', 'lecturer']}>
+          <RequireAuth allowedRoles={['student', 'faculty']}>
             <Portal />
           </RequireAuth>
         }
       />
 
-      {/* Admin Routes */}
-      <Route
-        path="/admin/dashboard"
-        element={
-          <RequireAuth allowedRoles={['admin']}>
-            <AdminPageWrapper>
-              <AdminDashboard />
-            </AdminPageWrapper>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/admin/users"
-        element={
-          <RequireAuth allowedRoles={['admin']}>
-            <AdminPageWrapper>
-              <AdminUsers />
-            </AdminPageWrapper>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/admin/super"
-        element={
-          <RequireAuth allowedRoles={['admin']}>
-            <AdminPageWrapper>
-              <SuperAdminDashboard />
-            </AdminPageWrapper>
-          </RequireAuth>
-        }
-      />
+      {/* Existing bookmarks now resolve to the same event-attendance workspace. */}
+      <Route path="/student/dashboard" element={<Navigate to="/portal?view=dashboard" replace />} />
+      <Route path="/student/attendance" element={<Navigate to="/portal?view=attendance" replace />} />
+      <Route path="/lecturer/dashboard" element={<Navigate to="/portal?view=dashboard" replace />} />
+      <Route path="/lecturer/mark-attendance" element={<Navigate to="/portal?view=attendance" replace />} />
+      <Route path="/faculty/dashboard" element={<Navigate to="/portal?view=dashboard" replace />} />
+      <Route path="/faculty/mark-attendance" element={<Navigate to="/portal?view=attendance" replace />} />
 
-      {/* Root route - redirect to login */}
+      <Route path="/admin/dashboard" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      <Route path="/admin/users" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      <Route path="/admin/events" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      <Route path="/admin/attendance" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      <Route path="/admin/reports" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      <Route path="/admin/feedback" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      <Route path="/admin/super" element={<Navigate to="/admin/dashboard" replace />} />
+
       <Route path="/" element={<Navigate to="/login" replace />} />
-
-      {/* Default redirect to login */}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );

@@ -1,23 +1,23 @@
-import { type ReactNode } from "react";
-import { Navigate, useLocation } from "react-router-dom";
-import { AuthService } from "../data/authService";
+import type { ReactNode } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import type { UserRole } from '../types/eventAttendance';
 
 interface RequireAuthProps {
   children: ReactNode;
-  allowedRoles?: Array<'student' | 'faculty' | 'lecturer' | 'admin'>;
+  allowedRoles?: UserRole[];
 }
 
 export default function RequireAuth({ children, allowedRoles }: RequireAuthProps) {
   const location = useLocation();
-  const currentRole = AuthService.getUserType();
+  const { user, isLoading } = useAuth();
 
-  if (!AuthService.isAuthenticated() || !currentRole) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  if (isLoading) {
+    return <main className="app-workspace flex min-h-screen items-center justify-center bg-[#090b10] p-6 text-sm text-white/60">Validating secure session…</main>;
   }
-
-  if (allowedRoles && !allowedRoles.includes(currentRole)) {
+  if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to="/unauthorized" replace />;
   }
-
   return <>{children}</>;
 }

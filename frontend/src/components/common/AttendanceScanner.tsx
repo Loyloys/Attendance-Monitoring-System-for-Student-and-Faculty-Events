@@ -1,244 +1,72 @@
-import { useState } from 'react';
-import QRScanner from '../common/QRScanner';
-import { 
-  X, 
-  Info, 
-  QrCode, 
-  CheckCircle2, 
-  XCircle, 
-  RefreshCcw, 
-  Camera, 
-  CameraOff,
-  Loader2
-} from 'lucide-react';
-import { validateQRCode, parseQRCode } from '../../data/mockStudentData';
-import { validateCurrentLocation, type GeofenceConfig } from '../../utils/geofencing';
-import { isEventQr, validateEventQr } from '../../utils/eventQr';
+import { useCallback, useState } from 'react';
+import { CheckCircle2, Info, Loader2, QrCode, RefreshCcw, X, XCircle } from 'lucide-react';
+import QRScanner from './QRScanner';
+import { eventApi } from '../../data/eventApi';
+import type { AttendanceConfirmation, EventRecord } from '../../types/eventAttendance';
+import { isEventQr } from '../../utils/eventQr';
 
-interface AttendanceScannerProps {
-  onAttendanceMarked: (qrData: string) => void;
+interface Props {
+  events: EventRecord[];
   onClose: () => void;
-  geofence?: GeofenceConfig;
+  onRecorded: (confirmation: AttendanceConfirmation) => Promise<void> | void;
 }
 
-export default function AttendanceScanner({ onAttendanceMarked, onClose, geofence }: AttendanceScannerProps) {
-  const [isScanning, setIsScanning] = useState(true); // Start scanning immediately
-  const [scanResult, setScanResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export default function AttendanceScanner({ events, onClose, onRecorded }: Props) {
+  const available = events.filter(event => event.status === 'ongoing' || event.can_check_in);
+  const [selectedId, setSelectedId] = useState(available[0]?.id || '');
+  const [isScanning, setIsScanning] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [manualCode, setManualCode] = useState('');
+  const [error, setError] = useState('');
+  const [confirmation, setConfirmation] = useState<AttendanceConfirmation | null>(null);
+  const selected = available.find(event => event.id === selectedId);
 
-  const handleScan = async (result: string) => {
-    setScanResult(result);
-    setIsScanning(false);
+  const handleScan = useCallback(async (rawValue: string) => {
+    const value = rawValue.trim();
+    if (!value || isProcessing) return;
     setIsProcessing(true);
-
+    setError('');
     try {
-      // Simulate network delay for COT backend validation
-      await new Promise(resolve => setTimeout(resolve, 1200));
-
-      if (validateQRCode(result)) {
-        if (isEventQr(result)) {
-          const eventQrValidation = validateEventQr(result);
-          if (!eventQrValidation.valid) {
-            setError(eventQrValidation.reason || 'Invalid or expired event QR code.');
-            return;
-          }
-        } else {
-          parseQRCode(result);
-        }
-
-        if (geofence) {
-          const locationValidation = await validateCurrentLocation(geofence);
-          if (!locationValidation.accepted) {
-            setError(locationValidation.reason);
-            return;
-          }
-        }
-
-        onAttendanceMarked(result);
-        setError(null);
-      } else {
-        setError('Invalid QR code. Please scan the official code displayed by your lecturer.');
-      }
-    } catch {
-      setError('Technical error. Please try again or check your internet.');
+      const qr = isEventQr(value);
+      const result = await eventApi.scan(qr
+        ? { token: value, method: 'qr' }
+        : { eventId: selectedId, identifier: value, method: selected?.attendance_method || 'rfid' });
+      setConfirmation(result);
+      setIsScanning(false);
+      setManualCode('');
+      void Promise.resolve(onRecorded(result)).catch(() => undefined);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The event scan could not be recorded.');
+      setIsScanning(false);
     } finally {
       setIsProcessing(false);
     }
+  }, [isProcessing, onRecorded, selected?.attendance_method, selectedId]);
+
+  const reset = () => {
+    setConfirmation(null);
+    setError('');
+    setIsScanning(true);
+    setManualCode('');
   };
 
-  const resetScanner = () => {
-    setScanResult(null);
-    setError(null);
-    setIsScanning(true); // Restart scanning automatically
-    setIsProcessing(false);
-  };
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="bg-white/80 backdrop-blur-2xl border border-white/40 shadow-[0_32px_64px_-12px_rgba(0,104,56,0.2)] rounded-[32px] max-w-md w-full max-h-[90vh] overflow-y-auto relative">
-        
-        {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between p-6 border-b border-slate-200/50 bg-white/40 backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#F97316] rounded-xl flex items-center justify-center shadow-lg shadow-[#F97316]/20">
-              <QrCode className="text-white" size={20} strokeWidth={2.5} />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold tracking-tight text-slate-900">Mark Attendance</h2>
-              <p className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">College of Technologies</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 transition-colors rounded-full hover:bg-slate-100 text-slate-400"
-          >
-            <X size={24} />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Liquid Instructions */}
-          {!scanResult && !error && (
-            <div className="p-4 bg-[#EA580C]/10 border border-[#EA580C]/20 rounded-2xl">
-              <div className="flex items-start gap-3">
-                <Info className="text-[#EA580C] shrink-0 mt-0.5" size={18} />
-                <div>
-                  <p className="text-sm font-bold text-slate-800">Camera is active!</p>
-                  <ol className="mt-1 space-y-1 text-xs font-medium text-slate-600">
-                    <li className="flex items-center gap-2">1. Point camera at lecturer's screen</li>
-                    <li className="flex items-center gap-2">2. Ensure lighting is sufficient</li>
-                    <li className="flex items-center gap-2">3. Keep phone steady for 1 second</li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Scanner Viewport */}
-          <div className="relative rounded-[24px] overflow-hidden bg-slate-900 aspect-square shadow-inner group">
-            <QRScanner
-              onScan={handleScan}
-              onError={(msg) => setError(msg)}
-              isActive={isScanning}
-            />
-            
-            {/* Liquid Overlay when not scanning */}
-            {!isScanning && !scanResult && !isProcessing && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900/60 backdrop-blur-sm">
-                <Camera className="mb-3 opacity-50" size={48} />
-                <p className="text-sm font-semibold opacity-70">Camera paused</p>
-              </div>
-            )}
-
-            {/* Scanning Animation */}
-            {isScanning && (
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="w-full h-1 bg-[#F97316] absolute top-0 shadow-[0_0_15px_#F97316] animate-scan-line" />
-              </div>
-            )}
-          </div>
-
-          <form
-            className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (manualCode.trim()) handleScan(manualCode.trim());
-            }}
-          >
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Manual fallback</label>
-            <div className="flex gap-2">
-              <input
-                value={manualCode}
-                onChange={(event) => setManualCode(event.target.value)}
-                placeholder="Enter decoded QR text"
-                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#F97316]"
-                disabled={isProcessing}
-              />
-              <button type="submit" disabled={isProcessing || !manualCode.trim()} className="rounded-xl bg-[#F97316] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
-                Submit
-              </button>
-            </div>
-            <p className="text-xs text-slate-500">This is the text stored inside the QR code, not a website URL. Use it only when camera access is unavailable.</p>
-          </form>
-
-          {/* Dynamic Feedback States */}
-          <div className="space-y-4">
-            {error && (
-              <div className="flex items-center gap-3 p-4 border border-red-100 bg-red-50 rounded-2xl animate-in zoom-in-95">
-                <XCircle className="text-red-600 shrink-0" size={24} />
-                <p className="text-sm font-semibold leading-tight text-red-900">{error}</p>
-              </div>
-            )}
-
-            {scanResult && !error && (
-              <div className="flex items-center gap-3 p-4 bg-[#F97316]/10 border border-[#F97316]/20 rounded-2xl animate-in slide-in-from-bottom-2">
-                <div className="w-10 h-10 bg-[#F97316] rounded-full flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="text-white" size={24} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-900">Success!</p>
-                  <p className="text-xs font-medium text-slate-600">Attendance data transmitted to portal.</p>
-                </div>
-              </div>
-            )}
-
-            {isProcessing && (
-              <div className="flex flex-col items-center justify-center gap-3 py-6">
-                <Loader2 className="animate-spin text-[#F97316]" size={32} />
-                <span className="text-sm font-bold tracking-wide uppercase text-slate-500">Validating Session...</span>
-              </div>
-            )}
-          </div>
-
-          {/* Action Footer */}
-          <div className="flex flex-col gap-3">
-            {!scanResult && !isProcessing && (
-              <button
-                onClick={() => setIsScanning(!isScanning)}
-                className={`w-full py-4 rounded-[20px] font-bold shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95 ${
-                  isScanning 
-                    ? 'bg-slate-100 text-slate-600 shadow-slate-100/20' 
-                    : 'bg-[#F97316] text-white shadow-[#F97316]/20'
-                }`}
-              >
-                {isScanning ? <CameraOff size={20} /> : <Camera size={20} />}
-                {isScanning ? 'Pause Scanning' : 'Resume Scanning'}
-              </button>
-            )}
-
-            {(scanResult || error) && (
-              <button
-                onClick={resetScanner}
-                className="w-full py-4 bg-white border border-slate-200 text-slate-700 rounded-[20px] font-bold flex items-center justify-center gap-2 hover:bg-slate-50 shadow-sm"
-              >
-                <RefreshCcw size={20} />
-                Scan Again
-              </button>
-            )}
-            
-            <button
-              onClick={onClose}
-              className="w-full py-3 text-sm font-bold transition-colors text-slate-400 hover:text-slate-600"
-            >
-              Close Window
-            </button>
-          </div>
-        </div>
+  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+    <section className="app-card max-h-[92vh] w-full max-w-lg overflow-y-auto" aria-labelledby="scanner-title">
+      <header className="flex items-center justify-between border-b border-white/[0.08] p-5">
+        <div className="flex items-center gap-3"><span className="rounded-xl bg-blue-500/15 p-2.5 text-blue-200"><QrCode size={21} /></span><div><h2 id="scanner-title" className="font-bold text-white">Scan event attendance</h2><p className="mt-0.5 text-[10px] uppercase tracking-wider text-white/40">Server-confirmed check-in</p></div></div>
+        <button type="button" onClick={onClose} aria-label="Close scanner" className="rounded-lg p-2 text-white/40 hover:bg-white/[0.06] hover:text-white"><X size={20} /></button>
+      </header>
+      <div className="space-y-5 p-5">
+        {!confirmation && !error && <div className="flex gap-3 rounded-xl border border-blue-300/15 bg-blue-300/[0.06] p-4"><Info size={18} className="mt-0.5 shrink-0 text-blue-200" /><div><p className="text-sm font-semibold text-white/85">Scan the event check-in code</p><p className="mt-1 text-xs leading-5 text-white/50">QR codes identify the event. For RFID or barcode events, choose the event and enter or scan your own card value.</p></div></div>}
+        {available.length > 0 && !confirmation && <div><label htmlFor="scanner-event" className="app-label">Event for card / ID check-in</label><select id="scanner-event" value={selectedId} onChange={event => setSelectedId(event.target.value)} className="app-input"><option value="">Select event</option>{available.map(event => <option key={event.id} value={event.id}>{event.name} · {event.attendance_method.toUpperCase()}</option>)}</select></div>}
+        {confirmation ? <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.08] p-5"><div className="flex items-center gap-3 text-emerald-200"><CheckCircle2 size={28} /><div><p className="font-bold">Attendance recorded</p><p className="text-xs">{confirmation.message}</p></div></div><dl className="mt-5 space-y-3 text-sm"><Row label="Event" value={confirmation.eventName} /><Row label="Date and time" value={`${new Date(confirmation.eventDate).toLocaleString()} · ${confirmation.eventTime}`} /><Row label="Status" value={confirmation.status.toUpperCase()} /><Row label="Method" value={confirmation.method.toUpperCase()} /></dl></div> : <><div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-black"><QRScanner onScan={handleScan} isActive={isScanning && !isProcessing && !error} />{isProcessing && <div className="absolute inset-0 flex items-center justify-center bg-black/60"><Loader2 size={32} className="animate-spin text-blue-300" /></div>}</div><form onSubmit={event => { event.preventDefault(); void handleScan(manualCode); }} className="space-y-2"><label htmlFor="manual-event-code" className="app-label">Manual fallback</label><div className="flex gap-2"><input id="manual-event-code" value={manualCode} onChange={event => setManualCode(event.target.value)} placeholder={selected?.attendance_method === 'qr' ? 'Paste the event QR token' : 'Enter your ID or card value'} className="app-input min-w-0" disabled={isProcessing} /><button type="submit" className="app-button-primary shrink-0" disabled={isProcessing || !manualCode.trim()}>Submit</button></div></form></>}
+        {error && <div className="flex gap-3 rounded-xl border border-rose-300/20 bg-rose-300/[0.08] p-4 text-sm text-rose-100"><XCircle size={19} className="shrink-0" /><div><p className="font-semibold">Attendance was not recorded</p><p className="mt-1 text-xs leading-5">{error}</p></div></div>}
+        <div className="flex gap-3">{(confirmation || error) && <button type="button" onClick={reset} className="app-button-secondary flex-1"><RefreshCcw size={16} /> Scan again</button>}<button type="button" onClick={onClose} className="app-button-secondary flex-1">Close</button></div>
       </div>
-      
-      {/* Custom Keyframe for scanning line (Add to your global CSS or Tailwind config) */}
-      <style>{`
-        @keyframes scan-line {
-          0% { top: 0%; opacity: 0; }
-          50% { opacity: 1; }
-          100% { top: 100%; opacity: 0; }
-        }
-        .animate-scan-line {
-          animation: scan-line 2s linear infinite;
-        }
-      `}</style>
-    </div>
-  );
+    </section>
+  </div>;
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return <div className="flex justify-between gap-4 border-b border-white/[0.06] pb-2"><dt className="text-white/40">{label}</dt><dd className="text-right font-medium text-white/80">{value}</dd></div>;
 }
