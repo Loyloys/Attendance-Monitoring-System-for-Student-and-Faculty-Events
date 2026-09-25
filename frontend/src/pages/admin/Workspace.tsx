@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import {
   Activity, AlertCircle, ArrowRight, BarChart3, CalendarDays, Check, CheckCircle2,
@@ -7,11 +7,12 @@ import {
 } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthService } from '../../data/authService';
+import { eventApi, type AdminEventRequest } from '../../data/eventApi';
 import {
-  addAttendance, addEvent, addUser, approveEvent, cancelEvent, correctAttendance,
+  addAttendance, addUser, correctAttendance,
   getAttendanceCounts, getAttendancePercentage, getFormResults, getLiveEvent,
   removeAttendance, removeForm, removeUser, reportRows, saveForm, setUserStatus,
-  updateEvent, updateUser, useAdminState,
+  updateUser, useAdminState,
   type AdminEvent, type AdminRole, type AdminState, type AdminUserAccount,
   type AttendanceStatus, type EvaluationForm, type EventAudience, type EventOrigin,
 } from '../../data/adminStore';
@@ -96,7 +97,7 @@ function UserEditor({ form, editingId, setForm, onSubmit, onClose, error }: { fo
 
 
 
-function EventEditor({ form, setForm, onSubmit, onClose, error }: { form: EventForm; setForm: (form: EventForm) => void; onSubmit: () => void; onClose: () => void; error: string }) {
+function EventEditor({ form, setForm, onSubmit, onClose, error, saving }: { form: EventForm; setForm: (form: EventForm) => void; onSubmit: () => void; onClose: () => void; error: string; saving: boolean }) {
   const set = <K extends keyof EventForm>(key: K, value: EventForm[K]) => setForm({ ...form, [key]: value });
   return <Modal title="Schedule event" description="Set event details, attendance method, and automatic late cut-off." onClose={onClose}><form onSubmit={event => { event.preventDefault(); onSubmit(); }} className="grid gap-4 sm:grid-cols-2">
     <label className="sm:col-span-2"><span className={labelClass}>Event name</span><input className={inputClass} value={form.name} onChange={event => set('name', event.target.value)} required /></label>
@@ -114,7 +115,7 @@ function EventEditor({ form, setForm, onSubmit, onClose, error }: { form: EventF
     <label><span className={labelClass}>Department / group</span><input className={inputClass} value={form.department} onChange={event => set('department', event.target.value)} required /></label>
     <label className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm text-white/70"><input type="checkbox" checked={form.requiredForAttendance} onChange={event => set('requiredForAttendance', event.target.checked)} /> Required for percentage</label>
     {error && <p className="rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-sm text-rose-200 sm:col-span-2">{error}</p>}
-    <div className="flex justify-end gap-3 sm:col-span-2"><Button variant="glass" onClick={onClose}>Cancel</Button><Button type="submit">Schedule event</Button></div>
+    <div className="flex justify-end gap-3 sm:col-span-2"><Button variant="glass" onClick={onClose} disabled={saving}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Schedule event'}</Button></div>
   </form></Modal>;
 }
 
@@ -142,21 +143,87 @@ function UsersSection({ users }: { users: AdminUserAccount[] }) {
   </section>;
 }
 
-function EventsSection({ events }: { events: AdminEvent[] }) {
+function EventsSection() {
+  const [serverEvents, setServerEvents] = useState<AdminEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<'All' | 'Student organization' | 'Faculty'>('All');
   const [editing, setEditing] = useState<AdminEvent | null | undefined>(undefined);
   const [form, setForm] = useState<EventForm>(emptyEventForm);
   const [error, setError] = useState('');
-  const visible = events.filter(event => filter === 'All' || event.origin === filter).sort((a, b) => b.date.localeCompare(a.date));
+
+  useEffect(() => {
+    let active = true;
+    eventApi.adminEvents()
+      .then(data => { if (active) setServerEvents(data); })
+      .catch(caught => { if (active) setError(caught instanceof Error ? caught.message : 'Events could not be loaded.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const visible = (loading ? [] : serverEvents)
+    .filter(event => filter === 'All' || event.origin === filter)
+    .sort((a, b) => b.date.localeCompare(a.date));
   const openCreate = () => { setEditing(null); setForm(emptyEventForm); setError(''); };
-  const openEdit = (event: AdminEvent) => { setEditing(event); setForm({ name: event.name, description: event.description, date: event.date, start: event.start, end: event.end, venue: event.venue, organizer: event.organizer, origin: event.origin, audience: event.audience, department: event.department, method: event.method, identifierRange: event.identifierRange, cutoff: event.cutoff, status: event.status, requiredForAttendance: event.requiredForAttendance }); setError(''); };
-  const save = () => { try { if (editing) updateEvent(editing.id, form); else addEvent({ ...form, status: form.origin === 'Admin' ? form.status : 'Pending' }); setEditing(undefined); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to save event.'); } };
-  const cancel = (event: AdminEvent) => { if (window.confirm(`Cancel ${event.name}?`)) cancelEvent(event.id); };
+  const openEdit = (event: AdminEvent) => {
+    setEditing(event);
+    setForm({ name: event.name, description: event.description, date: event.date, start: event.start, end: event.end, venue: event.venue, organizer: event.organizer, origin: event.origin, audience: event.audience, department: event.department, method: event.method, identifierRange: event.identifierRange, cutoff: event.cutoff, status: event.status, requiredForAttendance: event.requiredForAttendance });
+    setError('');
+  };
+  const requestFromForm = (value: EventForm): AdminEventRequest => ({
+    name: value.name.trim(),
+    description: value.description.trim(),
+    date: value.date,
+    start: value.start,
+    end: value.end,
+    venue: value.venue.trim(),
+    audience: value.audience.toLowerCase() as AdminEventRequest['audience'],
+    method: value.method === 'Barcode' ? 'barcode' : value.method === 'ID range' ? 'rfid' : 'qr',
+    cutoff: value.cutoff,
+    status: value.status === 'Cancelled' ? 'cancelled' : 'published',
+    requiredForAttendance: value.requiredForAttendance,
+  });
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const request = requestFromForm(form);
+      const saved = editing
+        ? await eventApi.updateAdminEvent(editing.id, request)
+        : await eventApi.createAdminEvent(request);
+      setServerEvents(current => editing
+        ? current.map(event => event.id === saved.id ? saved : event)
+        : [saved, ...current]);
+      setEditing(undefined);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to save event.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const approve = async (event: AdminEvent) => {
+    try {
+      const saved = await eventApi.updateAdminEvent(event.id, { status: 'published' });
+      setServerEvents(current => current.map(item => item.id === saved.id ? saved : item));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to approve event.');
+    }
+  };
+  const cancel = async (event: AdminEvent) => {
+    if (!window.confirm(`Cancel ${event.name}?`)) return;
+    try {
+      const saved = await eventApi.cancelAdminEvent(event.id);
+      setServerEvents(current => current.map(item => item.id === saved.id ? saved : item));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to cancel event.');
+    }
+  };
   return <section className="space-y-5"><div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-300">Scheduling · Approval · Cancellation</p><h1 className="mt-2 text-3xl font-black text-white">Event management</h1><p className="mt-1 text-sm text-white/45">Create events, review Student and Faculty submissions, and keep attendance tracking visible.</p></div><Button onClick={openCreate}><Plus size={17} /> Create event</Button></div>
+    {error && !editing && <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-sm text-rose-200">{error}</p>}
     <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setFilter('All')} className={`rounded-xl px-4 py-2 text-xs font-semibold ${filter === 'All' ? 'bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400/20' : 'bg-white/[0.04] text-white/50'}`}>All events</button><button type="button" onClick={() => setFilter('Student organization')} className={`rounded-xl px-4 py-2 text-xs font-semibold ${filter === 'Student organization' ? 'bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400/20' : 'bg-white/[0.04] text-white/50'}`}>Student submissions</button><button type="button" onClick={() => setFilter('Faculty')} className={`rounded-xl px-4 py-2 text-xs font-semibold ${filter === 'Faculty' ? 'bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400/20' : 'bg-white/[0.04] text-white/50'}`}>Faculty submissions</button></div>
-    <div className="grid gap-4 lg:grid-cols-2">{visible.map(event => <article key={event.id} className={panelClass + ' p-5'}><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/35">{event.id}</span><StatusBadge status={statusTone(event.status)}>{event.status}</StatusBadge></div><h2 className="mt-2 text-lg font-bold text-white">{event.name}</h2><p className="mt-1 text-sm leading-6 text-white/50">{event.description}</p></div><span className="rounded-xl bg-blue-400/10 p-2.5 text-blue-200"><CalendarDays size={19} /></span></div><div className="mt-5 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-white/35">Date & time</p><p className="mt-1 font-semibold text-white/75">{event.date} · {event.start}–{event.end}</p></div><div><p className="text-xs text-white/35">Venue</p><p className="mt-1 font-semibold text-white/75">{event.venue}</p></div><div><p className="text-xs text-white/35">Attendance</p><p className="mt-1 font-semibold text-white/75">{event.method} · {event.identifierRange}</p></div><div><p className="text-xs text-white/35">Late cut-off</p><p className="mt-1 font-semibold text-amber-200">{event.cutoff}</p></div></div><div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-white/[0.07] pt-4"><Button variant="glass" className="px-3 py-2 text-xs" onClick={() => openEdit(event)}><Edit3 size={14} /> Edit</Button>{event.status === 'Pending' && <Button className="px-3 py-2 text-xs" onClick={() => approveEvent(event.id)}><Check size={14} /> Approve</Button>}{event.status !== 'Cancelled' && event.status !== 'Completed' && <Button variant="glass" className="px-3 py-2 text-xs text-rose-200 hover:text-rose-100" onClick={() => cancel(event)}><X size={14} /> Cancel</Button>}</div></article>)}</div>
+    <div className="grid gap-4 lg:grid-cols-2">{visible.map(event => <article key={event.id} className={panelClass + ' p-5'}><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/35">{event.id}</span><StatusBadge status={statusTone(event.status)}>{event.status}</StatusBadge></div><h2 className="mt-2 text-lg font-bold text-white">{event.name}</h2><p className="mt-1 text-sm leading-6 text-white/50">{event.description}</p></div><span className="rounded-xl bg-blue-400/10 p-2.5 text-blue-200"><CalendarDays size={19} /></span></div><div className="mt-5 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-white/35">Date & time</p><p className="mt-1 font-semibold text-white/75">{event.date} · {event.start}–{event.end}</p></div><div><p className="text-xs text-white/35">Venue</p><p className="mt-1 font-semibold text-white/75">{event.venue}</p></div><div><p className="text-xs text-white/35">Attendance</p><p className="mt-1 font-semibold text-white/75">{event.method} · {event.identifierRange}</p></div><div><p className="text-xs text-white/35">Late cut-off</p><p className="mt-1 font-semibold text-amber-200">{event.cutoff}</p></div></div><div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-white/[0.07] pt-4"><Button variant="glass" className="px-3 py-2 text-xs" onClick={() => openEdit(event)}><Edit3 size={14} /> Edit</Button>{event.status === 'Pending' && <Button className="px-3 py-2 text-xs" onClick={() => void approve(event)}><Check size={14} /> Approve</Button>}{event.status !== 'Cancelled' && event.status !== 'Completed' && <Button variant="glass" className="px-3 py-2 text-xs text-rose-200 hover:text-rose-100" onClick={() => cancel(event)}><X size={14} /> Cancel</Button>}</div></article>)}</div>
     {visible.length === 0 && <EmptyState message="No events match this submission filter." />}
-    {editing !== undefined && <EventEditor form={form} setForm={setForm} onSubmit={save} onClose={() => setEditing(undefined)} error={error} />}
+    {editing !== undefined && <EventEditor form={form} setForm={setForm} onSubmit={() => void save()} onClose={() => setEditing(undefined)} error={error} saving={saving} />}
   </section>;
 }
 
@@ -256,6 +323,6 @@ export default function AdminWorkspace() {
   const section: AdminSection = requested === 'users' || requested === 'events' || requested === 'attendance' || requested === 'reports' || requested === 'feedback' ? requested : 'dashboard';
   const go = (next: AdminSection) => { navigate(`/admin/${next === 'dashboard' ? 'dashboard' : next}`); };
   const user = AuthService.getCurrentUser();
-  return <div className="min-h-full"><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/35">Signed in as {user?.name || 'Administrator'}</p><p className="mt-1 text-sm text-white/45">Required Admin functions · functional requirements workspace</p></div><nav className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">{([{ id: 'dashboard', label: 'Dashboard' }, { id: 'users', label: 'Users' }, { id: 'events', label: 'Events' }, { id: 'attendance', label: 'Attendance' }, { id: 'reports', label: 'Reports' }, { id: 'feedback', label: 'Feedback' }] as const).map(item => <button type="button" key={item.id} onClick={() => go(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${section === item.id ? 'bg-blue-500/15 text-blue-200' : 'text-white/45 hover:bg-white/[0.06] hover:text-white'}`}>{item.label}</button>)}</nav></div>{section === 'dashboard' && <DashboardSection state={state} onNavigate={go} />}{section === 'users' && <UsersSection users={state.users} />}{section === 'events' && <EventsSection events={state.events} />}{section === 'attendance' && <AttendanceSection events={state.events} attendance={state.attendance} users={state.users} />}{section === 'reports' && <ReportsSection state={state} />}{section === 'feedback' && <FeedbackSection state={state} />}</div>;
+  return <div className="min-h-full"><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/35">Signed in as {user?.name || 'Administrator'}</p><p className="mt-1 text-sm text-white/45">Required Admin functions · functional requirements workspace</p></div><nav className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">{([{ id: 'dashboard', label: 'Dashboard' }, { id: 'users', label: 'Users' }, { id: 'events', label: 'Events' }, { id: 'attendance', label: 'Attendance' }, { id: 'reports', label: 'Reports' }, { id: 'feedback', label: 'Feedback' }] as const).map(item => <button type="button" key={item.id} onClick={() => go(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${section === item.id ? 'bg-blue-500/15 text-blue-200' : 'text-white/45 hover:bg-white/[0.06] hover:text-white'}`}>{item.label}</button>)}</nav></div>{section === 'dashboard' && <DashboardSection state={state} onNavigate={go} />}{section === 'users' && <UsersSection users={state.users} />}{section === 'events' && <EventsSection />}{section === 'attendance' && <AttendanceSection events={state.events} attendance={state.attendance} users={state.users} />}{section === 'reports' && <ReportsSection state={state} />}{section === 'feedback' && <FeedbackSection state={state} />}</div>;
 }
 

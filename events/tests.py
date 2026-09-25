@@ -19,6 +19,7 @@ class EventAttendanceTests(TestCase):
         self.other_student = self.make_user("STU002", "student", "STU002")
         self.faculty = self.make_user("FAC001", "faculty", "FAC001")
         self.other_faculty = self.make_user("FAC002", "faculty", "FAC002")
+        self.admin = self.make_user("ADM001", "admin", "ADM001")
         self.now = timezone.now()
         self.event = self.make_event(self.faculty)
         self.unauthorized_event = self.make_event(self.other_faculty)
@@ -53,6 +54,51 @@ class EventAttendanceTests(TestCase):
             attendance_method=method,
         )
 
+    def test_login_rejects_non_object_payload(self):
+        response = self.client.post(reverse("auth-login"), [], format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_login_rejects_non_string_credentials(self):
+        response = self.client.post(
+            reverse("auth-login"),
+            {"identifier": 123, "password": ["not", "a", "string"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_login_rejects_ambiguous_email(self):
+        self.other_student.email = self.student.email
+        self.other_student.save(update_fields=["email"])
+        response = self.client.post(
+            reverse("auth-login"),
+            {"identifier": self.student.email, "password": "test-pass-123"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_profile_patch_allows_email_only(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.patch(
+            reverse("profile"),
+            {"email": "new.student@cot.edu"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.email, "new.student@cot.edu")
+        self.assertEqual(self.student.profile.display_name, "STU001")
+
+    def test_profile_rejects_duplicate_email(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.patch(
+            reverse("profile"),
+            {"email": self.other_student.email},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.email, "stu001@cot.edu")
+
     def test_login_returns_server_assigned_role(self):
         response = self.client.post(
             reverse("auth-login"),
@@ -77,6 +123,124 @@ class EventAttendanceTests(TestCase):
                 )
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.data["role"], UserProfile.Role.STUDENT)
+
+    def test_event_visibility_matrix_and_direct_access_are_role_scoped(self):
+        future = (self.now + timedelta(days=2)).date().isoformat()
+        payloads = {
+            Event.Audience.STUDENT: {
+                "name": "TEST STUDENT EVENT",
+                "audience": Event.Audience.STUDENT,
+            },
+            Event.Audience.FACULTY: {
+                "name": "TEST FACULTY EVENT",
+                "audience": Event.Audience.FACULTY,
+            },
+            Event.Audience.ALL: {
+                "name": "TEST ALL EVENT",
+                "audience": Event.Audience.ALL,
+            },
+        }
+        self.client.force_authenticate(self.admin)
+        created = {}
+        for audience, payload in payloads.items():
+            response = self.client.post(
+                reverse("admin-event-list"),
+                {
+                    **payload,
+                    "description": "Visibility verification",
+                    "date": future,
+                    "start": "09:00",
+                    "end": "10:00",
+                    "venue": "Test Hall",
+                    "cutoff": "09:15",
+                    "method": Event.AttendanceMethod.QR,
+                    "status": Event.Status.PUBLISHED,
+                    "requiredForAttendance": False,
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, 201, response.data)
+            self.assertEqual(response.data["audience"], payload["audience"].title())
+            created[audience] = Event.objects.get(pk=response.data["id"])
+            self.assertEqual(created[audience].audience, audience)
+
+        self.client.force_authenticate(self.student)
+        student_events = self.client.get(reverse("event-list"))
+        self.assertEqual(student_events.status_code, 200)
+        student_ids = {event["id"] for event in student_events.data}
+        self.assertIn(str(created[Event.Audience.STUDENT].id), student_ids)
+        self.assertIn(str(created[Event.Audience.ALL].id), student_ids)
+        self.assertNotIn(str(created[Event.Audience.FACULTY].id), student_ids)
+        self.assertEqual(
+            self.client.get(reverse("event-detail", args=[created[Event.Audience.FACULTY].id])).status_code,
+            404,
+        )
+
+        self.client.force_authenticate(self.faculty)
+        faculty_events = self.client.get(reverse("event-list"))
+        faculty_ids = {event["id"] for event in faculty_events.data}
+        self.assertIn(str(created[Event.Audience.FACULTY].id), faculty_ids)
+        self.assertIn(str(created[Event.Audience.ALL].id), faculty_ids)
+        self.assertNotIn(str(created[Event.Audience.STUDENT].id), faculty_ids)
+        self.assertEqual(
+            self.client.get(reverse("event-detail", args=[created[Event.Audience.STUDENT].id])).status_code,
+            404,
+        )
+
+        self.client.force_authenticate(self.admin)
+        admin_events = self.client.get(reverse("admin-event-list"))
+        self.assertEqual(admin_events.status_code, 200)
+        admin_ids = {event["id"] for event in admin_events.data}
+        for event in created.values():
+            self.assertIn(str(event.id), admin_ids)
+        admin_directory = self.client.get(reverse("event-list"))
+        self.assertEqual(admin_directory.status_code, 200)
+        self.assertTrue(set(event["id"] for event in admin_directory.data).issuperset(admin_ids))
+
+    def test_admin_event_create_rejects_missing_cutoff(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            reverse("admin-event-list"),
+            {
+                "name": "Missing cutoff",
+                "date": (self.now + timedelta(days=1)).date().isoformat(),
+                "start": "09:00",
+                "end": "10:00",
+                "venue": "Test Hall",
+                "audience": Event.Audience.STUDENT,
+                "method": Event.AttendanceMethod.QR,
+                "status": Event.Status.PUBLISHED,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("cutoff", response.data)
+
+    def test_non_admin_cannot_access_admin_event_api(self):
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self.client.get(reverse("admin-event-list")).status_code, 403)
+        self.assertEqual(
+            self.client.post(reverse("admin-event-list"), {}, format="json").status_code,
+            403,
+        )
+
+    def test_admin_event_update_and_cancel_persist(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(
+            reverse("admin-event-detail", args=[self.event.id]),
+            {"audience": Event.Audience.FACULTY, "venue": "Updated Hall"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.audience, Event.Audience.FACULTY)
+        self.assertEqual(self.event.venue, "Updated Hall")
+        response = self.client.post(
+            reverse("admin-event-cancel", args=[self.event.id]), format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.status, Event.Status.CANCELLED)
 
     def test_student_cannot_view_faculty_monitoring(self):
         self.client.force_authenticate(self.student)

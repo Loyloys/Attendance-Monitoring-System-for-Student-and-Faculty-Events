@@ -44,6 +44,14 @@ def event_queryset_for_user(user):
     )
 
 
+def admin_event_queryset():
+    return (
+        Event.objects.select_related("organizer__profile")
+        .prefetch_related("supervisors", "registrations", "attendance", "feedback", "certificates")
+        .distinct()
+    )
+
+
 def managed_event_queryset(user):
     require_role(user, UserProfile.Role.FACULTY)
     return (

@@ -7,6 +7,21 @@ import type {
   PersonalAttendanceData,
   UserRole,
 } from '../types/eventAttendance';
+import type { AdminEvent } from './adminStore';
+
+export type AdminEventRequest = {
+  name: string;
+  description: string;
+  date: string;
+  start: string;
+  end: string;
+  venue: string;
+  audience: 'all' | 'student' | 'faculty';
+  method: 'qr' | 'barcode' | 'rfid';
+  cutoff: string;
+  status: 'published' | 'cancelled';
+  requiredForAttendance: boolean;
+};
 
 const API_ROOT = '/api';
 let csrfToken: string | null = null;
@@ -121,6 +136,26 @@ export const eventApi = {
   },
   events() {
     return requestJson<EventRecord[]>('/events/');
+  },
+  adminEvents() {
+    return requestJson<AdminEvent[]>('/admin/events/');
+  },
+  async createAdminEvent(values: AdminEventRequest) {
+    return requestJson<AdminEvent>('/admin/events/', {
+      method: 'POST',
+      body: JSON.stringify(values),
+    });
+  },
+  async updateAdminEvent(id: string, values: Partial<AdminEventRequest>) {
+    return requestJson<AdminEvent>(`/admin/events/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(values),
+    });
+  },
+  async cancelAdminEvent(id: string) {
+    return requestJson<AdminEvent>(`/admin/events/${id}/cancel/`, {
+      method: 'POST',
+    });
   },
   managedEvents() {
     return requestJson<EventRecord[]>('/events/managed/');

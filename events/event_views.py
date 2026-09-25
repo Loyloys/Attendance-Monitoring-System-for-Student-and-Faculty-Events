@@ -1,7 +1,7 @@
 from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework.decorators import api_view
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 
 from .models import Event, EventAttendance, EventFeedback, EventRegistration
@@ -10,6 +10,7 @@ from .services import (
     DuplicateAttendance,
     create_checkin_code,
     event_queryset_for_user,
+    admin_event_queryset,
     get_managed_event,
     managed_event_queryset,
     record_event_attendance,
@@ -19,8 +20,22 @@ from .services import (
 
 @api_view(["GET"])
 def event_list(request):
-    events = event_queryset_for_user(request.user)
+    if request.user.profile.role == "admin":
+        events = admin_event_queryset()
+    else:
+        events = event_queryset_for_user(request.user)
     return Response(EventContextSerializer(events, many=True, context={"request": request}).data)
+
+
+@api_view(["GET"])
+def event_detail(request, event_id):
+    if request.user.profile.role == "admin":
+        event = admin_event_queryset().filter(pk=event_id).first()
+    else:
+        event = event_queryset_for_user(request.user).filter(pk=event_id).first()
+    if not event:
+        raise NotFound("Event not found.")
+    return Response(EventContextSerializer(event, context={"request": request}).data)
 
 
 @api_view(["GET"])

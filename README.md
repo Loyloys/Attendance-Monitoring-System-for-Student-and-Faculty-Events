@@ -68,7 +68,11 @@ Override `DEMO_STUDENT_PASSWORD` and `DEMO_FACULTY_PASSWORD` before seeding when
 
 - `POST /api/auth/login/`, `POST /api/auth/logout/`, `GET /api/auth/me/`
 - `GET/PATCH /api/profile/`
-- `GET /api/events/`
+- `GET /api/events/` (Admin: all events; Student/Faculty: audience-filtered published events)
+- `GET /api/admin/events/` (Administrator event management)
+- `POST /api/admin/events/` (Administrator)
+- `PATCH /api/admin/events/<id>/` (Administrator)
+- `POST /api/admin/events/<id>/cancel/` (Administrator)
 - `GET /api/events/managed/` (Faculty, assigned events only)
 - `POST /api/events/<id>/registrations/` (Student)
 - `POST /api/events/<id>/check-in-code/` (assigned Faculty, QR)
