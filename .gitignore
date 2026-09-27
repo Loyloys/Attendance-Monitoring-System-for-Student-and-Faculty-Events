@@ -1,8 +1,17 @@
 .venv/
 __pycache__/
 *.py[cod]
-*-server.log
-*-server.err.log
+*.log
+.env
 frontend/node_modules/
 frontend/dist/
+backend/node_modules/
+backend/backups/
+backend/.mongo-data/
+
+# Local SQLite databases. The pre-conversion database is preserved in Git
+# history (commit e364c68) and the archived copy under legacy/django/ is the
+# `npm run migrate` source, so the file itself is never tracked.
+*.sqlite3
+*.sqlite3-journal
 
