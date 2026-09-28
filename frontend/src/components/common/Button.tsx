@@ -21,7 +21,7 @@ export default function Button({
   const variants = {
     primary: 'app-button-primary',
     secondary: 'app-button-secondary',
-    gold: 'border border-rose-400/20 bg-rose-500 text-white shadow-lg shadow-rose-950/30 hover:bg-rose-400 focus-visible:ring-2 focus-visible:ring-rose-300',
+    gold: 'border border-rose-200 bg-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-600 focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2',
     glass: 'app-button-secondary',
   };
 

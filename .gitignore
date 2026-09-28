@@ -15,9 +15,15 @@ backend/.mongo-data/
 .vite/
 desktop.ini
 
-# Local SQLite databases. The pre-conversion database is preserved in Git
-# history (commit e364c68) and the archived copy under legacy/django/ is the
-# `npm run migrate` source, so the file itself is never tracked.
+# Local SQLite databases. The pre-conversion database is not tracked here. The
+# last commits that still carried the 282,624-byte blob are f7eb4ba (origin/main)
+# and 7a582a4, so `git show f7eb4ba:db.sqlite3` restores it. The earlier commits
+# cited previously (e364c68, 9e7f037) only contain a 0-byte placeholder and are
+# NOT usable. The archived copy under legacy/django/ is the `npm run migrate`
+# source and is itself ignored by this same rule.
+#
+# Note: a file that is already tracked stays tracked despite this rule, so the
+# root db.sqlite3 had to be untracked with `git rm --cached`.
 *.sqlite3
 *.sqlite3-journal
 

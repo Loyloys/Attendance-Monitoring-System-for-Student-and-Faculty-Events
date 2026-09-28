@@ -4,10 +4,21 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
-    --app-bg: #090b10;
-    --app-surface: #11151d;
-    --app-border: rgba(255, 255, 255, 0.075);
+    /* Light theme is the only appearance, so the light values live on :root
+       rather than behind a class. `color-scheme: light` also makes native
+       controls, scrollbars and the autofill dropdown follow the page. */
+    color-scheme: light;
+    --app-bg: #f5f4ec;
+    --app-surface: #ffffff;
+    --app-surface-2: #faf9f5;
+    --app-border: #e2e3df;
+    --app-heading: #10203b;
+    --app-body: #334155;
+    --app-muted: #64748b;
+    --app-accent: #f97316;
+    --app-accent-strong: #c2410c;
+    --app-accent-soft: #fff1e6;
+    --app-focus: #ea580c;
   }
 
   html {
@@ -16,117 +27,102 @@
   }
 
   body {
-    @apply m-0 min-h-screen bg-[#090b10] font-sans text-slate-100 antialiased;
+    @apply m-0 min-h-screen bg-[#F5F4EC] font-sans text-[#334155] antialiased;
+    /* Faint pale-blue and lavender light. Deliberately cool and very low
+       contrast so the orange accent stays the only strong colour on screen. */
     background-image:
-      radial-gradient(circle at 12% -10%, rgba(59, 130, 246, 0.08), transparent 30%),
-      radial-gradient(circle at 90% 110%, rgba(225, 29, 72, 0.055), transparent 32%);
+      radial-gradient(circle at 10% -12%, rgba(99, 102, 241, 0.07), transparent 32%),
+      radial-gradient(circle at 92% 108%, rgba(56, 118, 200, 0.06), transparent 34%),
+      radial-gradient(circle at 60% 40%, rgba(196, 181, 253, 0.05), transparent 45%);
   }
 
   button, input, select, textarea { font: inherit; }
   button, a { -webkit-tap-highlight-color: transparent; }
-  ::selection { background: rgba(59, 130, 246, 0.35); color: #fff; }
+  ::selection { background: rgba(249, 115, 22, 0.22); color: #10203b; }
 }
 
 @layer components {
   .app-card {
     border: 1px solid var(--app-border);
     border-radius: 1rem;
-    background: rgba(17, 21, 29, 0.9);
-    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.025);
-    backdrop-filter: blur(18px);
+    background: var(--app-surface);
+    box-shadow: 0 10px 30px -18px rgba(16, 32, 59, 0.28), 0 2px 6px -3px rgba(16, 32, 59, 0.08);
   }
 
-  .app-card-hover { transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease; }
-  .app-card-hover:hover { transform: translateY(-2px); border-color: rgba(96, 165, 250, 0.18); background: rgba(23, 28, 38, 0.94); }
-  .app-page-title { @apply text-2xl font-bold tracking-[-0.025em] text-white sm:text-3xl; }
-  .app-page-subtitle { @apply mt-1 text-sm leading-6 text-white/40; }
-  .app-section-title { @apply text-base font-semibold tracking-tight text-white; }
-  .app-label { @apply mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/40; }
+  .app-card-hover { transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
+  .app-card-hover:hover { transform: translateY(-2px); border-color: #f3b183; box-shadow: 0 18px 40px -20px rgba(16, 32, 59, 0.34); }
+  .app-page-title { @apply text-2xl font-bold tracking-[-0.025em] text-[#10203B] sm:text-3xl; }
+  .app-page-subtitle { @apply mt-1 text-sm leading-6 text-[#64748B]; }
+  .app-section-title { @apply text-base font-semibold tracking-tight text-[#10203B]; }
+  .app-label { @apply mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-[#64748B]; }
 
   .app-input {
-    @apply w-full rounded-xl border border-white/[0.09] bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-blue-400/50 focus:bg-white/[0.06] focus:ring-4 focus:ring-blue-400/10;
+    @apply w-full rounded-xl border border-[#E2E3DF] bg-white px-4 py-3 text-sm text-[#10203B] outline-none transition placeholder:text-[#94A3B8] hover:border-[#CBD5E1] focus:border-[#F97316] focus:ring-4 focus:ring-[#F97316]/15;
   }
 
   .app-button-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 outline-none transition hover:bg-blue-400 focus-visible:ring-2 focus-visible:ring-blue-300 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-[#C2410C] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-900/10 outline-none transition hover:bg-[#9A3412] focus-visible:ring-2 focus-visible:ring-[#F97316] focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55;
   }
 
   .app-button-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/[0.09] bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/70 outline-none transition hover:border-white/[0.15] hover:bg-white/[0.07] hover:text-white focus-visible:ring-2 focus-visible:ring-blue-400/60 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-[#E2E3DF] bg-white px-5 py-3 text-sm font-semibold text-[#334155] outline-none transition hover:border-[#F97316] hover:bg-[#FFF1E6] hover:text-[#9A3412] focus-visible:ring-2 focus-visible:ring-[#F97316] focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .app-table-wrap { @apply overflow-x-auto; }
   .app-table { @apply w-full min-w-[720px] text-left text-sm; }
-  .app-table thead { @apply border-b border-white/[0.07] bg-white/[0.025] text-[10px] uppercase tracking-[0.13em] text-white/30; }
+  .app-table thead { @apply border-b border-[#E2E3DF] bg-[#FAF9F5] text-[10px] uppercase tracking-[0.13em] text-[#64748B]; }
   .app-table th { @apply px-5 py-4 font-semibold; }
-  .app-table td { @apply border-b border-white/[0.055] px-5 py-4 text-white/60; }
-  .app-table tbody tr { @apply transition-colors hover:bg-white/[0.025]; }
+  .app-table td { @apply border-b border-[#ECEDEA] px-5 py-4 text-[#334155]; }
+  .app-table tbody tr { @apply transition-colors hover:bg-[#FFF7ED]; }
   .app-empty-state { @apply flex flex-col items-center justify-center px-6 py-16 text-center; }
 
   .app-grid {
-    background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+    background-image: linear-gradient(rgba(16,32,59,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(16,32,59,.035) 1px, transparent 1px);
     background-size: 48px 48px;
     mask-image: linear-gradient(to bottom, black, transparent 80%);
   }
 
-  .app-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.14) transparent; }
+  .app-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(100,116,139,.3) transparent; }
   .app-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
   .app-scrollbar::-webkit-scrollbar-track { background: transparent; }
-  .app-scrollbar::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(255,255,255,.14); }
-  .app-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.24); }
-  .glass-card { @apply border border-white/[0.08] bg-[#11151d]/90 shadow-2xl backdrop-blur-xl; }
+  .app-scrollbar::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(100,116,139,.26); }
+  .app-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,.44); }
+  .glass-card { @apply border border-[#E2E3DF] bg-white/90 shadow-[0_18px_40px_-24px_rgba(16,32,59,0.35)] backdrop-blur-xl; }
 
-  /* Compatibility layer for existing page components. It preserves their
-     markup and behavior while moving legacy light surfaces into the shell. */
-  .app-workspace .bg-white { background-color: rgba(17, 21, 29, .9) !important; }
-  .app-workspace [class*="bg-white/"],
-  .app-workspace [class*="bg-[#FFF7ED]"] { background-color: rgba(255, 255, 255, .035) !important; }
-  .app-workspace [class~="bg-slate-50"],
-  .app-workspace [class~="bg-slate-100"] { background-color: rgba(255, 255, 255, .045) !important; }
-  .app-workspace [class~="bg-orange-50"],
-  .app-workspace [class~="bg-amber-50"],
-  .app-workspace [class~="bg-rose-50"],
-  .app-workspace [class~="bg-sky-50"],
-  .app-workspace [class~="bg-blue-50"],
-  .app-workspace [class~="bg-purple-50"],
-  .app-workspace [class~="bg-green-50"] { background-color: rgba(255, 255, 255, .045) !important; }
-  .app-workspace [class~="text-slate-900"],
-  .app-workspace [class~="text-slate-800"] { color: #f8fafc !important; }
-  .app-workspace [class~="text-slate-700"],
-  .app-workspace [class~="text-slate-600"] { color: rgba(226, 232, 240, .78) !important; }
-  .app-workspace [class~="text-slate-500"],
-  .app-workspace [class~="text-slate-400"],
-  .app-workspace [class~="text-slate-300"] { color: rgba(148, 163, 184, .72) !important; }
-  .app-workspace [class~="border-slate-100"],
-  .app-workspace [class~="border-slate-200"],
-  .app-workspace [class~="border-slate-300"] { border-color: rgba(255, 255, 255, .08) !important; }
-  .app-workspace [class*="bg-orange-500"] { background-color: #2563eb !important; }
-  .app-workspace [class*="bg-[#EA580C]"],
-  .app-workspace [class*="bg-[#F97316]"] { background-color: rgba(37, 99, 235, .12) !important; }
-  .app-workspace button[class*="bg-[#EA580C]"],
-  .app-workspace button[class*="bg-[#F97316]"] { background-color: #2563eb !important; }
-  .app-workspace [class~="text-orange-600"],
-  .app-workspace [class~="text-orange-700"],
-  .app-workspace [class~="text-orange-800"],
-  .app-workspace [class*="text-[#EA580C]"],
-  .app-workspace [class*="text-[#F97316]"] { color: #93c5fd !important; }
-  .app-workspace input, .app-workspace select, .app-workspace textarea { color: #f8fafc; }
-  .app-workspace option { background: #11151d; color: #f8fafc; }
+  /* -----------------------------------------------------------------------
+     Light workspace normalisation.
 
-  /* Keep the sign-in surface independent from the dark workspace overrides. */
+     Page components are authored with ordinary light Tailwind utilities
+     (`bg-white`, `text-slate-900`, `border-slate-200`, `bg-orange-500`). The
+     dark theme used to invert all of those from here with `!important`; with a
+     light shell they need no rewriting at all, so this layer now only covers
+     what a utility class cannot express: native form-control colours, which
+     follow the operating system rather than the page.
+     --------------------------------------------------------------------- */
+  .app-workspace input,
+  .app-workspace select,
+  .app-workspace textarea { color: #10203b; }
+  .app-workspace option { background: #ffffff; color: #10203b; }
+
+  /* Keep the sign-in surface independent from the workspace overrides. */
   .auth-screen {
-    background-image: radial-gradient(circle at 15% 0%, rgba(59, 130, 246, .18), transparent 34%), radial-gradient(circle at 90% 100%, rgba(219, 39, 119, .10), transparent 32%);
-    color: #f8fafc;
+    background-color: #f5f4ec;
+    background-image:
+      radial-gradient(circle at 15% 0%, rgba(249, 115, 22, .10), transparent 34%),
+      radial-gradient(circle at 90% 100%, rgba(99, 102, 241, .07), transparent 32%);
+    color: #10203b;
   }
 
   .auth-card {
-    background: rgba(17, 21, 29, .96);
-    color: #f8fafc;
+    background: #ffffff;
+    color: #10203b;
+    border: 1px solid var(--app-border);
+    box-shadow: 0 18px 50px -18px rgba(16, 32, 59, 0.28);
   }
 
   .auth-screen input {
-    color-scheme: dark;
-    caret-color: #bfdbfe;
+    color-scheme: light;
+    caret-color: #c2410c;
   }
 
   .auth-screen input::placeholder {
@@ -137,9 +133,75 @@
   .auth-screen input:-webkit-autofill,
   .auth-screen input:-webkit-autofill:hover,
   .auth-screen input:-webkit-autofill:focus {
-    -webkit-text-fill-color: #f8fafc;
-    caret-color: #bfdbfe;
-    box-shadow: 0 0 0 1000px #1f2937 inset;
+    -webkit-text-fill-color: #10203b;
+    caret-color: #c2410c;
+    /* The inset shadow paints over the autofill background in WebKit/Blink. */
+    box-shadow: 0 0 0 1000px #ffffff inset;
+  }
+
+  /* ---------------------------------------------------------------------
+     The two-step sign-in journey. This is a light, self-contained surface that
+     sits outside `.app-workspace`, so none of the dark compatibility overrides
+     above touch it. Orange is the application's existing accent, so it is used
+     consistently for buttons, links, selected states and focus rings.
+     --------------------------------------------------------------------- */
+  .auth-light {
+    color-scheme: light;
+    color: #0f172a;
+    background-color: #f8fafc;
+    /* The display face used by the sign-in screens, with the application's
+       existing sans stack as the fallback so nothing shifts if the webfont is
+       unavailable. Scoped here so the rest of the app is untouched. */
+    font-family: 'Poppins', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    /* Light decorative curves, drawn rather than imported, so no new asset is
+       needed and they never interfere with the split-screen layout. */
+    background-image:
+      radial-gradient(ellipse 60% 50% at 12% 18%, rgba(249, 115, 22, .10), transparent 60%),
+      radial-gradient(ellipse 55% 45% at 88% 82%, rgba(249, 115, 22, .08), transparent 62%),
+      radial-gradient(ellipse 70% 60% at 50% 0%, rgba(148, 163, 184, .14), transparent 65%);
+  }
+
+  .auth-light-card {
+    @apply rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_-18px_rgba(15,23,42,0.28)];
+    color: #0f172a;
+  }
+
+  .auth-light-title { @apply text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl; }
+  .auth-light-subtitle { @apply mt-2 text-sm leading-6 text-slate-600; }
+  .auth-light-label { @apply mb-1.5 block text-sm font-semibold text-slate-700; }
+
+  .auth-light-input {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/15;
+  }
+
+  .auth-light-button {
+    @apply inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-orange-500/25 outline-none transition hover:bg-orange-600 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .auth-light-link {
+    @apply rounded font-semibold text-orange-600 underline-offset-4 outline-none transition hover:text-orange-700 hover:underline focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2;
+  }
+
+  /* The account-type choices on the first screen. Selected/focused states use
+     the same orange as every other accent in the journey. */
+  .auth-choice {
+    @apply flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-5 text-left shadow-sm outline-none transition hover:border-orange-300 hover:bg-orange-50/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 active:scale-[0.99];
+  }
+
+  .auth-light input {
+    color-scheme: light;
+    caret-color: #ea580c;
+  }
+
+  .auth-light input::placeholder { color: #94a3b8; opacity: 1; }
+
+  .auth-light input:-webkit-autofill,
+  .auth-light input:-webkit-autofill:hover,
+  .auth-light input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #0f172a;
+    caret-color: #ea580c;
+    /* The inset shadow paints over the autofill background in WebKit/Blink. */
+    box-shadow: 0 0 0 1000px #ffffff inset;
   }
 }
 

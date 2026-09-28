@@ -85,8 +85,8 @@ export default function Portal() {
 
   const content = (() => {
     if (!user) return null;
-    if (loading) return <div className="app-card p-12 text-center text-sm text-white/50">Loading your event workspace…</div>;
-    if (error) return <div className="app-card p-8"><h1 className="app-page-title">Unable to load events</h1><p className="mt-2 text-sm text-rose-200">{error}</p><button type="button" onClick={() => void refresh()} className="app-button-primary mt-5">Try again</button></div>;
+    if (loading) return <div className="app-card p-12 text-center text-sm text-[#64748B]">Loading your event workspace…</div>;
+    if (error) return <div className="app-card p-8"><h1 className="app-page-title">Unable to load events</h1><p className="mt-2 text-sm text-rose-600">{error}</p><button type="button" onClick={() => void refresh()} className="app-button-primary mt-5">Try again</button></div>;
     if (view === 'dashboard') return <EventDashboard user={user} events={events} attendance={attendance} onNavigate={next => go(next as View)} onScan={() => setShowScanner(true)} onCertificate={id => void handleDownload('certificate', id)} />;
     if (view === 'events') return <EventList events={events} onRegister={handleRegister} onScan={() => setShowScanner(true)} />;
     if (view === 'attendance') return <section className="app-card p-8"><p className="app-label">Secure check-in</p><h1 className="app-page-title">Scan event attendance</h1><p className="app-page-subtitle">Choose the event method and scan the official event code or your own card value. Confirmation appears only after the server records your attendance.</p><button type="button" onClick={() => setShowScanner(true)} className="app-button-primary mt-6">Open event scanner</button></section>;

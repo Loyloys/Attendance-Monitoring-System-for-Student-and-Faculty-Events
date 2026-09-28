@@ -4,8 +4,18 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/brand/sbo-mark.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#090b10" />
+    <meta name="theme-color" content="#F5F4EC" />
     <meta name="description" content="Secure student and faculty event attendance monitoring for the College of Technologies." />
+    <!-- Display face for the sign-in journey only. Scoped to `.auth-light` in
+         index.css so the rest of the application keeps its existing typeface.
+         `display=swap` means text renders immediately in the fallback stack if
+         Google Fonts is slow or unreachable, so sign-in never blocks on it. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <title>COT Event Attendance | College of Technologies</title>
   </head>
   <body>

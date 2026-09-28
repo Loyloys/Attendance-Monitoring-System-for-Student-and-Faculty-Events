@@ -1,16 +1,12 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}\\venv-uap\\Scripts\\python.exe",
-  "python.terminal.activateEnvironment": true,
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
 
-  "python.analysis.typeCheckingMode": "basic",
-  "python.analysis.diagnosticMode": "workspace",
-  "python.analysis.autoImportCompletions": true,
-
-  "[python]": {
-    "editor.defaultFormatter": "ms-python.black-formatter",
-    "editor.formatOnSave": true
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "python.formatting.provider": "none",
-  "python.linting.enabled": false
-
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
 }

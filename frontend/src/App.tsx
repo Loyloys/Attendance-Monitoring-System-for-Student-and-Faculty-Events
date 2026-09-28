@@ -7,22 +7,22 @@ import { Toaster } from 'react-hot-toast';
 const App: React.FC = () => (
   <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <AuthProvider>
-      <div className="min-h-screen bg-[#090b10] font-sans text-slate-100 selection:bg-blue-500/30 selection:text-white">
+      <div className="min-h-screen bg-[#F5F4EC] font-sans text-[#334155] selection:bg-orange-200 selection:text-[#10203B]">
         <Toaster
           position="top-right"
           toastOptions={{
             duration: 3500,
             style: {
-              background: 'rgba(20, 25, 34, 0.94)',
-              color: '#f8fafc',
-              border: '1px solid rgba(255, 255, 255, 0.09)',
+              background: 'rgba(255, 255, 255, 0.96)',
+              color: '#334155',
+              border: '1px solid #E2E3DF',
               borderRadius: '14px',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.32)',
+              boxShadow: '0 18px 40px -20px rgba(16, 32, 59, 0.32)',
               fontSize: '14px',
               backdropFilter: 'blur(16px)',
             },
-            success: { iconTheme: { primary: '#22c55e', secondary: '#0f172a' } },
-            error: { iconTheme: { primary: '#f43f5e', secondary: '#0f172a' } },
+            success: { iconTheme: { primary: '#16a34a', secondary: '#ffffff' } },
+            error: { iconTheme: { primary: '#e11d48', secondary: '#ffffff' } },
           }}
         />
         <AppRoutes />

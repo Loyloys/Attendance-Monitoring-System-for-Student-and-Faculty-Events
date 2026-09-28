@@ -1,4 +1,5 @@
 import { ApiError, eventApi } from './eventApi';
+import type { GoogleAuthResult, GoogleConfig, GoogleSession } from './eventApi';
 import type { AuthUser, UserRole } from '../types/eventAttendance';
 
 export type UserType = UserRole | 'lecturer';
@@ -29,8 +30,8 @@ export class AuthService {
     return user;
   }
 
-  static async restoreSession(): Promise<AuthUser | null> {
-    if (activeUser) return activeUser;
+  static async restoreSession(options: { force?: boolean } = {}): Promise<AuthUser | null> {
+    if (activeUser && !options.force) return activeUser;
     try {
       activeUser = await eventApi.session();
       return activeUser;
@@ -65,6 +66,49 @@ export class AuthService {
 
   static saveUser(user: AuthUser): void {
     activeUser = user;
+  }
+
+  // Google sign-in
+
+  /** Reads the server-side availability flag, so a missing client id is visible. */
+  static googleConfig(): Promise<GoogleConfig> {
+    return eventApi.googleConfig();
+  }
+
+  /** Starts a server-bound flow and returns the client id and single-use nonce. */
+  static googleSession(): Promise<GoogleSession> {
+    return eventApi.googleSession();
+  }
+
+  /**
+   * Verifies the Google credential on the server. A returning user is signed in
+   * here; an unknown identity returns a prefill for the profile step instead.
+   *
+   * `selectedRole` is the account type chosen on the first screen. It is sent only
+   * so the server can explain a mismatch and point at the right sign-in screen. It
+   * never assigns a role: the server ignores it unless it matches the stored one.
+   */
+  static async googleAuthenticate(credential: string, selectedRole?: string): Promise<GoogleAuthResult> {
+    const result = await eventApi.googleAuthenticate(credential, selectedRole);
+    if (result.status === 'signed_in') activeUser = result.user;
+    return result;
+  }
+
+  static async completeGoogleProfile(values: {
+    accountId: string;
+    department: string;
+    name: string;
+    phone: string;
+  }): Promise<AuthUser> {
+    const result = await eventApi.completeGoogleProfile(values);
+    activeUser = result.user;
+    return result.user;
+  }
+
+  static async linkGoogle(credential: string): Promise<AuthUser> {
+    const linked = await eventApi.linkGoogle(credential);
+    activeUser = linked;
+    return linked;
   }
 }
 

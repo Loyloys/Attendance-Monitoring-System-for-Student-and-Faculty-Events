@@ -1,6 +1,6 @@
 # COT Event Attendance Frontend
 
-This Vite app is the student/faculty portal for the COT event-attendance system. The canonical user workspace is `/portal`; the sidebar changes according to the server-assigned role.
+This Vite application is the React/TypeScript frontend for the COT event-attendance system. The canonical user workspace is `/portal`; the sidebar changes according to the server-assigned role. Administrator tools are served from `/admin` and use authenticated Express APIs backed by MongoDB.
 
 ## Development
 
@@ -9,19 +9,21 @@ npm install
 npm run dev
 ```
 
-The development server proxies `/api` to Django on port 8000. Run `python manage.py migrate` and `python manage.py seed_event_demo --reset` from the repository root first.
+The development server proxies `/api` to the Express server at `http://127.0.0.1:8000`. Configure the target with `VITE_API_PROXY_TARGET` if the API uses another address.
 
 ## Frontend structure
 
-- `src/data/eventApi.ts` — CSRF-aware session API client.
-- `src/types/eventAttendance.ts` — event, attendance, monitoring, and profile contracts.
-- `src/components/event/` — dashboard, event directory, personal history, faculty monitor, feedback, and profile panels.
-- `src/components/common/AttendanceScanner.tsx` — server-confirmed QR, barcode, and RFID/ID check-in UI.
-- `src/components/common/EventQRCode.tsx` — server-generated short-lived event QR code.
-- `src/pages/Portal.tsx` — the single event-attendance workspace for both roles.
-- `src/context/AuthContext.tsx` — session restoration and logout state.
+- `src/data/eventApi.ts` â€” CSRF-aware session, event, attendance, report, and administrator API client.
+- `src/data/adminStore.ts` â€” MongoDB-backed administrator state and mutations; the previous local-storage seed is archived once through the API.
+- `src/types/eventAttendance.ts` â€” event, attendance, monitoring, and profile contracts.
+- `src/components/event/` â€” dashboard, event directory, personal history, faculty monitor, feedback, and profile panels.
+- `src/components/common/AttendanceScanner.tsx` â€” server-confirmed QR, barcode, and RFID/ID check-in UI.
+- `src/components/common/EventQRCode.tsx` â€” server-generated short-lived event QR code.
+- `src/pages/Portal.tsx` â€” the event-attendance workspace for students and faculty.
+- `src/pages/admin/Workspace.tsx` â€” MongoDB-backed administrator workspace.
+- `src/context/AuthContext.tsx` â€” session restoration and logout state.
 
-The browser stores no password, role claim, or attendance record. Attendance success is rendered only after the Django API returns a persisted record.
+The browser stores no password, role claim, or attendance record. Attendance success is rendered only after the Express API returns a MongoDB-persisted record.
 
 ## Checks
 

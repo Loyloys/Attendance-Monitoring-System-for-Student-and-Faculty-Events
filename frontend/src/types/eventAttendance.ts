@@ -11,6 +11,11 @@ export interface AuthUser {
   role: UserRole;
   phone: string;
   department: string;
+  /** How this account can sign in. Google-only accounts have no password. */
+  authProviders?: Array<'password' | 'google'>;
+  googleLinked?: boolean;
+  profileCompleted?: boolean;
+  picture?: string;
 }
 
 export interface EventRecord {
@@ -38,6 +43,12 @@ export interface EventRecord {
   late_cutoff: string;
   attendance_method: AttendanceMethod;
   is_organizer: boolean;
+  /** GST002: how long attendance runs, in whole minutes, computed server-side. */
+  duration_minutes: number;
+  /** GST004: whether a location fix is required before this event can be scanned. */
+  location_verification_required: boolean;
+  /** GST004: whether the event actually has a usable venue fence configured. */
+  venue_geofence_configured: boolean;
 }
 
 export interface PersonalAttendanceSummary {
@@ -71,6 +82,9 @@ export interface AttendanceConfirmation {
   status: AttendanceStatus;
   method: AttendanceMethod;
   recordedAt: string;
+  /** GST004: true when the server accepted and stored a verified position. */
+  locationVerified?: boolean;
+  locationDistanceMeters?: number | null;
   message: string;
 }
 
