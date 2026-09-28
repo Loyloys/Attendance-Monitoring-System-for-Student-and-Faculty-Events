@@ -9,6 +9,12 @@ backend/node_modules/
 backend/backups/
 backend/.mongo-data/
 
+# Editor/OS cruft. `.vite/` at the repo root is a stray cache directory: Vite's
+# real cache lives in frontend/node_modules/.vite and is rebuilt automatically.
+# `desktop.ini` is a Windows Explorer folder-view file, never project source.
+.vite/
+desktop.ini
+
 # Local SQLite databases. The pre-conversion database is preserved in Git
 # history (commit e364c68) and the archived copy under legacy/django/ is the
 # `npm run migrate` source, so the file itself is never tracked.
