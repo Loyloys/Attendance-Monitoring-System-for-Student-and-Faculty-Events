@@ -1,6 +1,11 @@
 import test, { after, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { agent, createUser, csrfToken, login, request, reset, send, setup, teardown } from './helpers.js';
+
+const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 before(setup);
 after(teardown);
@@ -75,6 +80,42 @@ test('locks accounts after repeated failed attempts', async () => {
   const locked = await client.post('/api/auth/login/').set('X-CSRFToken', token).send({ identifier: 'STU001', password: 'test-pass-123' });
   assert.equal(locked.status, 429);
   assert.match(locked.body.detail, /Too many failed attempts/);
+});
+
+test('cookie names come from configuration so a test instance cannot collide with the normal app', async () => {
+  // On this instance (no overrides) the normal names are issued.
+  const response = await agent().get('/api/auth/csrf/');
+  const cookies = response.headers['set-cookie'] ?? [];
+  assert.ok(cookies.some(cookie => cookie.startsWith('sessionid=')), 'session cookie name');
+  assert.ok(cookies.some(cookie => cookie.startsWith('csrftoken=')), 'csrf cookie name');
+
+  // Two instances on the same origin would otherwise overwrite each other's
+  // cookies, so both names must be renameable. Proven through the real config
+  // module, which freezes at import time.
+  const script = "import { env } from './src/config/env.js'; console.log(JSON.stringify([env.sessionCookieName, env.csrfCookieName, env.deploymentLabel]));";
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: backendRoot,
+    env: {
+      ...process.env,
+      SESSION_COOKIE_NAME: 'googletest_sessionid',
+      CSRF_COOKIE_NAME: 'googletest_csrftoken',
+      DEPLOYMENT_LABEL: 'TEST ENVIRONMENT',
+    },
+    encoding: 'utf8',
+  });
+  const [sessionName, csrfName, label] = JSON.parse(output.trim().split('\n').pop());
+  assert.equal(sessionName, 'googletest_sessionid');
+  assert.equal(csrfName, 'googletest_csrftoken');
+  assert.equal(label, 'TEST ENVIRONMENT');
+});
+
+test('health reports the environment label and CSRF cookie name, and is silent when unlabelled', async () => {
+  const response = await request().get('/api/health/');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, 'ok');
+  assert.equal(response.body.csrfCookieName, 'csrftoken');
+  // The normal app sends no label, so the frontend renders no banner at all.
+  assert.equal(response.body.deploymentLabel, '');
 });
 
 test('updates a profile while protecting administrator-managed fields', async () => {

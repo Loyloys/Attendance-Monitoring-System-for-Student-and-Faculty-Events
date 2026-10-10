@@ -1,6 +1,6 @@
 import test, { after, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { atVenue, createEvent, createUser, csrfToken, getModels, login, request, reset, send, setup, teardown } from './helpers.js';
+import { atVenue, createEvent, createUser, csrfToken, getModels, login, nextId, request, reset, send, setup, teardown } from './helpers.js';
 
 before(setup);
 after(teardown);
@@ -97,8 +97,25 @@ test('requires registration before a student can check in', async () => {
   const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
   const student = await createUser({ username: 'STU001', role: 'student' });
   const event = await createEvent(faculty.user, { registrationRequired: true });
+  // The event is a QR event, so a REAL credential is supplied. Otherwise the
+  // request would be refused by the credential rule first and this test would
+  // silently stop testing registration at all.
+  const secret = 'registration-fixture-token';
+  await getModels().AttendanceCode.create({
+    _id: await nextId('attendanceCode'),
+    eventId: event._id,
+    createdById: faculty.user._id,
+    tokenHash: (await import('../src/utils/identifiers.js')).sha256(secret),
+    tokenEncrypted: (await import('../src/utils/secretBox.js')).encryptSecret(secret),
+    expiresAt: new Date(Date.now() + 60 * 60_000),
+    active: true,
+  });
   const { agent } = await login('STU001');
-  const response = await send(agent, 'post', '/api/attendance/scan/', { eventId: event._id, method: 'qr' });
+  const response = await send(agent, 'post', '/api/attendance/scan/', {
+    token: `COT-EVENT:${event._id}:${secret}`,
+    method: 'qr',
+    location: atVenue(),
+  });
   assert.equal(response.status, 400);
   assert.equal(response.body.registration, 'Register for this event before checking in.');
 });

@@ -1,3 +1,5 @@
+import { approvalStatusOf } from '../middleware/authentication.js';
+
 export function serializeAuthUser(user) {
   return {
     id: user.username,
@@ -12,6 +14,10 @@ export function serializeAuthUser(user) {
     authProviders: user.authProviders?.length ? [...user.authProviders] : ['password'],
     googleLinked: Boolean(user.googleSub),
     profileCompleted: user.profileCompleted !== false,
+    // The browser needs this to know whether an administrator has blocked the
+    // account. Registration itself never produces a pending value: documents
+    // predating the field read as approved.
+    approvalStatus: approvalStatusOf(user),
     picture: user.googlePictureUrl || '',
   };
 }

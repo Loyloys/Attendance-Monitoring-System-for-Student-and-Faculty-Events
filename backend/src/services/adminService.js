@@ -14,12 +14,14 @@ import {
   UserProfile,
 } from '../models/index.js';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { approvalStatusOf } from '../middleware/authentication.js';
 import { nextNumericId } from '../utils/ids.js';
 import { stableCaseInsensitive } from '../utils/identifiers.js';
 import { createDjangoPassword } from '../utils/passwords.js';
 import { effectiveEventStatus } from '../utils/events.js';
 import { serializeAdminEvents } from './eventService.js';
-import { serializeAdminAttendance, serializeAdminUser } from './adminSerializer.js';
+import { serializeAdminAttendance, serializeAdminUser, serializeEventFeedback } from './adminSerializer.js';
+import { finalizeExpiredSessions } from './attendanceSessionService.js';
 import { serializeEvaluationForm, serializeEvaluationResponse } from './evaluationSerializer.js';
 
 const roleMap = { Student: 'student', Faculty: 'faculty', Admin: 'admin' };
@@ -60,8 +62,97 @@ async function findUserByAccountId(accountId) {
   return { user, profile };
 }
 
+/**
+ * Registration counts per account, so the User Management screen can separate
+ * "has an account" from "registered for events".
+ *
+ * Only `status: 'registered'` rows count as a live registration; a cancelled one
+ * is history, not a current registration. Attendance is counted in a separate
+ * pass so a registration is never reported as attendance.
+ */
+async function registrationCountsByUser() {
+  const counts = new Map();
+  const rows = await EventRegistration.aggregate([
+    { $match: { status: 'registered' } },
+    { $group: { _id: '$attendeeId', count: { $sum: 1 } } },
+  ]);
+  for (const row of rows) counts.set(String(row._id), row.count);
+  return counts;
+}
+
+async function attendanceCountsByUser() {
+  const counts = new Map();
+  const rows = await EventAttendance.aggregate([
+    { $group: { _id: '$attendeeId', count: { $sum: 1 } } },
+  ]);
+  for (const row of rows) counts.set(String(row._id), row.count);
+  return counts;
+}
+
+/**
+ * Every event this account has a registration row for, with the registration and
+ * the attendance reported as two independent facts.
+ *
+ * `attendanceStatus` is null unless an attendance record actually exists, so a
+ * registered person is never shown as Present, and a person with attendance is
+ * not assumed to have registered either.
+ */
+export async function listUserEventRegistrations(accountId) {
+  const { user, profile } = await findUserByAccountId(accountId);
+  const registrations = await EventRegistration.find({ attendeeId: user._id })
+    .sort({ registeredAt: -1 })
+    .lean();
+  const events = await Event.find({ _id: { $in: registrations.map((row) => row.eventId) } }).lean();
+  const eventById = new Map(events.map((event) => [event._id, event]));
+  const attendance = await EventAttendance.find({ attendeeId: user._id }).lean();
+  const attendanceByEvent = new Map(
+    attendance.map((record) => [record.eventId, record]),
+  );
+
+  return {
+    account: {
+      id: user.accountId,
+      name: profile.displayName,
+      email: user.email || '',
+      role: profile.role,
+      department: profile.department || '',
+      status: user.isActive ? 'Active' : 'Inactive',
+      approvalStatus: approvalStatusOf(user),
+      createdAt: new Date(user.dateJoined).toISOString(),
+    },
+    registrations: registrations.map((registration) => {
+      const event = eventById.get(registration.eventId);
+      const record = attendanceByEvent.get(registration.eventId);
+      return {
+        eventId: registration.eventId,
+        // An event removed from the database leaves a dangling registration row;
+        // it is still reported rather than silently dropped.
+        eventName: event ? event.name : '(event no longer exists)',
+        eventDate: event ? new Date(event.startsAt).toISOString().slice(0, 10) : null,
+        eventStatus: event ? event.status : null,
+        // `registered` or `cancelled` - the registration itself.
+        registrationStatus: registration.status,
+        registeredAt: new Date(registration.registeredAt).toISOString(),
+        // Null means "no attendance recorded", which is NOT the same as absent.
+        // Capitalised like every other serialized attendance status, so the
+        // administrator screen and this endpoint agree on one vocabulary.
+        attendanceStatus: record ? record.status[0].toUpperCase() + record.status.slice(1) : null,
+        checkedInAt: record && record.recordedAt ? new Date(record.recordedAt).toISOString() : null,
+      };
+    }),
+  };
+}
+
 export async function listAdminUsers() {
-  return (await usersWithProfiles()).map(serializeAdminUser);
+  const users = await usersWithProfiles();
+  const [registrations, attendance] = await Promise.all([
+    registrationCountsByUser(),
+    attendanceCountsByUser(),
+  ]);
+  return users.map((user) => serializeAdminUser(user, {
+    eventRegistrationCount: registrations.get(String(user._id)) || 0,
+    attendanceCount: attendance.get(String(user._id)) || 0,
+  }));
 }
 
 /**
@@ -124,12 +215,27 @@ export async function updateAdminUser(accountId, data, actor) {
   const { user, profile } = await findUserByAccountId(accountId);
   const nextRole = data.role ? roleMap[data.role] : profile.role;
   const nextActive = data.status ? data.status === 'Active' : user.isActive;
+  // Administrator approval is a separate decision from the role. A pending
+  // Google sign-up is approved or rejected here, and only here.
+  const requestedApproval = data.approvalStatus;
+  if (requestedApproval !== undefined && !['pending', 'approved', 'rejected'].includes(requestedApproval)) {
+    throw new ValidationError({ approvalStatus: 'Approval status must be pending, approved or rejected.' });
+  }
+  const previousApproval = approvalStatusOf(user);
+  const nextApproval = requestedApproval ?? previousApproval;
+  const approvalChanged = nextApproval !== previousApproval;
   // Captured before any mutation so the audit entry can state the real before/after.
   const previousRole = profile.role;
   const roleChanged = nextRole !== previousRole;
   const statusChanged = nextActive !== user.isActive;
   if (profile.role === 'admin' && (nextRole !== 'admin' || !nextActive) && await activeAdminCount(user._id) === 0) {
-    throw new ValidationError('At least one active Admin account is required.');
+    // The message is the SECOND argument. Passing the text as the field map made
+    // the API answer with the generic "submitted data is invalid" instead of
+    // telling the administrator why the change was refused.
+    throw new ValidationError(
+      { role: 'At least one active Admin account is required.' },
+      'At least one active Admin account is required.',
+    );
   }
   const nextAccountId = String(data.id || user.accountId).trim();
   const nextUsername = String(data.username || user.username).trim();
@@ -158,6 +264,11 @@ export async function updateAdminUser(accountId, data, actor) {
   user.email = nextEmail;
   user.emailNormalized = nextEmail;
   user.isActive = nextActive;
+  user.approvalStatus = nextApproval;
+  if (approvalChanged) {
+    user.approvalReviewedAt = new Date();
+    user.approvalReviewedBy = actor?._id || null;
+  }
   user.isStaff = nextRole === 'admin';
   if (password) user.passwordHash = createDjangoPassword(String(password));
   await user.save();
@@ -169,7 +280,11 @@ export async function updateAdminUser(accountId, data, actor) {
 
   // AD003: record what actually changed, so a role change is traceable.
   const auditTarget = { userId: user._id, accountId: user.accountId };
-  if (roleChanged) {
+  if (approvalChanged) {
+    // Approval is its own auditable event: it is the moment a person gains (or
+    // loses) access to attendance features.
+    await recordAudit(actor, `account_${nextApproval === 'approved' ? 'approved' : nextApproval === 'rejected' ? 'rejected' : 'approval_reset'}`, auditTarget, `Approval changed from ${previousApproval} to ${nextApproval}`);
+  } else if (roleChanged) {
     await recordAudit(actor, 'role_changed', auditTarget, `Role changed from ${previousRole} to ${nextRole}`);
   } else if (statusChanged) {
     await recordAudit(actor, nextActive ? 'account_reactivated' : 'account_deactivated', auditTarget, nextActive ? 'Reactivated' : 'Deactivated');
@@ -183,21 +298,45 @@ export async function updateAdminUser(accountId, data, actor) {
 export async function deleteAdminUser(accountId, actor) {
   const { user, profile } = await findUserByAccountId(accountId);
   if (profile.role === 'admin' && user.isActive && await activeAdminCount(user._id) === 0) {
-    throw new ValidationError('At least one active Admin account is required.');
+    throw new ValidationError(
+      { role: 'At least one active Admin account is required.' },
+      'At least one active Admin account is required.',
+    );
   }
-  const [organized, issued, codes] = await Promise.all([
+  const [organized, issued, codes, registrations, attendances, feedbacks, certificates, responses] = await Promise.all([
     Event.countDocuments({ organizerId: user._id }),
     EventCertificate.countDocuments({ issuedById: user._id }),
     AttendanceCode.countDocuments({ createdById: user._id }),
+    EventRegistration.countDocuments({ attendeeId: user._id }),
+    EventAttendance.countDocuments({ attendeeId: user._id }),
+    EventFeedback.countDocuments({ attendeeId: user._id }),
+    EventCertificate.countDocuments({ studentId: user._id }),
+    EvaluationResponse.countDocuments({ attendeeId: user._id }),
   ]);
   if (organized || issued || codes) throw new ConflictError('This account is referenced by event, certificate, or attendance-code records and cannot be deleted. Deactivate it instead.');
-  await Promise.all([
-    EventRegistration.deleteMany({ attendeeId: user._id }),
-    EventAttendance.deleteMany({ attendeeId: user._id }),
-    EventFeedback.deleteMany({ attendeeId: user._id }),
-    EventCertificate.deleteMany({ studentId: user._id }),
-    EvaluationResponse.deleteMany({ attendeeId: user._id }),
-  ]);
+
+  // AD002.5: attendance, feedback and reporting history are NOT silently
+  // cascade-deleted. Those rows are the institutional record of who attended
+  // what, and a permanent delete would erase them with no trace. When any exist
+  // the request is refused with the exact counts, so the administrator can make
+  // an informed choice. Deactivation is the reversible option that keeps the
+  // history intact and still removes the person's access.
+  const history = [
+    ['event registration', registrations],
+    ['attendance record', attendances],
+    ['feedback response', feedbacks],
+    ['certificate', certificates],
+    ['evaluation response', responses],
+  ].filter(([, count]) => count > 0);
+  if (history.length) {
+    const summary = history.map(([label, count]) => `${count} ${label}${count === 1 ? '' : 's'}`).join(', ');
+    const conflict = new ConflictError(
+      `This account has attendance history (${summary}) that must be preserved for reporting, so it cannot be permanently deleted. Deactivate the account instead: that removes access immediately and keeps every record.`,
+    );
+    // Machine-readable detail, so the UI can show the conflict instead of guessing.
+    conflict.relatedRecords = Object.fromEntries(history.map(([label, count]) => [label, count]));
+    throw conflict;
+  }
   await Promise.all([UserProfile.deleteOne({ userId: user._id }), User.deleteOne({ _id: user._id })]);
   await RevokedIdentifier.create({
     _id: `${stableCaseInsensitive(accountId)}:${user._id}:deleted`,
@@ -209,6 +348,11 @@ export async function deleteAdminUser(accountId, actor) {
 }
 
 export async function listAttendance() {
+  // GST008: an event that has ended must not keep showing Pending, and the
+  // student is never coming back to close it. Reusing the existing
+  // finalization decision here is what resolves those rows on read; it is the
+  // same call a late heartbeat would have made, so both routes agree.
+  await finalizeExpiredSessions();
   const records = await EventAttendance.find().sort({ recordedAt: -1 }).lean();
   const events = await Event.find({ _id: { $in: records.map((record) => record.eventId) } }).lean();
   const users = await usersWithProfiles();
@@ -285,6 +429,22 @@ export async function correctAttendance(recordId, data) {
   record.note = String(data.note || '').slice(0, 1000);
   record.source = 'Manual correction';
   record.correctedAt = new Date();
+  // GST008: an administrator's decision LATCHES. Automatic qualification must
+  // never silently overwrite it afterwards - not by the next accepted location,
+  // and not by the event-end sweep. The distinction stays auditable: the row
+  // keeps `source: 'Manual correction'` and reports `manualOverride: true`, so an
+  // automatic decision and a human one are never indistinguishable later.
+  //
+  // The chosen `status` is mirrored into `qualification` ONLY for records that
+  // carry a duration requirement, because that is the only case where the two can
+  // disagree. A non-tracking event's qualification stays null, so nothing about
+  // its established reporting changes.
+  if (record.requiredAttendanceMinutes) {
+    record.qualification = status;
+    record.qualificationReason = 'Set by an administrator.';
+  }
+  record.manualOverride = true;
+  record.manualOverrideAt = new Date();
   await record.save();
   const [{ user, profile }, event] = await Promise.all([
     findUserById(record.attendeeId),
@@ -307,6 +467,36 @@ export async function listEvaluationResponses() {
   const users = await usersWithProfiles();
   const byId = new Map(users.map((user) => [String(user._id), user]));
   return responses.filter((response) => byId.has(String(response.attendeeId))).map((response) => serializeEvaluationResponse(response, byId.get(String(response.attendeeId))));
+}
+
+/**
+ * Per-event feedback a student or faculty member submitted after attendance.
+ *
+ * THE MISSING READ PATH. This is the counterpart of `submitFeedback` in
+ * attendanceService.js, which is what the Portal's "Event feedback" screen
+ * posts to. Those rows were written correctly but were never read by any
+ * administrator route, so `GET /admin/state/` carried no feedback at all and
+ * "Feedback & evaluations" could not show them. The write side is deliberately
+ * left untouched: existing rows are read as they are, never rewritten.
+ *
+ * Same defensive join as the evaluation responses above: a response whose
+ * attendee no longer resolves to a user with a profile is DROPPED rather than
+ * serialized, because there is no honest name to print for it and an
+ * unlabelled row in a feedback report is worse than an absent one. Note this
+ * can only remove a row that is already un-attributable - it never removes a
+ * readable one.
+ *
+ * Administrator-only by route (`router.use('/admin', requireAuthentication,
+ * requireRole('admin'))`), so this adds no new read path for a student or a
+ * faculty member.
+ */
+export async function listEventFeedback() {
+  const records = await EventFeedback.find().sort({ submittedAt: -1 }).lean();
+  const users = await usersWithProfiles();
+  const byId = new Map(users.map((user) => [String(user._id), user]));
+  return records
+    .filter((record) => byId.has(String(record.attendeeId)))
+    .map((record) => serializeEventFeedback(record, byId.get(String(record.attendeeId))));
 }
 
 function normalizeQuestions(data) {
@@ -354,12 +544,17 @@ export async function deleteForm(formId) {
 }
 
 export async function adminState() {
-  const [users, events, attendance, forms, responses, revoked] = await Promise.all([
+  const [users, events, attendance, forms, responses, feedback, revoked] = await Promise.all([
     listAdminUsers(),
     serializeAdminEvents(await Event.find().sort({ startsAt: -1, name: 1 }).lean()),
     listAttendance(),
     listForms(),
     listEvaluationResponses(),
+    // Added beside `responses` rather than replacing it: an evaluation-form
+    // response and a per-event feedback response are two different records
+    // written by two different screens, and the administrator screen has to be
+    // able to show both. Neither is derived from the other.
+    listEventFeedback(),
     RevokedIdentifier.find().sort({ revokedAt: -1 }).lean(),
   ]);
   return {
@@ -369,6 +564,7 @@ export async function adminState() {
     attendance,
     forms,
     responses,
+    feedback,
     revokedIdentifiers: revoked.map((entry) => entry._id.split(':')[0]),
   };
 }

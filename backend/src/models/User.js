@@ -27,6 +27,18 @@ const userSchema = new mongoose.Schema({
   email: { type: String, default: '', maxlength: 254 },
   emailNormalized: { type: String, default: '', index: true },
   isActive: { type: Boolean, default: true, index: true },
+  // Administrator-controlled access state. `approved` is the default and the
+  // value every account has once registration completes, so adding this field
+  // never locks anybody out and requires no migration.
+  //
+  // New sign-ups are activated automatically, so `pending` now only survives on
+  // historical documents. It is deliberately still honoured as "blocked" so a
+  // record written under the previous manual-approval policy cannot quietly
+  // become active. An administrator may still set `rejected` to block an
+  // account; that is never undone automatically.
+  approvalStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved', index: true },
+  approvalReviewedAt: { type: Date, default: null },
+  approvalReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   isStaff: { type: Boolean, default: false },
   isSuperuser: { type: Boolean, default: false },
   lastLogin: { type: Date, default: null },

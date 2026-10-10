@@ -55,14 +55,17 @@ const CompleteGoogleProfile: React.FC = () => {
       // Goes through the auth context so the new session also lands in React state.
       // The service alone would leave the route guards holding a null user, and
       // the redirect below would bounce the new account straight back to /login.
-      const user = await AuthService.completeGoogleProfile({
+      await AuthService.completeGoogleProfile({
         accountId: accountId.trim().toUpperCase(),
         department: department.trim(),
         name: name.trim(),
         phone: phone.trim(),
       });
       await refreshSession();
-      navigate(user.role === 'admin' ? '/admin/dashboard' : '/portal?view=dashboard', { replace: true });
+      // A new Google sign-up is activated on the server the moment it is
+      // created, so the person can use the app straight away. This route
+      // confirms that and then forwards to the dashboard.
+      navigate('/registration-complete', { replace: true });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'We could not create your account.');
       setIsLoading(false);
@@ -81,7 +84,7 @@ const CompleteGoogleProfile: React.FC = () => {
           <img src="/brand/sbo-logo.jpg" alt="College of Technologies Student Body Organization" className="mx-auto mb-4 h-16 w-16 rounded-full bg-white object-contain p-1 shadow-md ring-1 ring-slate-200" />
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-orange-600">COT Event Attendance</p>
           <h1 id="profile-title" className="auth-light-title">Complete your profile</h1>
-          <p className="auth-light-subtitle">Confirm your details so an administrator can recognise and approve your account.</p>
+          <p className="auth-light-subtitle">Confirm your details so your new Student account can be created.</p>
         </div>
 
         <div className="mb-6 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">

@@ -11,7 +11,7 @@ export const apiLimiter = rateLimit({
 
 export const loginLimiter = rateLimit({
   windowMs: env.loginFailureWindowSeconds * 1_000,
-  limit: Math.max(env.loginFailureLimit * 4, 20),
+  limit: Number(process.env.LOGIN_RATE_LIMIT) || Math.max(env.loginFailureLimit * 4, 20),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { detail: 'Too many login attempts. Try again shortly.' },
@@ -23,7 +23,7 @@ export const loginLimiter = rateLimit({
 // everyone out of Google sign-in long before it slowed down a real attack.
 export const googleAuthLimiter = rateLimit({
   windowMs: env.loginFailureWindowSeconds * 1_000,
-  limit: Math.max(env.loginFailureLimit * 12, 60),
+  limit: env.googleAuthRateLimit,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { detail: 'Too many sign-in attempts. Try again shortly.' },

@@ -14,7 +14,12 @@
     "backup": "node scripts/backup-mongodb.js",
     "restore": "node scripts/restore-mongodb.js",
     "seed": "node scripts/seed-demo.js",
-    "verify:migration": "node scripts/verify-migration.js"
+    "verify:migration": "node scripts/verify-migration.js",
+    "inspect:pending": "node scripts/inspect-pending-accounts.js",
+    "survey:databases": "node scripts/survey-databases.js",
+    "rollout:attendance-indexes": "node scripts/create-attendance-session-indexes.js",
+    "seed:tracking-test": "node scripts/seed-tracking-test-event.js",
+    "verify:https": "node scripts/verify-https-frontend.mjs"
   },
   "dependencies": {
     "connect-mongo": "^5.1.0",

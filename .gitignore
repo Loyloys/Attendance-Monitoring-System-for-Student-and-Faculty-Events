@@ -9,6 +9,27 @@ backend/node_modules/
 backend/backups/
 backend/.mongo-data/
 
+# Isolated browser-verification stack: its own mongod dbpath, service logs and
+# Playwright traces/screenshots. Purely local test scratch - never source, and it
+# must not be committed alongside the specs that produce it.
+# `.e2e/` also holds the mkcert TLS material (`.e2e/tls/`), so a private key and
+# a CA certificate can never be committed even by accident.
+.e2e/
+playwright-report/
+test-results/
+
+# Local browser-verification scratch, trace exports and staging builds.
+# Purely local test output - never source.
+.recovery/
+_e2e-artifacts-backup/
+_e2e-artifacts-inquiry/
+frontend/dist-staging/
+_extract-traces.ps1
+_list_files.txt
+_pkg.json
+_traces-summary.txt
+probe-admin-state.mjs
+
 # Editor/OS cruft. `.vite/` at the repo root is a stray cache directory: Vite's
 # real cache lives in frontend/node_modules/.vite and is rebuilt automatically.
 # `desktop.ini` is a Windows Explorer folder-view file, never project source.

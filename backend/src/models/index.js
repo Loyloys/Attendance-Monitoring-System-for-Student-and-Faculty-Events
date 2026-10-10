@@ -2,8 +2,10 @@ import User from './User.js';
 import UserProfile from './UserProfile.js';
 import AuditLog from './AuditLog.js';
 import Event from './Event.js';
+import Venue from './Venue.js';
 import EventRegistration from './EventRegistration.js';
 import EventAttendance from './EventAttendance.js';
+import AttendanceSession from './AttendanceSession.js';
 import EventFeedback from './EventFeedback.js';
 import EventCertificate from './EventCertificate.js';
 import AttendanceCode from './AttendanceCode.js';
@@ -20,8 +22,10 @@ export {
   UserProfile,
   AuditLog,
   Event,
+  Venue,
   EventRegistration,
   EventAttendance,
+  AttendanceSession,
   EventFeedback,
   EventCertificate,
   AttendanceCode,

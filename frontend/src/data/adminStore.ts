@@ -3,8 +3,15 @@ import { eventApi } from './eventApi';
 
 export type AdminRole = 'Admin' | 'Faculty' | 'Student';
 export type AccountStatus = 'Active' | 'Inactive';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type EventAudience = 'All' | 'Student' | 'Faculty';
-export type EventStatus = 'Pending' | 'Approved' | 'Ongoing' | 'Completed' | 'Cancelled';
+/**
+ * Display statuses only. The STORED statuses are just `published` and
+ * `cancelled` (backend EVENT_STATUSES); `Approved`, `Ongoing` and `Completed`
+ * are derived by the server from the event's own clock. `Pending` was removed
+ * because no event can hold it, and offering it published the event silently.
+ */
+export type EventStatus = 'Approved' | 'Ongoing' | 'Completed' | 'Cancelled';
 export type AttendanceStatus = 'Present' | 'Late' | 'Absent';
 export type EventOrigin = 'Admin' | 'Student organization' | 'Faculty';
 
@@ -17,11 +24,54 @@ export interface AdminUserAccount {
   role: AdminRole;
   department: string;
   status: AccountStatus;
+  /** Administrator-controlled access state. New registrations are `approved` at once. */
+  approvalStatus: ApprovalStatus;
+  signedUpViaGoogle?: boolean;
   createdAt: string;
+  /**
+   * How many events this person has a CURRENT (`registered`) event registration
+   * for. Zero means "account created, no event registrations", which is a
+   * different thing from the account being inactive.
+   */
+  eventRegistrationCount?: number;
+  /** Attendance records, counted separately: registering is not attending. */
+  attendanceCount?: number;
   year?: number;
   passwordHash?: string;
   legacyRole?: AdminRole;
   legacyId?: string;
+}
+
+/**
+ * One user's event registrations, with attendance reported independently.
+ *
+ * `attendanceStatus` is null when no attendance record exists for that event,
+ * which is deliberately different from `absent`: "registered but nothing recorded"
+ * and "marked absent" are different states and must not be conflated.
+ */
+export interface AdminUserRegistration {
+  eventId: string;
+  eventName: string;
+  eventDate: string | null;
+  eventStatus: string | null;
+  registrationStatus: 'registered' | 'cancelled';
+  registeredAt: string;
+  attendanceStatus: AttendanceStatus | null;
+  checkedInAt: string | null;
+}
+
+export interface AdminUserRegistrationDetail {
+  account: {
+    id: string;
+    name: string;
+    email: string;
+    role: 'student' | 'faculty' | 'admin';
+    department: string;
+    status: AccountStatus;
+    approvalStatus: ApprovalStatus;
+    createdAt: string;
+  };
+  registrations: AdminUserRegistration[];
 }
 
 export interface AdminEvent {
@@ -40,15 +90,43 @@ export interface AdminEvent {
   identifierRange: string;
   cutoff: string;
   status: EventStatus;
+  /**
+   * Whether Students must register before checking in. Reported under its own
+   * name so the editor can show and edit it as the distinct question it is.
+   */
+  registrationRequired: boolean;
+  /** No deadline when null: registration, if required, stays open until start. */
+  registrationDeadline: string | null;
+  /** Whether this event counts toward a person's attendance percentage. */
   requiredForAttendance: boolean;
-  createdAt: string;
+  /**
+   * Null when the stored record has no usable creation timestamp. That is a real
+   * state, not a placeholder: the server reports "unknown" rather than inventing
+   * a date, so a malformed record is visible instead of failing the whole list.
+   */
+  createdAt: string | null;
   organizerId?: string;
-  latitude?: number;
-  longitude?: number;
-  radiusMeters?: number;
-  registrationRequired?: boolean;
+  /**
+   * GST004: the venue geofence, named exactly as the server sends it.
+   *
+   * These were previously declared as `latitude` / `longitude` / `radiusMeters`,
+   * which is the naming `SavedVenue` uses but NOT the naming an event uses, so
+   * the three fields were dead: nothing populated them and nothing read them.
+   * The editor's `openEdit` therefore had no typed way to reach a saved event's
+   * stored fence, which is how reopening a geofenced event showed a blank zone.
+   *
+   * `undefined` (blank) is a real state, not a placeholder: it means the event
+   * has no geofence configured, and must stay distinguishable from 0, which is a
+   * genuine coordinate at null island. See Workspace.tsx `openEdit`.
+   */
+  venueLatitude?: number;
+  venueLongitude?: number;
+  venueRadiusMeters?: number;
   targetPrograms?: string[];
   qrExpiresAt?: string;
+  /** GST006: required in-zone minutes. Null/undefined means "not configured" - it
+   * is never backfilled, so existing events keep tracking switched off. */
+  requiredAttendanceMinutes?: number | null;
   checkInOpensAt?: string;
   minStayMinutes?: number;
   checkOutRequired?: boolean;
@@ -71,6 +149,27 @@ export interface AdminAttendanceRecord {
   minutesStayed?: number;
   requiredMinutes?: number;
   eventDate?: string;
+
+  // --- Duration-based qualification (GST008) ------------------------------
+  //
+  // SEPARATE from `status` on purpose. `status` is what the scan recorded and is
+  // never rewritten by the rule; `qualification` is whether the required
+  // verified in-zone time has been served.
+  //
+  // `undefined` means "this event requires no verified duration", which is NOT
+  // the same as 'Pending'. The table must say "Not required" rather than show an
+  // unqualified record, so the two can never be confused.
+  qualification?: 'Pending' | 'Present' | 'Late' | 'Absent';
+  /** Why the record is not qualified, when there is a reason to give. */
+  qualificationReason?: string;
+  /** Server-owned verified in-zone seconds. Shown, never recomputed. */
+  verifiedSeconds?: number;
+  requiredAttendanceMinutes?: number;
+  locationState?: 'inside' | 'outside';
+  lastLocationAt?: string;
+  trackingState?: 'tracking' | 'paused' | 'ended';
+  /** A person decided this row; the automatic rule must never overwrite it. */
+  manualOverride?: boolean;
 }
 
 export interface EvaluationQuestion {
@@ -101,6 +200,29 @@ export interface EvaluationResponse {
   submittedAt: string;
 }
 
+/**
+ * One per-event feedback response a student or faculty member submitted after
+ * attendance (`POST /api/events/:id/feedback/`).
+ *
+ * A SEPARATE RECORD FROM `EvaluationResponse`. The evaluation form and its
+ * compiled answers are one mechanism; this is the rating-and-comments the
+ * Portal's "Event feedback" screen posts, which historically no administrator
+ * route could read. Both are exposed because attendees can do both.
+ *
+ * Attributed, like an evaluation response: the public account id, the display
+ * name and the role. The person's internal database id is never published.
+ */
+export interface EventFeedbackRecord {
+  id: string;
+  eventId: string;
+  attendeeId: string;
+  attendeeName: string;
+  role: 'Student' | 'Faculty';
+  rating: number;
+  comments: string;
+  submittedAt: string;
+}
+
 export interface AdminState {
   version: 1;
   users: AdminUserAccount[];
@@ -108,6 +230,7 @@ export interface AdminState {
   attendance: AdminAttendanceRecord[];
   forms: EvaluationForm[];
   responses: EvaluationResponse[];
+  feedback: EventFeedbackRecord[];
   revokedIdentifiers: string[];
 }
 
@@ -118,6 +241,7 @@ const emptyState: AdminState = {
   attendance: [],
   forms: [],
   responses: [],
+  feedback: [],
   revokedIdentifiers: [],
 };
 
@@ -197,7 +321,10 @@ export const getAttendanceCountsWithExpected = (eventId: string, target: AdminSt
 
 export const getAttendancePercentage = (personId: string, role: 'Student' | 'Faculty', target: AdminState = state) => {
   const person = target.users.find(user => user.id === personId || user.legacyId === personId);
-  const requiredEvents = target.events.filter(event => event.requiredForAttendance && event.status !== 'Pending' && event.status !== 'Cancelled' && (event.audience === 'All' || event.audience === role) && (!person || eventCoversDepartment(event.department, person.department)));
+  // `Pending` is no longer excluded because it can no longer occur: the stored
+  // statuses are only published/cancelled and the rest are derived. Cancelled
+  // events are still excluded, since a cancelled event is not attendance-bearing.
+  const requiredEvents = target.events.filter(event => event.requiredForAttendance && event.status !== 'Cancelled' && (event.audience === 'All' || event.audience === role) && (!person || eventCoversDepartment(event.department, person.department)));
   if (!requiredEvents.length) return 0;
   const attended = requiredEvents.filter(event => target.attendance.some(record => record.eventId === event.id && record.personId === personId && (record.status === 'Present' || record.status === 'Late'))).length;
   return Math.round((attended / requiredEvents.length) * 100);
@@ -223,7 +350,9 @@ export const reportRows = (filters: { eventId?: string; department?: string; sta
 };
 
 
-export async function addUser(input: Omit<AdminUserAccount, 'id' | 'createdAt' | 'status' | 'legacyRole'> & { id?: string; status?: AccountStatus }) {
+// `approvalStatus` is excluded: an administrator-created account is approved by
+// the act of creating it. Only Google self-registrations arrive as `pending`.
+export async function addUser(input: Omit<AdminUserAccount, 'id' | 'createdAt' | 'status' | 'legacyRole' | 'approvalStatus' | 'signedUpViaGoogle'> & { id?: string; status?: AccountStatus }) {
   if (!input.id) throw new Error('Account ID is required.');
   const created = await eventApi.createAdminUser({
     ...input,
@@ -232,6 +361,28 @@ export async function addUser(input: Omit<AdminUserAccount, 'id' | 'createdAt' |
   });
   await refreshAdminState();
   return created;
+}
+
+/**
+ * How this account is described on the User Management screen.
+ *
+ * Account creation and event registration are separate facts and are labelled
+ * separately. An active account with no registrations is a normal state, not a
+ * problem, so it is never presented as if something were missing.
+ */
+export const eventParticipationLabel = (user: AdminUserAccount) => {
+  const count = user.eventRegistrationCount ?? 0;
+  if (count === 0) return 'Account created - no event registrations';
+  return `Registered for ${count} event${count === 1 ? '' : 's'}`;
+};
+
+/**
+ * Registrations for one user. Loaded on demand by the administrator screen
+ * rather than being part of the shared state, so it is never fetched for
+ * anyone who cannot already administer accounts.
+ */
+export async function loadUserRegistrations(id: string) {
+  return eventApi.adminUserRegistrations(id);
 }
 
 export async function updateUser(id: string, patch: Partial<Omit<AdminUserAccount, 'createdAt' | 'legacyRole'>>) {

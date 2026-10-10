@@ -1,0 +1,22 @@
+{
+  // The Playwright specs run in Node, not in the browser bundle, so they are
+  // kept out of `tsconfig.app.json` (whose `include` is `src` only). They get
+  // their own project because they need Node globals (`Buffer`, `process`) and
+  // the `@playwright/test` types, neither of which the app build expects.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["./**/*.ts", "../playwright.config.ts"]
+}

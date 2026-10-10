@@ -4,7 +4,7 @@ import { env } from '../config/env.js';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 function setCsrfCookie(response, token) {
-  response.cookie('csrftoken', token, {
+  response.cookie(env.csrfCookieName, token, {
     httpOnly: false,
     sameSite: 'lax',
     secure: env.secureCookies,
@@ -26,7 +26,7 @@ export function rotateCsrfToken(request, response) {
 
 export function csrfProtection(request, response, next) {
   if (SAFE_METHODS.has(request.method)) return next();
-  const cookieToken = request.cookies?.csrftoken;
+  const cookieToken = request.cookies?.[env.csrfCookieName];
   const headerToken = request.get('x-csrftoken');
   const sessionToken = request.session?.csrfToken;
   if (!cookieToken || !headerToken || !sessionToken || cookieToken !== headerToken || headerToken !== sessionToken) {

@@ -1,14 +1,86 @@
 import type {
   AttendanceConfirmation,
   AttendanceMethod,
+  AttendanceSession,
   AuthUser,
   EventRecord,
   MonitoredEventAttendance,
+  MonitoredSession,
   PersonalAttendanceData,
   UserRole,
 } from '../types/eventAttendance';
-import type { AdminEvent, AdminState, AdminUserAccount, AdminAttendanceRecord, AttendanceStatus, EvaluationForm } from './adminStore';
+import type { AdminEvent, AdminState, AdminUserAccount, AdminUserRegistrationDetail, AdminAttendanceRecord, AttendanceStatus, EvaluationForm } from './adminStore';
 import type { LocationFix } from '../utils/eventQr';
+
+/**
+ * GST006: how usable the current code actually is right now.
+ *
+ * `not_issued`  nothing has been generated for this event yet
+ * `not_yet_open` issued, but the check-in window has not opened (valid: the code
+ *               is minted ahead of time and simply is not scannable yet)
+ * `usable_now`  scannable at this moment
+ * `window_closed` the window has closed
+ * `expired` / `revoked` / `not_published` the code can no longer be scanned
+ */
+export type EventQrUsability =
+  | 'not_issued'
+  | 'not_yet_open'
+  | 'usable_now'
+  | 'window_closed'
+  | 'expired'
+  | 'revoked'
+  | 'not_published';
+
+/** Plain wording for each state, so the panel never invents its own verdict. */
+export const QR_USABILITY_TEXT: Record<EventQrUsability, string> = {
+  not_issued: 'No code has been generated yet.',
+  not_yet_open: 'Ready. Scans are accepted once check-in opens.',
+  usable_now: 'Scannable now.',
+  window_closed: 'Check-in has closed. Scans are refused.',
+  expired: 'This code has expired. Generate a new one.',
+  revoked: 'This code was replaced. Generate a new one.',
+  not_published: 'This event is not published, so scans are refused.',
+};
+
+export interface EventQr {
+  /** The full scannable payload. Only ever returned to an authorized caller. */
+  token: string;
+  eventId: string;
+  issuedAt: string;
+  expiresAt: string;
+  checkInOpensAt: string;
+  checkInClosesAt: string;
+  usability: EventQrUsability;
+  /** True only when this response actually minted the code. */
+  created?: boolean;
+  /** True only for an explicit rotation. */
+  rotated?: boolean;
+}
+
+/** Status without the token, safe for monitoring views. */
+export interface EventQrStatus {
+  issued: boolean;
+  eventId: string;
+  usability: EventQrUsability;
+  issuedAt?: string;
+  expiresAt?: string;
+  checkInOpensAt?: string;
+  checkInClosesAt?: string;
+}
+
+/**
+ * Outcome of the automatic code issuance that follows creating a QR event.
+ *
+ * It is reported separately from the event itself so a failure cannot lose the
+ * event: the administrator is told the event was created and can simply retry the
+ * code from its own panel.
+ */
+export type EventQrIssuance =
+  | { ok: true; qr: EventQr }
+  | { ok: false; reason: string };
+
+/** The admin event-create response: the event fields, plus the issuance outcome. */
+export type AdminEventCreated = AdminEvent & { qr?: EventQrIssuance };
 
 export type AdminEventRequest = {
   name: string;
@@ -21,11 +93,54 @@ export type AdminEventRequest = {
   method: 'qr' | 'barcode' | 'rfid';
   cutoff: string;
   status: 'published' | 'cancelled';
+  /**
+   * Whether students must REGISTER before checking in. Sent and received under
+   * its own name; it used to be conflated with `requiredForAttendance` below,
+   * which made a "counts toward a percentage" checkbox decide registration.
+   */
+  registrationRequired: boolean;
+  /** Optional registration deadline. `null`/absent means no deadline is set. */
+  registrationDeadline?: string | null;
+  /** Whether this event counts toward a person's attendance percentage. */
   requiredForAttendance: boolean;
+  /** GST006: required in-zone minutes. Null means "not configured yet". */
+  requiredAttendanceMinutes?: number | null;
   /** GST004: optional venue geofence. All three or none. */
   venueLatitude?: number;
   venueLongitude?: number;
   venueRadiusMeters?: number;
+};
+
+/**
+ * A saved venue: a reusable geofence template an Administrator can apply while
+ * scheduling an event.
+ *
+ * The snake_case payload matches the rest of this file's admin surfaces, and
+ * `default_required_attendance_minutes` is named "default" throughout so no
+ * caller can mistake it for a value the server enforces on an existing event.
+ * It is only ever a starting value for the form field.
+ */
+export type SavedVenue = {
+  id: string;
+  name: string;
+  /** Free text, shown next to the venue so approximate coordinates stay labelled as such. */
+  note: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  default_required_attendance_minutes: number | null;
+  isolated_test_record: boolean;
+  created_at: string;
+};
+
+export type SavedVenueRequest = {
+  name: string;
+  note?: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  defaultRequiredAttendanceMinutes?: number | null;
+  isolatedTestRecord?: boolean;
 };
 
 const API_ROOT = '/api';
@@ -44,11 +159,76 @@ export class ApiError extends Error {
 }
 
 export type GooglePrefill = { name: string; email: string; picture: string };
+export type EnvironmentInfo = {
+  environment: string;
+  /** Text the server asks us to show on every screen. Empty on the normal app. */
+  deploymentLabel: string;
+  /** The CSRF cookie name THIS instance issues, which a parallel instance may rename. */
+  csrfCookieName: string;
+};
+
+/** Used before (or instead of) a successful fetch, so behaviour stays predictable. */
+const UNKNOWN: EnvironmentInfo = {
+  environment: 'unknown',
+  // A missing backend must never look like the normal app. Say so out loud.
+  deploymentLabel: 'Environment unknown - the backend could not be reached.',
+  csrfCookieName: 'csrftoken',
+};
+
+let current: EnvironmentInfo | null = null;
+let pending: Promise<EnvironmentInfo> | null = null;
+
+/**
+ * The environment banner and the CSRF cookie name both come from the server,
+ * because both are properties of the backend instance the proxy happens to be
+ * pointing at. Fetched once and cached for the life of the page.
+ */
+export function loadEnvironment(): Promise<EnvironmentInfo> {
+  if (current) return Promise.resolve(current);
+  if (pending) return pending;
+  pending = fetch('/api/health/', { credentials: 'include' })
+    .then((response) => (response.ok ? response.json() : Promise.reject(new Error('unreachable'))))
+    .then((payload: Partial<EnvironmentInfo>) => {
+      current = {
+        environment: payload.environment || 'unknown',
+        deploymentLabel: typeof payload.deploymentLabel === 'string' ? payload.deploymentLabel : '',
+        csrfCookieName: payload.csrfCookieName || 'csrftoken',
+      };
+      return current;
+    })
+    .catch(() => {
+      current = UNKNOWN;
+      return current;
+    });
+  return pending;
+}
+
+/** Synchronous view, for code paths that cannot await (cookie reads, render). */
+export function environmentSnapshot(): EnvironmentInfo {
+  return current ?? UNKNOWN;
+}
+
 export type GoogleAuthResult =
   | { status: 'signed_in'; user: AuthUser }
   | { status: 'profile_incomplete'; prefill: GooglePrefill };
-export type GoogleSession = { enabled: boolean; clientId: string | null; nonce: string | null; domainRestricted?: boolean };
-export type GoogleConfig = { enabled: boolean; clientId: string | null; domainRestricted?: boolean };
+/**
+ * What the server actually enforces, so the card never claims more than is true.
+ * `institutional` is the only mode that is school-approved; `development_test`
+ * is a local, explicitly-named testing policy and must be labelled as such.
+ */
+export type GoogleSignInMode = 'unavailable' | 'open' | 'institutional' | 'development_test';
+export type GoogleSession = {
+  enabled: boolean;
+  clientId: string | null;
+  nonce: string | null;
+  mode?: GoogleSignInMode;
+  policy?: string;
+  domainRestricted?: boolean;
+  developmentTesting?: boolean;
+  openRegistration?: boolean;
+  schoolApproved?: boolean;
+};
+export type GoogleConfig = Omit<GoogleSession, 'nonce'>;
 
 function readCookie(name: string) {
   return document.cookie.split(';').map(part => part.trim())
@@ -57,11 +237,13 @@ function readCookie(name: string) {
 
 function syncCsrfCookie() {
   // Mirror the cookie exactly instead of only ever overwriting it. On logout the
-  // server destroys the session and clears the csrftoken cookie, so a token held
-  // in this module has to be discarded too. Keeping it made the next sign-in
+  // server destroys the session and clears the CSRF cookie, so a token held in
+  // this module has to be discarded too. Keeping it made the next sign-in
   // replay a token that no longer matched the new server session, which failed
   // with "CSRF Failed: CSRF token missing or invalid." until the page reloaded.
-  csrfToken = readCookie('csrftoken');
+  // The NAME is read from the server too, because a parallel test instance may
+  // issue a differently named cookie on this same origin.
+  csrfToken = readCookie(environmentSnapshot().csrfCookieName);
 }
 
 function isCsrfFailure(payload: unknown) {
@@ -95,6 +277,9 @@ function unreachableBackend(status: number) {
 }
 
 async function ensureCsrfToken() {
+  // Learn the CSRF cookie NAME this backend uses before reading the jar, so a
+  // renamed test-instance cookie is picked up instead of the default.
+  await loadEnvironment();
   syncCsrfCookie();
   if (csrfToken) return csrfToken;
   const response = await fetch(`${API_ROOT}/auth/csrf/`, { credentials: 'include' });
@@ -226,7 +411,7 @@ export const eventApi = {
     return requestJson<AdminEvent[]>('/admin/events/');
   },
   async createAdminEvent(values: AdminEventRequest) {
-    return requestJson<AdminEvent>('/admin/events/', {
+    return requestJson<AdminEventCreated>('/admin/events/', {
       method: 'POST',
       body: JSON.stringify(values),
     });
@@ -242,6 +427,32 @@ export const eventApi = {
       method: 'POST',
     });
   },
+  /**
+   * Saved venues are read for the create/edit event form only. Applying one is
+   * a pure front-end copy into the form fields - the event stores its own
+   * numbers, so later edits to a saved venue never reach an existing event.
+   */
+  savedVenues() {
+    return requestJson<SavedVenue[]>('/admin/venues/');
+  },
+  createSavedVenue(values: SavedVenueRequest) {
+    return requestJson<SavedVenue>('/admin/venues/', {
+      method: 'POST',
+      body: JSON.stringify(values),
+    });
+  },
+  /**
+   * The server's published configuration, including the location-quality policy
+   * it actually enforces. Read so the browser never hard-codes a second,
+   * potentially contradictory accuracy threshold.
+   */
+  health() {
+    return requestJson<{
+      status: string;
+      deploymentLabel?: string;
+      locationPolicy?: { maxAccuracyMeters: number; maxAgeSeconds: number; slackMeters: number };
+    }>('/health/');
+  },
   async importLegacyBrowserState(payload: AdminState) {
     return requestJson<{ archived: boolean; duplicate: boolean; credentialsRemoved: boolean; archivedAt: string }>('/admin/import-legacy-browser/', {
       method: 'POST',
@@ -251,7 +462,7 @@ export const eventApi = {
   adminState() {
     return requestJson<AdminState>('/admin/state/');
   },
-  async createAdminUser(values: Omit<AdminUserAccount, 'createdAt' | 'status'> & { status?: 'Active' | 'Inactive' }) {
+  async createAdminUser(values: Omit<AdminUserAccount, 'createdAt' | 'status' | 'approvalStatus' | 'signedUpViaGoogle'> & { status?: 'Active' | 'Inactive' }) {
     return requestJson<AdminUserAccount>('/admin/users/', {
       method: 'POST',
       body: JSON.stringify({ ...values, password: values.passwordHash }),
@@ -265,6 +476,35 @@ export const eventApi = {
   },
   async deleteAdminUser(id: string) {
     await requestJson<void>(`/admin/users/${encodeURIComponent(id)}/`, { method: 'DELETE' });
+  },
+  /** Per-user event registrations. Administrator-only on the server. */
+  adminUserRegistrations(id: string) {
+    return requestJson<AdminUserRegistrationDetail>(`/admin/users/${encodeURIComponent(id)}/registrations/`);
+  },
+
+  // ---- GST006 attendance tracking -------------------------------------------
+  // The session is server-owned: the browser sends observations and renders what
+  // comes back. It never accumulates time locally.
+
+  /** Starts (or resumes) tracking after a verified scan. */
+  startAttendanceSession(values: { token?: string; eventId?: string; method?: string; location?: LocationFix }) {
+    return requestJson<AttendanceSession>('/attendance/session/', { method: 'POST', body: JSON.stringify(values) });
+  },
+  /** Sends one location observation; the server decides what to credit. */
+  updateAttendanceSession(id: string, location: LocationFix) {
+    return requestJson<AttendanceSession>(`/attendance/session/${encodeURIComponent(id)}/`, { method: 'PATCH', body: JSON.stringify({ location }) });
+  },
+  /** Explicit, final checkout. The session cannot be restarted. */
+  checkoutAttendanceSession(id: string) {
+    return requestJson<AttendanceSession>(`/attendance/session/${encodeURIComponent(id)}/checkout/`, { method: 'POST' });
+  },
+  /** Restores the session after a refresh or reconnect. Null when none exists. */
+  myAttendanceSession(eventId: string) {
+    return requestJson<{ session: AttendanceSession | null }>(`/attendance/session/event/${encodeURIComponent(eventId)}/`);
+  },
+  /** Administrator / assigned-Faculty monitoring. */
+  monitoredAttendanceSessions(eventId: string) {
+    return requestJson<{ sessions: MonitoredSession[] }>(`/attendance/sessions/event/${encodeURIComponent(eventId)}/`);
   },
   async createAdminAttendance(values: Pick<AdminAttendanceRecord, 'eventId' | 'personId' | 'status'> & { note?: string }) {
     return requestJson<AdminAttendanceRecord>('/admin/attendance/', {
@@ -299,11 +539,37 @@ export const eventApi = {
       { method: 'POST' },
     );
   },
+  /**
+   * GST006 event QR credential.
+   *
+   * `usability` is the server's own verdict, so the panel never has to re-derive
+   * "is this scannable yet?" from two timestamps and risk disagreeing with the
+   * rule that actually refuses a scan.
+   */
+  adminEventQr(eventId: string) {
+    return requestJson<EventQr>(`/admin/events/${encodeURIComponent(eventId)}/qr/`);
+  },
+  /**
+   * Explicit rotation. The previous code stops working immediately, so this is
+   * deliberately NOT what viewing or exporting a PNG/PDF does.
+   */
+  regenerateAdminEventQr(eventId: string) {
+    return requestJson<EventQr>(`/admin/events/${encodeURIComponent(eventId)}/qr/`, { method: 'POST' });
+  },
+  adminEventQrStatus(eventId: string) {
+    return requestJson<EventQrStatus>(`/admin/events/${encodeURIComponent(eventId)}/qr/status/`);
+  },
   async createCheckInCode(eventId: string) {
     return requestJson<{ token: string; expiresAt: string }>(
       `/events/${eventId}/check-in-code/`,
       { method: 'POST' },
     );
+  },
+  /**
+   * GST006: reads the CURRENT code for an assigned event without rotating it.
+   */
+  eventCheckInCode(eventId: string) {
+    return requestJson<EventQr>(`/events/${encodeURIComponent(eventId)}/check-in-code/`);
   },
   scan(input: {
     token?: string;

@@ -1,10 +1,11 @@
-﻿import React, { useCallback, useEffect, useState } from 'react';
+﻿﻿import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
   Eye,
   EyeOff,
+  FlaskConical,
   Info,
   Loader2,
   LockKeyhole,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AuthService } from '../data/authService';
+import type { GoogleSignInMode } from '../data/eventApi';
 import type { UserRole } from '../types/eventAttendance';
 import GoogleSignInButton from './GoogleSignInButton';
 
@@ -25,7 +27,7 @@ const ACCOUNTS: Record<UserRole, { title: string; blurb: string; identifierLabel
     blurb: 'Sign in to see your events and record your own attendance.',
     identifierLabel: 'Student ID or email',
     identifierHint: 'e.g. STU001 or you@institution.edu',
-    signupNote: 'New students can create an account with Google. Your student number is checked against the official list.',
+    signupNote: 'New students can create an account with Google. Your Google account is verified, then your student number is recorded with your profile.',
   },
   faculty: {
     title: 'Faculty Sign In',
@@ -61,6 +63,10 @@ const Login: React.FC = () => {
   const [tab, setTab] = useState<Tab>('signin');
   const [google, setGoogle] = useState<{ clientId: string; nonce: string } | null>(null);
   const [googleState, setGoogleState] = useState<'idle' | 'working' | 'unavailable'>('idle');
+  // What the server is actually enforcing. The card is labelled from this value
+  // alone, so it can never describe the private test list as an institutional
+  // restriction, or vice versa.
+  const [googleMode, setGoogleMode] = useState<GoogleSignInMode>('unavailable');
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
@@ -74,6 +80,7 @@ const Login: React.FC = () => {
     AuthService.googleConfig()
       .then(config => {
         if (!active) return;
+        setGoogleMode(config.mode ?? (config.enabled ? 'institutional' : 'unavailable'));
         if (!config.enabled) {
           setGoogleState('unavailable');
           return;
@@ -83,6 +90,7 @@ const Login: React.FC = () => {
             if (active) setGoogleState('unavailable');
             return;
           }
+          if (session.mode) setGoogleMode(session.mode);
           const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || session.clientId;
           if (!clientId) {
             setGoogleState('unavailable');
@@ -112,6 +120,9 @@ const Login: React.FC = () => {
       // holding a null user and send the person back to /login.
       const result = await loginWithGoogle(credential, account);
       if (result.status === 'signed_in') {
+        // Every account that exists is usable immediately: a completed Google
+        // registration is activated by the server, and an administrator-blocked
+        // or deactivated account is refused by it.
         goToDashboard(result.user.role);
         return;
       }
@@ -185,8 +196,8 @@ const Login: React.FC = () => {
         {/* Google sign-in: the primary no-typing path. */}
         <div className="mb-6">
           {google ? (
-            <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
-              <div className="w-full sm:w-auto">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-full">
                 <GoogleSignInButton
                   clientId={google.clientId}
                   nonce={google.nonce}
@@ -195,21 +206,42 @@ const Login: React.FC = () => {
                   onError={handleGoogleError}
                 />
               </div>
-              <p className="text-center text-xs font-medium leading-5 text-slate-600 sm:text-left">
-                Use your institutional Google account.
+              {/*
+                Stacked under the button rather than beside it. Google renders
+                the button at a fixed width (up to 400px), so a side-by-side
+                layout squeezed this text to its min-content width inside the
+                card and pushed it outside. Stacking has no width to negotiate.
+              */}
+              <p className="w-full text-center text-xs font-medium leading-5 text-slate-600">
+                {googleMode === 'development_test'
+                  ? "Sign in with the Google account on this server's private test list."
+                  : 'Continue with Google to sign in or create an account.'}
               </p>
             </div>
           ) : (
             <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center text-xs font-semibold leading-5 text-amber-800">
               {googleState === 'unavailable'
-                ? 'Google sign-in is not configured on this server yet. Use your ID and password below.'
-                : 'Preparing Google sign-inâ€¦'}
+                ? 'Google sign-in is not available on this server yet. Use your ID and password below.'
+                : 'Preparing Google sign-in...'}
+            </p>
+          )}
+
+          {/*
+            Stated as its own visible banner whenever the private test policy is
+            the one being enforced, so nobody can mistake it for an approved
+            school configuration.
+          */}
+          {google && googleMode === 'development_test' && (
+            <p role="status" className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-900">
+              <FlaskConical size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              Development testing only - not school-approved. Only the specific Google accounts listed on
+              this server may sign in. Password sign-in below works normally.
             </p>
           )}
 
           {googleState === 'working' && (
             <p role="status" className="mt-3 flex items-center justify-center gap-2 text-xs font-semibold text-orange-700">
-              <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Verifying with Googleâ€¦
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Verifying with Google...
             </p>
           )}
         </div>
@@ -318,7 +350,7 @@ const Login: React.FC = () => {
             </p>
 
             <button type="submit" disabled={isLoading} className="auth-light-button">
-              {isLoading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Signing inâ€¦</> : <><LogIn size={18} aria-hidden="true" /> Sign In</>}
+              {isLoading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Signing in...</> : <><LogIn size={18} aria-hidden="true" /> Sign In</>}
             </button>
           </form>
         ) : (
@@ -331,7 +363,7 @@ const Login: React.FC = () => {
             <ul className="space-y-2 text-xs font-medium leading-5 text-slate-600">
               <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />Your Google password is never seen by COT.</li>
               <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />We never request Gmail, Drive or contacts access.</li>
-              <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />New accounts start as Student; an administrator approves any change.</li>
+              <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />New accounts are active as Student straight away; an administrator assigns any role change.</li>
             </ul>
             <button
               type="button"

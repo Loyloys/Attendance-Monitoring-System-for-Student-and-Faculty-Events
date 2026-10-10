@@ -88,6 +88,213 @@ test('legacy browser administrator data is archived once without replacing migra
   assert.equal(snapshot.payload.users[0].passwordHash, undefined);
 });
 
+test('an account with no event registrations is reported as created, not as attending', async () => {
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  await createUser({ username: 'ADM001', role: 'admin' });
+  await createUser({ username: 'STU001', role: 'student' });
+  await createEvent(faculty.user);
+  const { agent } = await login('ADM001');
+
+  const state = await agent.get('/api/admin/state/');
+  assert.equal(state.status, 200);
+  const student = state.body.users.find((user) => user.id === 'STU001');
+  // Having an account is not having registered for anything.
+  assert.equal(student.eventRegistrationCount, 0);
+  assert.equal(student.attendanceCount, 0);
+
+  // The detail view states the same thing explicitly.
+  const detail = await agent.get('/api/admin/users/STU001/registrations/');
+  assert.equal(detail.status, 200, JSON.stringify(detail.body));
+  assert.deepEqual(detail.body.registrations, []);
+});
+
+test('registering for an event is recorded separately from attendance', async () => {
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  const student = await createUser({ username: 'STU001', role: 'student' });
+  await createUser({ username: 'ADM001', role: 'admin' });
+  const now = Date.now();
+  const event = await createEvent(faculty.user, {
+    registrationRequired: true,
+    // Registration is only open while the event is upcoming, so this one has to
+    // start in the future. The existing deadline/capacity rules are untouched.
+    startsAt: new Date(now + 7_200_000),
+    endsAt: new Date(now + 10_800_000),
+    checkInOpensAt: new Date(now + 7_200_000),
+    checkInClosesAt: new Date(now + 10_800_000),
+    lateCutoff: new Date(now + 7_800_000),
+  });
+  const { agent: studentClient } = await login('STU001');
+
+  // Register for the event. This creates a REGISTRATION only.
+  const registered = await send(studentClient, 'post', `/api/events/${event._id}/registrations/`, {});
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+
+  const { agent: adminClient } = await login('ADM001');
+  const detail = await adminClient.get('/api/admin/users/STU001/registrations/');
+  assert.equal(detail.status, 200);
+  const row = detail.body.registrations.find((item) => item.eventId === event._id);
+  assert.equal(row.registrationStatus, 'registered');
+  assert.ok(row.registeredAt, 'a registration must record when it happened');
+  // The key assertion: registered is NOT present. Nothing was scanned.
+  assert.equal(row.attendanceStatus, null, 'registering must never imply attendance');
+  assert.equal(row.checkedInAt, null);
+
+  // The count reflects the registration, and attendance is still zero.
+  const state = await adminClient.get('/api/admin/state/');
+  const listed = state.body.users.find((user) => user.id === 'STU001');
+  assert.equal(listed.eventRegistrationCount, 1);
+  assert.equal(listed.attendanceCount, 0);
+
+  // Once attendance genuinely exists it is reported, and still separately.
+  await send(adminClient, 'post', '/api/admin/attendance/', {
+    eventId: event._id, personId: 'STU001', status: 'Present', source: 'Manual addition',
+  });
+  const after = await adminClient.get('/api/admin/users/STU001/registrations/');
+  const updated = after.body.registrations.find((item) => item.eventId === event._id);
+  assert.equal(updated.attendanceStatus, 'Present');
+  assert.equal(updated.registrationStatus, 'registered');
+  assert.ok(updated.checkedInAt);
+  // The role is genuinely used, so silence it for the lint rule.
+  assert.ok(student.user);
+});
+
+test('per-user registrations are administrator-only and never exposed to students', async () => {
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  await createUser({ username: 'ADM001', role: 'admin' });
+  await createUser({ username: 'STU001', role: 'student' });
+  await createEvent(faculty.user);
+  const { agent: studentClient } = await login('STU001');
+
+  // A student cannot read anyone else's registration list, including their own.
+  const forbidden = await studentClient.get('/api/admin/users/STU001/registrations/');
+  assert.equal(forbidden.status, 403, JSON.stringify(forbidden.body));
+
+  // Nor can they reach another student's, or the list at all.
+  assert.equal((await studentClient.get('/api/admin/users/ADM001/registrations/')).status, 403);
+  assert.equal((await studentClient.get('/api/admin/users/')).status, 403);
+
+  // Unauthenticated is refused outright.
+  assert.equal((await request().get('/api/admin/users/STU001/registrations/')).status, 401);
+
+  // An administrator can.
+  const { agent: adminClient } = await login('ADM001');
+  assert.equal((await adminClient.get('/api/admin/users/STU001/registrations/')).status, 200);
+});
+
+test('one event with a missing createdAt cannot take down the whole admin workspace', async () => {
+  // REGRESSION. A record written by a raw driver (bypassing Mongoose) can lack
+  // `createdAt`, because `createdAt` is a MODEL default and Mongoose - not
+  // MongoDB - is what applies it. The admin serializer formats that field with
+  // `toISOString()`, and `new Date(undefined).toISOString()` throws
+  // `RangeError: Invalid time value`. Because `adminState()` builds EVERY event
+  // in one map, that single throw rejected the whole request and answered 500
+  // to every administrator screen at once - dashboard, users, events,
+  // attendance, reports and feedback - while the offending event stayed
+  // invisible and unfixable from the UI.
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  await createUser({ username: 'ADM001', role: 'admin' });
+  const healthy = await createEvent(faculty.user);
+  const malformed = await createEvent(faculty.user, { name: 'Missing createdAt' });
+
+  // Strip the field the way a raw insert would leave it.
+  await getModels().Event.collection.updateOne(
+    { _id: malformed._id },
+    { $unset: { createdAt: '' } },
+  );
+
+  const { agent } = await login('ADM001');
+
+  // The whole list still loads: one bad row must not fail every screen.
+  const state = await agent.get('/api/admin/state/');
+  assert.equal(state.status, 200, JSON.stringify(state.body));
+  assert.ok(
+    state.body.events.some((event) => event.id === healthy._id),
+    'the healthy event must still be listed',
+  );
+
+  // The bad event is VISIBLE and honestly reported as unknown, not hidden and
+  // not given an invented date. Being able to see it is what makes it fixable.
+  const listed = state.body.events.find((event) => event.id === malformed._id);
+  assert.ok(listed, 'the event with a missing createdAt must still be listed');
+  assert.equal(listed.createdAt, null, 'a missing timestamp must report null, never a fabricated date');
+
+  // The standalone admin event list must survive it too.
+  const events = await agent.get('/api/admin/events/');
+  assert.equal(events.status, 200, JSON.stringify(events.body));
+  assert.ok(events.body.some((event) => event.id === malformed._id));
+
+  // A well-formed event keeps a real ISO timestamp - the fix must not turn
+  // every date into null.
+  assert.match(
+    state.body.events.find((event) => event.id === healthy._id).createdAt,
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+  );
+});
+
+test('deleting an account with attendance history is refused instead of silently cascade-deleting it', async () => {
+  // AD002.5: attendance/feedback history is the institutional record and must
+  // never be silently erased. Deactivation is the reversible alternative.
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  await createUser({ username: 'ADM001', role: 'admin' });
+  const student = await createUser({ username: 'STU001', role: 'student' });
+  const event = await createEvent(faculty.user);
+  const { agent } = await login('ADM001');
+
+  // A brand-new account with no history is still deletable.
+  const fresh = await createUser({ username: 'STU900', role: 'student' });
+  assert.equal((await send(agent, 'delete', '/api/admin/users/STU900/')).status, 204);
+  assert.equal(await getModels().User.countDocuments({ _id: fresh.user._id }), 0);
+
+  // Give STU001 real history, then prove the delete is refused and the rows survive.
+  await getModels().EventAttendance.create({
+    _id: 1, eventId: event._id, attendeeId: student.user._id,
+    status: 'present', method: 'qr', recordedAt: new Date(), source: 'Scan',
+  });
+  await getModels().EventRegistration.create({
+    _id: 2, eventId: event._id, attendeeId: student.user._id,
+    status: 'registered', registeredAt: new Date(),
+  });
+
+  const refused = await send(agent, 'delete', '/api/admin/users/STU001/');
+  assert.equal(refused.status, 409, JSON.stringify(refused.body));
+  assert.match(refused.body.detail, /attendance history/i);
+  assert.match(refused.body.detail, /Deactivate the account instead/);
+
+  // The history is untouched - this is the whole point of the guard.
+  assert.equal(await getModels().EventAttendance.countDocuments({ attendeeId: student.user._id }), 1);
+  assert.equal(await getModels().EventRegistration.countDocuments({ attendeeId: student.user._id }), 1);
+  assert.equal(await getModels().User.countDocuments({ _id: student.user._id }), 1);
+
+  // And deactivation still works, removing access while keeping every record.
+  assert.equal((await send(agent, 'patch', '/api/admin/users/STU001/', { status: 'Inactive' })).status, 200);
+  assert.equal(await getModels().EventAttendance.countDocuments({ attendeeId: student.user._id }), 1);
+});
+
+test('the last active administrator cannot be demoted or deactivated', async () => {
+  await createUser({ username: 'ADM001', role: 'admin' });
+  const { agent } = await login('ADM001');
+
+  // AD003: protect the final Admin from an accidental change of role or status.
+  const demote = await send(agent, 'patch', '/api/admin/users/ADM001/', { role: 'Faculty' });
+  assert.equal(demote.status, 400, JSON.stringify(demote.body));
+  assert.match(demote.body.detail, /active Admin/i);
+
+  const deactivate = await send(agent, 'patch', '/api/admin/users/ADM001/', { status: 'Inactive' });
+  assert.equal(deactivate.status, 400, JSON.stringify(deactivate.body));
+  assert.match(deactivate.body.detail, /active Admin/i);
+
+  // Nothing changed.
+  const profile = await getModels().UserProfile.findOne({ role: 'admin' }).lean();
+  const user = await getModels().User.findById(profile.userId).lean();
+  assert.equal(user.isActive, true);
+
+  // With a second admin present, a demotion is allowed.
+  await createUser({ username: 'ADM002', role: 'admin' });
+  assert.equal((await send(agent, 'patch', '/api/admin/users/ADM001/', { role: 'Faculty' })).status, 200);
+  const audit = await getModels().AuditLog.find({ action: 'role_changed' }).lean();
+  assert.equal(audit.length >= 1, true, 'a role change must be audited');
+});
+
 test('data remains available after the backend database connection restarts', async () => {
   const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
   const event = await createEvent(faculty.user, { name: 'Persistence Event' });

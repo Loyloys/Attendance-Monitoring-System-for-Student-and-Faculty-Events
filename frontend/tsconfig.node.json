@@ -22,5 +22,8 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["vite.config.ts"]
+  // vite.config.ts is the LIVE development config. vite.test.config.ts is the
+  // dedicated ISOLATED HTTPS test config; it is type-checked here too, because a
+  // certificate path typo must fail the build rather than the dev server.
+  "include": ["vite.config.ts", "vite.test.config.ts"]
 }

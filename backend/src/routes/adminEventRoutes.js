@@ -7,6 +7,8 @@ const router = Router();
 router.use('/admin', requireAuthentication, requireRole('admin'));
 router.route('/admin/events/').get(asyncRoute(controller.list)).post(asyncRoute(controller.list));
 router.route('/admin/events/:eventId/').get(asyncRoute(controller.detail)).patch(asyncRoute(controller.detail));
+router.route('/admin/events/:eventId/qr/').get(asyncRoute(controller.qr)).post(asyncRoute(controller.qr));
+router.get('/admin/events/:eventId/qr/status/', asyncRoute(controller.qrStatus));
 router.post('/admin/events/:eventId/cancel/', asyncRoute(controller.cancel));
 
 export default router;

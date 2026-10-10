@@ -1,8 +1,12 @@
 import { createApp } from './app.js';
 import { connectDatabase, disconnectDatabase, ensureDatabaseIndexes } from './config/database.js';
 import { env } from './config/env.js';
+import { assertManilaOffsetIsStable } from './utils/eventTimeZone.js';
 
 async function start() {
+  // Fails loudly if Asia/Manila ever stops being UTC+8, instead of quietly
+  // storing every event eight hours out.
+  assertManilaOffsetIsStable();
   await connectDatabase();
   await ensureDatabaseIndexes();
   const app = await createApp();

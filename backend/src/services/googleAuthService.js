@@ -46,14 +46,62 @@ function timingSafeEqualStrings(a, b) {
   return crypto.timingSafeEqual(left, right);
 }
 
+// The three states the sign-in card has to tell apart. They are reported
+// separately because "we cannot verify an institutional domain yet" and
+// "a named tester is allowed" are very different promises.
+export const GOOGLE_MODE_UNAVAILABLE = 'unavailable';
+export const GOOGLE_MODE_OPEN = 'open';
+export const GOOGLE_MODE_INSTITUTIONAL = 'institutional';
+export const GOOGLE_MODE_DEVELOPMENT_TEST = 'development_test';
+
+/**
+ * The single source of truth for "what is Google sign-in allowed to do here",
+ * derived from the EXPLICIT GOOGLE_ACCESS_POLICY setting. It is never inferred
+ * from whether a domain list happens to be empty, so "open" can only ever be
+ * reached by someone who deliberately selected it.
+ *
+ * `unavailable`        policy is `off`, or no client id, or the private test
+ *                      policy has no accounts named. Nothing is accepted.
+ * `open`               any valid, verified Google account. Identity only; the
+ *                      account becomes a Student immediately, and is never
+ *                      checked against an official school roster.
+ * `institutional`     the verified `hd` claim must be on the approved list.
+ * `development_test`   only the explicitly named local test accounts.
+ */
+export function googleSignInMode() {
+  if (!env.googleClientId) return GOOGLE_MODE_UNAVAILABLE;
+  if (env.googleAccessPolicy === 'open') return GOOGLE_MODE_OPEN;
+  if (env.googleAccessPolicy === 'institutional') return GOOGLE_MODE_INSTITUTIONAL;
+  if (env.googleAccessPolicy === 'development_test') {
+    // Fails closed: naming the policy but nobody being named means nothing is
+    // accepted, rather than everything being accepted.
+    return env.googleDevTestEmails.length ? GOOGLE_MODE_DEVELOPMENT_TEST : GOOGLE_MODE_UNAVAILABLE;
+  }
+  return GOOGLE_MODE_UNAVAILABLE;
+}
+
 export function googlePublicConfig() {
+  const mode = googleSignInMode();
   return {
-    enabled: Boolean(env.googleClientId),
+    enabled: mode !== GOOGLE_MODE_UNAVAILABLE,
+    mode,
+    // The policy that was actually selected, so an operator can see the intent
+    // behind the effective mode rather than having to infer it.
+    policy: env.googleAccessPolicy,
     clientId: env.googleClientId || null,
-    // Lets the sign-in card say "institutional Google account" honestly, and warn
-    // that no domain restriction is configured yet.
+    // Lets the sign-in card describe the rule honestly. These are server-side
+    // configuration values; the browser cannot add one.
     hostedDomains: [...env.googleAllowedHostedDomains],
-    domainRestricted: env.googleAllowedHostedDomains.length > 0,
+    // True only when an institutional allowlist is genuinely being enforced. It
+    // must never be reported while some other policy is what actually applies.
+    domainRestricted: mode === GOOGLE_MODE_INSTITUTIONAL,
+    developmentTesting: mode === GOOGLE_MODE_DEVELOPMENT_TEST,
+    openRegistration: mode === GOOGLE_MODE_OPEN,
+    // Whether the SCHOOL has approved this deployment. Deliberately NOT derived
+    // from the mode or the domain list: a working configuration is not an
+    // approval. Only an explicit GOOGLE_SCHOOL_APPROVED=true, set after the
+    // school actually confirms permission, may set this.
+    schoolApproved: env.googleSchoolApproved,
   };
 }
 
@@ -136,11 +184,14 @@ export async function verifyGoogleCredential(credential, { nonce } = {}) {
   }
 
   const hostedDomain = typeof payload.hd === 'string' ? payload.hd.trim().toLowerCase() : '';
-  assertApprovedHostedDomain(hostedDomain);
+  // Normalized exactly as the stored identity is, so the private test list is
+  // compared against the same value that is written to the account.
+  const email = payload.email.trim().toLowerCase();
+  assertApprovedGoogleAccount(hostedDomain, email);
 
   return {
     sub: payload.sub.trim(),
-    email: payload.email.trim().toLowerCase(),
+    email,
     emailNormalized: stableCaseInsensitive(payload.email),
     name: typeof payload.name === 'string' ? payload.name.trim().slice(0, 150) : '',
     picture: typeof payload.picture === 'string' ? payload.picture.trim().slice(0, 1000) : '',
@@ -149,33 +200,85 @@ export async function verifyGoogleCredential(credential, { nonce } = {}) {
 }
 
 /**
- * Institutional access control, decided entirely on the server from Google's
- * verified `hd` claim.
+ * Access control, decided entirely on the server from a payload that
+ * `google-auth-library` has already signature-checked. Nothing the browser sends
+ * takes part in this decision.
  *
- * The email suffix is deliberately NOT used for this decision, and neither is
- * anything the browser can influence: by this point the payload has already been
- * signature-checked by `google-auth-library` and re-validated above, so `hd` is
- * Google's own statement about which Workspace the account belongs to. Personal
- * Gmail accounts have no `hd` claim at all, which is what makes them easy to
- * refuse without guessing from the address text.
+ * `hd` is Google's own statement about which Workspace an account belongs to, so
+ * it is the right basis for the institutional rule. The email address suffix is
+ * deliberately NOT used for it, and neither is any frontend hint.
+ *
+ * Three outcomes, and none of them is "allow everyone":
+ *
+ * 1. An approved domain list exists, so access is decided from `hd`. This is the
+ *    only production-meaningful configuration, and it is the only one that may be
+ *    described as school-approved.
+ * 2. No approved domain yet, but private development testing is switched on with
+ *    a non-empty list of named accounts, so only those exact verified addresses
+ *    may sign in. This is a local, explicitly-labelled testing policy. It is NOT
+ *    a fallback that relaxes the institutional rule: when a domain list exists it
+ *    is still applied first, and a personal account is refused by rule 1 anyway.
+ * 3. Neither is configured, so the flow is closed and the person is told to use
+ *    their password. An empty domain list is never read as permission to accept
+ *    every verified Google account.
  */
-function assertApprovedHostedDomain(hostedDomain) {
-  const allowed = env.googleAllowedHostedDomains;
-  if (!allowed.length) return;
-  if (!hostedDomain) {
-    throw new PermissionError(
-      'Use your institutional Google account. Personal Gmail accounts cannot sign in here.',
-      undefined,
-      'google_domain_not_allowed',
-    );
+function assertApprovedGoogleAccount(hostedDomain, email) {
+  const mode = googleSignInMode();
+
+  if (mode === GOOGLE_MODE_OPEN) {
+    // Deliberate policy: any account Google vouches for may proceed. By this
+    // point the RSA signature, audience, issuer, expiry and `email_verified`
+    // have all been checked, so this really does mean "a valid, verified Google
+    // account".
+    //
+    // What it does NOT grant: Faculty or Administrator eligibility, or any role.
+    // A brand-new identity becomes a Student account, and nothing more. It also
+    // says nothing about membership of a school roster: `open` deliberately does
+    // not check one, which is why `schoolApproved` stays a separate fact.
+    return;
   }
-  if (!allowed.includes(hostedDomain)) {
-    throw new PermissionError(
-      `This Google account belongs to ${hostedDomain}, which is not an approved institution domain. Use your institutional Google account.`,
-      undefined,
-      'google_domain_not_allowed',
-    );
+
+  if (mode === GOOGLE_MODE_INSTITUTIONAL) {
+    const allowed = env.googleAllowedHostedDomains;
+    if (!hostedDomain) {
+      throw new PermissionError(
+        'Use your institutional Google account. Personal Gmail accounts cannot sign in here.',
+        undefined,
+        'google_domain_not_allowed',
+      );
+    }
+    if (!allowed.includes(hostedDomain)) {
+      throw new PermissionError(
+        `This Google account belongs to ${hostedDomain}, which is not an approved institution domain. Use your institutional Google account.`,
+        undefined,
+        'google_domain_not_allowed',
+      );
+    }
+    return;
   }
+
+  if (mode === GOOGLE_MODE_DEVELOPMENT_TEST) {
+    // The address has already been verified by Google at this point, so this
+    // compares a trusted value against a list the developer typed into
+    // GOOGLE_DEV_TEST_EMAILS. Exact match after the application's normal
+    // trimming/case-folding: no suffix, domain or wildcard matching, so a listed
+    // account cannot be extended to `someone+extra@` or `...@evil.example`.
+    if (!env.googleDevTestEmails.includes(email)) {
+      throw new PermissionError(
+        'This Google account is not on the private development test list for this server. '
+        + 'Development testing is limited to specifically named accounts and is not open registration.',
+        undefined,
+        'google_test_account_not_allowed',
+      );
+    }
+    return;
+  }
+
+  throw new AppError(
+    503,
+    'Google sign-in is not available on this server yet, because no approved institutional Google '
+    + 'domain has been configured. Please use your ID and password.',
+  );
 }
 
 /**
@@ -335,6 +438,13 @@ export async function completeGoogleProfile(request, body) {
       firstName: firstName.slice(0, 150),
       lastName: lastName.slice(0, 150),
       isActive: true,
+      // Automatic activation. Completing the profile IS the registration step, so
+      // the account is usable immediately and is never parked in a manual queue.
+      // This is NOT a bypass of authentication: the Google credential was already
+      // verified against signature, audience, issuer, expiry, nonce and
+      // `email_verified` above, the role is forced to Student, and the account
+      // still has to pass `requireAuthentication` and CSRF on every request.
+      approvalStatus: 'approved',
       isStaff: false,
       isSuperuser: false,
       profileCompleted: true,

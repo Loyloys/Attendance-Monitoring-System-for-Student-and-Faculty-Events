@@ -11,6 +11,7 @@ import { loadAuthentication } from './middleware/authentication.js';
 import { originGuard, securityHeaders } from './middleware/security.js';
 import { errorHandler, notFound } from './middleware/errors.js';
 import { apiLimiter } from './middleware/rateLimits.js';
+import { LOCATION_POLICY } from './utils/domain.js';
 import apiRoutes from './routes/index.js';
 
 export async function createApp() {
@@ -54,7 +55,7 @@ export async function createApp() {
   app.use(express.json({ limit: '1mb', strict: true }));
   app.use(cookieParser());
   app.use(session({
-    name: 'sessionid',
+    name: env.sessionCookieName,
     secret: env.sessionSecret,
     store: mongoStore,
     resave: false,
@@ -70,7 +71,30 @@ export async function createApp() {
   }));
   app.use(originGuard);
   app.use('/api', apiLimiter, csrfProtection, loadAuthentication);
-  app.get('/api/health/', (request, response) => response.json({ status: 'ok', database: 'mongodb' }));
+  // The label and the cookie names are public: the first so the frontend can
+  // label a test instance honestly, the second so it can read the CSRF cookie
+  // this instance actually issues.
+  //
+  // The effective location policy is published for the same reason. A test
+  // instance is configured to a STRICT fence, and "configured to 0 m slack" is
+  // only worth anything if it can be confirmed against the process that is
+  // actually serving requests. Reading it back here proves the value reached
+  // LOCATION_POLICY rather than being assumed from the launcher's shell.
+  app.get('/api/health/', (request, response) => response.json({
+    status: 'ok',
+    database: 'mongodb',
+    environment: env.nodeEnvironment,
+    deploymentLabel: env.deploymentLabel,
+    csrfCookieName: env.csrfCookieName,
+    // The limits actually in force, as the request handlers see them.
+    // Read-only and instance-specific: it describes this server, it does not
+    // let a caller change anything.
+    locationPolicy: {
+      maxAccuracyMeters: LOCATION_POLICY.maxAccuracyMeters,
+      maxAgeSeconds: LOCATION_POLICY.maxAgeSeconds,
+      slackMeters: LOCATION_POLICY.slackMeters,
+    },
+  }));
   app.use('/api', apiRoutes);
   app.use(notFound);
   app.use(errorHandler);

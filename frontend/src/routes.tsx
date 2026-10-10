@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import AccountTypeSelection from './auth/AccountTypeSelection';
 import Login from './auth/Login';
 import CompleteGoogleProfile from './auth/CompleteGoogleProfile';
+import RegistrationComplete from './auth/RegistrationComplete';
 import RequireAuth from './auth/RequireAuth';
 import Portal from './pages/Portal';
 import AdminWorkspace from './pages/admin/Workspace';
@@ -18,6 +19,16 @@ export default function AppRoutes() {
       <Route path="/login/faculty" element={<Login />} />
       <Route path="/login/administrator" element={<Login />} />
       <Route path="/login/complete-profile" element={<CompleteGoogleProfile />} />
+      {/* Shown for a moment after a new Student account is created, confirming the
+          registration succeeded and automatically activating the account. */}
+      <Route
+        path="/registration-complete"
+        element={
+          <RequireAuth>
+            <RegistrationComplete />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/unauthorized"
         element={

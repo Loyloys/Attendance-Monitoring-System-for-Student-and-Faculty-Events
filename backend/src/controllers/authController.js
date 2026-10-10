@@ -1,4 +1,5 @@
 import { authenticate, updateProfile } from '../services/authService.js';
+import { env } from '../config/env.js';
 import { serializeAuthUser } from '../services/userSerializer.js';
 import {
   authenticateWithGoogle,
@@ -55,8 +56,10 @@ export async function googleLink(request, response) {
 
 export function logout(request, response) {
   request.session.destroy(() => {
-    response.clearCookie('sessionid', { path: '/' });
-    response.clearCookie('csrftoken', { path: '/' });
+    // Both names come from configuration, so a test instance clears its own
+    // cookies and leaves the normal app's session on this browser intact.
+    response.clearCookie(env.sessionCookieName, { path: '/' });
+    response.clearCookie(env.csrfCookieName, { path: '/' });
     response.status(204).end();
   });
 }

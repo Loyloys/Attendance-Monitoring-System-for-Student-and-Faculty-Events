@@ -1,5 +1,6 @@
 import { CalendarDays, CheckCircle2, Clock3, MapPin, QrCode, Ticket, TrendingUp } from 'lucide-react';
 import type { AuthUser, EventRecord, PersonalAttendanceData } from '../../types/eventAttendance';
+import { eventDateLabel, eventTimeLabel } from '../../utils/eventTime';
 
 interface Props {
   user: AuthUser;
@@ -10,8 +11,8 @@ interface Props {
   onCertificate: (certificateId: string) => void;
 }
 
-const dateLabel = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-const timeLabel = (value: string) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const dateLabel = eventDateLabel;
+const timeLabel = eventTimeLabel;
 
 export default function EventDashboard({ user, events, attendance, onNavigate, onScan, onCertificate }: Props) {
   const upcoming = events.filter(event => event.status === 'upcoming' || event.status === 'ongoing');

@@ -72,6 +72,10 @@ Replace `SESSION_SECRET` with a random value of at least 32 characters. Importan
 | `SECURE_COOKIES` | Set `true` behind HTTPS in production. |
 | `SQLITE_SOURCE` | Legacy SQLite source used only by the migration script. |
 | `MIGRATION_BACKUP_DIR` | Destination for pre-migration SQLite backups. |
+| `LOCATION_MAX_ACCURACY_METERS` | Reported location accuracy, in metres, above which a check-in is refused as imprecise. Defaults to `100`. |
+| `LOCATION_MAX_AGE_SECONDS` | Age of a location fix, in seconds, above which it is refused as stale. **Governs the one-shot scan.** Defaults to `120` (2 minutes). |
+| `ATTENDANCE_MAX_OBSERVATION_AGE_SECONDS` | Age of a fix, in seconds, above which it is refused during **continuous tracking**. Deliberately separate from and stricter than `LOCATION_MAX_AGE_SECONDS`. Tracking samples every 10 s, so an older reading is a replayed cached position; resending one every 10 s satisfies the 30 s crediting-spacing rule on every call. Defaults to `30`. Only ever tightens the general limit, never relaxes it. |
+| `LOCATION_FENCE_SLACK_METERS` | Metres allowed *outside* the event radius. The check-in limit is `radius + slack`, so the default `25` means a "150 m" venue really accepts 175 m. Set `0` for a strict fence. |
 | `DEMO_*_PASSWORD` | Passwords for optional, separately tagged demo accounts. |
 
 Backend secrets are read only by the backend. No backend secret is exposed through Vite or frontend configuration.
@@ -160,12 +164,59 @@ Health check:
 Invoke-RestMethod http://127.0.0.1:8000/api/health/
 ```
 
+### Isolated test instance
+
+Browser verification runs against a **separate instance**, not the live app. It shares no port, no database and no session secret with the one above, so a test run cannot write to real attendance:
+
+| | Live | Isolated test instance |
+| --- | --- | --- |
+| MongoDB | `127.0.0.1:27017` | `127.0.0.1:27019` |
+| Database | `university_attendance` | `university_attendance_e2e_test` |
+| API | `8000` | `8100` |
+| UI | `5173` | `5174` |
+
+Start it with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-e2e.ps1
+```
+
+This starts MongoDB, seeds the fixtures, and launches the API and UI. It **never reads or edits `backend/.env`**: every setting is exported into the child processes only, and a process variable outranks the `.env` file, so the live configuration and the live backend are left exactly as they were. The launcher also refuses to start if the database is not marked as a test database, or if any port would collide with a live one.
+
+The instance runs with a **strict geofence**: `LOCATION_FENCE_SLACK_METERS=0`, so the limit is `radius + 0` and a "150 m" venue accepts exactly 150 m rather than the shipped default's 175 m. Max accuracy is 100 m, one-shot fix age is 120 s (2 minutes), and **continuous-tracking freshness is a separate, stricter 30 s** (`ATTENDANCE_MAX_OBSERVATION_AGE_SECONDS`). All four are set explicitly and printed at startup, and the effective location values are published on `/api/health/` so a run confirms the configuration instead of assuming it:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8100/api/health/
+```
+
+Then run the browser suite from `frontend\`:
+
+```powershell
+npm run test:e2e
+```
+
+### HTTPS for the isolated instance
+
+Geolocation requires a secure context on a real phone, and `localhost` is the only plain-HTTP origin a browser treats as secure. To test from an iPhone the isolated UI must be served over HTTPS with a real, trusted certificate.
+
+This is **not run by default** and requires explicit approval, because it installs a CA certificate and (for phone testing) exposes a port beyond loopback. See [`docs/ISOLATED-HTTPS-TEST.md`](docs/ISOLATED-HTTPS-TEST.md) for the full procedure, the mkcert trust inventory, the exact PC and iPhone install/removal steps, and the firewall findings. In short:
+
+```powershell
+# dedicated test config; it loads the certificate with readFileSync and refuses
+# to start if the files are missing or are not real PEM data
+cd frontend
+npx vite --config vite.test.config.ts
+```
+
+The run is verified by `backend/scripts/verify-https-frontend.mjs`, which keeps certificate verification **on** and checks a real password login, the session cookie, authenticated requests, a refresh and a logout. `curl -k` is not a substitute: it disables verification, so it reports HTTP 200 against a certificate nothing trusts, and it sends no cookies, so it cannot show that a login session works.
+
 ## Tests and builds
 
-Backend integration tests use a separate `university_attendance_test` MongoDB database by default. Set `TEST_MONGODB_URI` to override it.
+Backend integration tests **require** an explicit `TEST_MONGODB_URI` pointing at an approved throwaway database on an isolated port. There is deliberately **no default**: the suite calls `dropDatabase()`, so an unset variable used to point it at the live MongoDB on port 27017. The guard in `tests/support/testDatabaseGuard.js` refuses to start — before connecting to anything — if the variable is unset, malformed, on the live port, or names the live or E2E-fixture database. The only approved names are `university_attendance_test` and `university_attendance_unit_test_tmp`.
 
 ```powershell
 cd backend
+$env:TEST_MONGODB_URI = "mongodb://127.0.0.1:27019/university_attendance_test"
 npm test
 ```
 
@@ -285,17 +336,51 @@ The client id is public, so it is not a secret and there is no client secret to 
 
 After changing either file, **restart both** the backend and the Vite dev server.
 
+#### Google access policy (`GOOGLE_ACCESS_POLICY`)
+
+One explicit value chooses who may sign in. It is **never** inferred from whether a domain list happens to be empty, so `open` can only ever be reached deliberately.
+
+| `GOOGLE_ACCESS_POLICY` | Who may sign in | Notes |
+| --- | --- | --- |
+| `off` (default) | Nobody | Google sign-in unavailable; password sign-in still works |
+| `open` | Any valid, verified Google account | New accounts are activated as **Student** immediately. Identity only: never checked against a school roster, and never granted Faculty or Administrator |
+| `institutional` | Accounts whose verified `hd` claim is on `GOOGLE_ALLOWED_HOSTED_DOMAINS` | Startup **fails** if that list is empty, rather than silently behaving like `open` |
+| `development_test` | Only the addresses in `GOOGLE_DEV_TEST_EMAILS` | Refused at startup when `NODE_ENV=production` |
+
+Whatever the policy, the ID token is verified on the server by `google-auth-library`: RSA signature against Google's published keys, `aud` against this application's own client id, `iss` against the accepted issuers, `exp` with a small clock-skew allowance, and then an explicit `email_verified` check. Nothing the browser sends takes part in any of it.
+
+**Google proves identity, never eligibility.** A verified account is not thereby a student or a faculty member. Completing the required profile **is** the registration step, so a new self-registration is created as an active **Student** and goes straight to the dashboard. This is not a bypass of authentication: the credential was already verified above, the role is forced to Student on the server, a browser-supplied `role` is rejected outright, and the account still passes `requireAuthentication` and CSRF on every request. Faculty and Administrator remain administrator-assigned only.
+
+Automatic activation never clears an administrative restriction. An account an administrator has blocked (`rejected`), deactivated (`isActive: false`), or one left `pending` by the previous manual-approval policy still reaches no attendance feature: `requireApprovedAccount` blocks events, scanning, history, reports and every administrator API for them, and no code path sets those states automatically.
+
 #### Institutional domains (`GOOGLE_ALLOWED_HOSTED_DOMAINS`)
 
-This is the approved Google Workspace domain list, comma separated, written exactly as Google's `hd` claim reports it (`youruniversity.edu`; a leading `@` and any casing are normalised away).
+Used **only** by the `institutional` policy. It is the approved Google Workspace domain list, comma separated, written exactly as Google's `hd` claim reports it (`youruniversity.edu`; a leading `@` and any casing are normalised away).
 
-The check runs **server-side against the verified `hd` claim** from the ID token, after `google-auth-library` has already validated the signature. It deliberately does **not** use the email address suffix, and it does not trust anything the browser sends. Personal Gmail accounts carry no `hd` claim at all and are refused with a clear message, as is any account on a domain that is not on the list.
+The check runs **server-side against the verified `hd` claim** from the ID token, after `google-auth-library` has already validated the signature. It deliberately does **not** use the email address suffix, and it does not trust anything the browser sends. Personal Gmail accounts carry no `hd` claim at all and are refused with a clear message.
 
-> **Confirm the exact domain(s) with your institution's Google Workspace administrator before going live.** An empty list accepts any verified Google account, which is not acceptable for a real deployment. `GET /api/auth/google/config/` reports `domainRestricted` so you can confirm at a glance that the restriction is active.
+`GET /api/auth/google/config/` reports the `mode` and the `policy` actually in force, plus `domainRestricted`, `openRegistration`, `developmentTesting` and `schoolApproved`. `schoolApproved` is driven by a separate `GOOGLE_SCHOOL_APPROVED` flag and is **never** inferred from a domain list or from the policy: a working configuration is not a school authorisation.
+
+#### Private development testing (`development_test`)
+
+For local work with named, developer-owned accounts. It is a separate, narrower policy, and selecting `institutional` or `off` makes it irrelevant.
+
+```dotenv
+GOOGLE_ACCESS_POLICY=development_test
+GOOGLE_DEV_TEST_EMAILS=your.address@gmail.com,second.tester@gmail.com
+```
+
+- Off by default. The server **refuses to start** if it is set while `NODE_ENV=production`.
+- Only the addresses listed there may sign in, compared **exactly** after trimming and case-folding. There is no wildcard, suffix or domain matching, so a listed account cannot be extended to `someone+extra@` or `...@evil.example`.
+- The list is never returned by the configuration endpoint.
+- An **empty** list fails closed: the mode reports `unavailable` and nothing is accepted.
+- The interface is labelled *"Development testing only — not school-approved."*
+
+> This is a testing tool, not an approval. It must run only on a local machine, against a separate test database, with no public exposure. A hosted domain observed from a test account is technical evidence only; it does not become an allowlist entry and is not proof of school authorisation.
 
 ### If Google is not configured
 
-`GET /api/auth/google/config/` reports `enabled: false`, and the card shows *"Google sign-in is not configured on this server"* above a working ID/password form. No existing sign-in path is lost.
+`GET /api/auth/google/config/` reports `enabled: false` and `mode: "unavailable"`, and the card shows *"Google sign-in is not available on this server yet"* above a working ID/password form. No existing sign-in path is lost.
 
 ### New API endpoints
 

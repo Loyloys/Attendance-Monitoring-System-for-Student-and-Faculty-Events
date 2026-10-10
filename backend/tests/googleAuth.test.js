@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agent, createUser, getModels, login, request, reset, send, setup, teardown } from './helpers.js';
+import { agent, createUser, csrfToken, getModels, login, request, reset, send, setup, teardown } from './helpers.js';
 
 const CLIENT_ID = '1234567890-test.apps.googleusercontent.com';
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,7 +54,9 @@ async function googleSignIn(client, overrides = {}, body = {}) {
 function withHostedDomains(domains, script) {
   return execFileSync(process.execPath, ['--input-type=module', '-e', script], {
     cwd: backendRoot,
-    env: { ...process.env, GOOGLE_ALLOWED_HOSTED_DOMAINS: domains, GOOGLE_CLIENT_ID: CLIENT_ID },
+    // The POLICY selects which rule runs, so a domain list is only consulted
+    // when the policy actually asks for it.
+    env: { ...process.env, GOOGLE_ACCESS_POLICY: 'institutional', GOOGLE_ALLOWED_HOSTED_DOMAINS: domains, GOOGLE_CLIENT_ID: CLIENT_ID },
     encoding: 'utf8',
   });
 }
@@ -66,6 +68,14 @@ test('exposes the public Google configuration and no secret', async () => {
   assert.equal(response.body.enabled, true);
   assert.equal(response.body.clientId, CLIENT_ID);
   assert.equal(JSON.stringify(response.body).toLowerCase().includes('secret'), false);
+  // This workspace runs the private test policy, and the endpoint must say so
+  // rather than implying an institutional restriction is in place.
+  assert.equal(response.body.mode, 'development_test');
+  assert.equal(response.body.developmentTesting, true);
+  assert.equal(response.body.domainRestricted, false);
+  assert.equal(response.body.schoolApproved, false);
+  // The allowlist is a server-side secret of configuration: it is never returned.
+  assert.equal(JSON.stringify(response.body).toLowerCase().includes('gmail.com'), false);
 });
 
 test('password login still works and CSRF guards the Google routes', async () => {
@@ -381,19 +391,390 @@ test('the approved Workspace domain list is enforced against the verified hd cla
   assert.deepEqual(parsed.results.personal, ['rejected', 403, 'google_domain_not_allowed']);
 });
 
-test('the decision comes from the verified hd claim, not the email suffix', async () => {
-  await createUser({ username: 'STU001', role: 'student' });
-  await getModels().User.updateOne({ username: 'STU001' }, { $set: { googleSub: 'google-sub-hd' } });
-  const client = agent();
-  const start = await send(client, 'post', '/api/auth/google/session/', {});
-  // The address suffix deliberately disagrees with hd. Only the claim may decide.
+test('the recorded Workspace domain comes from the hd claim, not the email suffix', async () => {
+  googleService = googleService || await import('../src/services/googleAuthService.js');
+  const start = await send(agent(), 'post', '/api/auth/google/session/', {});
+  // The address and the claim deliberately disagree: a personal-looking address
+  // carrying a Workspace domain. The identity the server builds must take the
+  // address from `email` and the domain from `hd`, with neither guessed from the
+  // other. This is the raw decision the whole flow rests on.
   await stubVerifier(claims({
-    nonce: start.body.nonce, sub: 'google-sub-hd', email: 'person@gmail.com', hd: 'cot.edu',
+    nonce: start.body.nonce, email: 'person@gmail.com', hd: 'cot.edu',
   }));
-  const response = await send(client, 'post', '/api/auth/google/', { credential: 'fake-credential' });
+  const identity = await googleService.verifyGoogleCredential('fake-credential', { nonce: start.body.nonce });
+  assert.equal(identity.email, 'person@gmail.com');
+  assert.equal(identity.hostedDomain, 'cot.edu');
+  assert.notEqual(identity.email.split('@')[1], identity.hostedDomain);
+});
+
+test('an account outside the private test list is refused even though the token is valid', async () => {
+  const client = agent();
+  const response = await googleSignIn(client, { email: 'stranger@gmail.com', sub: 'google-sub-stranger' });
+  assert.equal(response.status, 403, JSON.stringify(response.body));
+  assert.equal(response.body.code, 'google_test_account_not_allowed');
+  assert.match(response.body.detail, /not on the private development test list/);
+  // Refused means refused: no account, no session, and no pending identity that
+  // the profile step could turn into a user.
+  assert.equal(await getModels().User.countDocuments({ googleSub: 'google-sub-stranger' }), 0);
+  assert.equal((await client.get('/api/auth/me/')).status, 401);
+});
+
+test('the private test list matches whole addresses only, never a suffix or a domain', async () => {
+  googleService = googleService || await import('../src/services/googleAuthService.js');
+  // Each of these is a different way to try to ride in on a listed address.
+  // `new.user@gmail.com` is on the list; none of the following are.
+  const impostors = [
+    'new.user+extra@gmail.com',
+    'xnew.user@gmail.com',
+    'new.user@gmail.com.evil.example',
+    'new.user@evil.example',
+  ];
+  for (const email of impostors) {
+    const nonce = 'a-nonce-for-the-impostor-cases';
+    await stubVerifier(claims({ nonce, email }));
+    await assert.rejects(
+      googleService.verifyGoogleCredential('fake-credential', { nonce }),
+      (error) => {
+        assert.equal(error.status, 403, email);
+        assert.equal(error.code, 'google_test_account_not_allowed', email);
+        return true;
+      },
+      `${email} must be refused`,
+    );
+  }
+});
+
+test('the private test list ignores casing and surrounding space, and nothing else', async () => {
+  const client = agent();
+  const response = await googleSignIn(client, { email: '  New.User@Gmail.com  ', sub: 'google-sub-case' });
   assert.equal(response.status, 200, JSON.stringify(response.body));
-  assert.equal(response.body.status, 'signed_in');
-  assert.equal((await client.get('/api/auth/me/')).body.username, 'STU001');
+  assert.equal(response.body.status, 'profile_incomplete');
+  assert.equal(response.body.prefill.email, 'new.user@gmail.com');
+});
+
+test('an empty test list closes the flow instead of allowing every account', () => {
+  // The dangerous case: the switch is on but nobody was named. This must fail
+  // closed, not open.
+  const script = `
+    import { googlePublicConfig, googleSignInMode } from './src/services/googleAuthService.js';
+    const config = googlePublicConfig();
+    console.log(JSON.stringify({ mode: googleSignInMode(), enabled: config.enabled }));
+  `;
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: backendRoot,
+    env: {
+      ...process.env,
+      GOOGLE_ACCESS_POLICY: 'development_test',
+      GOOGLE_DEV_TEST_EMAILS: '',
+      GOOGLE_ALLOWED_HOSTED_DOMAINS: '',
+      GOOGLE_CLIENT_ID: CLIENT_ID,
+    },
+    encoding: 'utf8',
+  });
+  const parsed = JSON.parse(output.trim().split('\n').pop());
+  assert.equal(parsed.mode, 'unavailable');
+  assert.equal(parsed.enabled, false);
+});
+
+test('an unconfigured server refuses a credential outright rather than accepting it', () => {
+  const script = `
+    import crypto from 'node:crypto';
+    import { env } from './src/config/env.js';
+    import { verifyGoogleCredential, __setGoogleTokenVerifier } from './src/services/googleAuthService.js';
+    const now = Math.floor(Date.now() / 1000);
+    const nonce = crypto.randomBytes(8).toString('hex');
+    __setGoogleTokenVerifier(async () => ({ aud: env.googleClientId, iss: 'https://accounts.google.com',
+      sub: 's1', email: 'anyone@gmail.com', email_verified: true, iat: now - 5, exp: now + 600, nonce }));
+    try { await verifyGoogleCredential('token', { nonce }); console.log('ACCEPTED'); }
+    catch (error) { console.log(JSON.stringify({ status: error.status })); }
+  `;
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: backendRoot,
+    env: {
+      ...process.env,
+      GOOGLE_ACCESS_POLICY: 'off',
+      GOOGLE_DEV_TEST_EMAILS: '',
+      GOOGLE_ALLOWED_HOSTED_DOMAINS: '',
+      GOOGLE_CLIENT_ID: CLIENT_ID,
+    },
+    encoding: 'utf8',
+  });
+  // A perfectly valid, correctly signed Google token is still refused, because
+  // no policy is configured to say who may use it.
+  assert.equal(JSON.parse(output.trim().split('\n').pop()).status, 503);
+});
+
+test('the selected policy decides, and the presence of a domain list does not override it', () => {
+  // The old behaviour inferred the rule from configuration. The policy enum
+  // removes that ambiguity, so both directions are asserted: the policy picks
+  // the rule, and a stray domain list cannot quietly switch it.
+  const script = `
+    import crypto from 'node:crypto';
+    import { env } from './src/config/env.js';
+    import { googlePublicConfig, verifyGoogleCredential, __setGoogleTokenVerifier } from './src/services/googleAuthService.js';
+    const now = Math.floor(Date.now() / 1000);
+    const nonce = crypto.randomBytes(8).toString('hex');
+    __setGoogleTokenVerifier(async () => ({ aud: env.googleClientId, iss: 'https://accounts.google.com',
+      sub: 's1', email: 'listed.test.account@gmail.com', email_verified: true, iat: now - 5, exp: now + 600, nonce }));
+    try { const id = await verifyGoogleCredential('token', { nonce }); console.log(JSON.stringify({ mode: googlePublicConfig().mode, result: ['accepted', id.hostedDomain] })); }
+    catch (error) { console.log(JSON.stringify({ mode: googlePublicConfig().mode, result: ['rejected', error.status, error.code] })); }
+  `;
+  const common = {
+    ...process.env,
+    // A domain list AND a test list are both present in both runs; only the
+    // policy differs, so any difference in outcome is the policy's doing.
+    GOOGLE_ALLOWED_HOSTED_DOMAINS: 'cot.edu',
+    GOOGLE_DEV_TEST_EMAILS: 'listed.test.account@gmail.com',
+    GOOGLE_CLIENT_ID: CLIENT_ID,
+  };
+  const asInstitutional = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: backendRoot, env: { ...common, GOOGLE_ACCESS_POLICY: 'institutional' }, encoding: 'utf8',
+  }).trim().split('\n').pop());
+  assert.equal(asInstitutional.mode, 'institutional');
+  // No `hd` claim on a personal account: refused, even though it is on the test
+  // list. The institutional rule is genuinely in force.
+  assert.deepEqual(asInstitutional.result, ['rejected', 403, 'google_domain_not_allowed']);
+
+  const asDevTest = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: backendRoot, env: { ...common, GOOGLE_ACCESS_POLICY: 'development_test' }, encoding: 'utf8',
+  }).trim().split('\n').pop());
+  assert.equal(asDevTest.mode, 'development_test');
+  // The domain list being present does not matter under this policy.
+  assert.deepEqual(asDevTest.result, ['accepted', '']);
+  assert.equal(
+    JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
+      "import { googlePublicConfig } from './src/services/googleAuthService.js'; console.log(JSON.stringify(googlePublicConfig().schoolApproved));"], {
+      cwd: backendRoot, env: { ...common, GOOGLE_ACCESS_POLICY: 'institutional' }, encoding: 'utf8',
+    }).trim().split('\n').pop()),
+    false,
+    'a domain list must never imply school approval',
+  );
+});
+
+test('the private test mode cannot be switched on in production', () => {
+  // NODE_ENV=production must refuse to boot rather than quietly ignoring the
+  // setting, so a misconfigured deployment fails loudly instead of exposing it.
+  const script = "import './src/config/env.js'; console.log('LOADED');";
+  assert.throws(() => execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: backendRoot,
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      SESSION_SECRET: 'production-session-secret-with-at-least-32-characters',
+      GOOGLE_CLIENT_ID: CLIENT_ID,
+      GOOGLE_ACCESS_POLICY: 'development_test',
+      GOOGLE_DEV_TEST_EMAILS: 'someone@gmail.com',
+    },
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }));
+});
+
+test('the open policy accepts any verified Google account and reports itself honestly', () => {
+  // Deliberately nothing but a client id: the whole point of the policy enum is
+  // that `open` is a choice, not something an empty domain list implies.
+  const script = `
+    import crypto from 'node:crypto';
+    import { env } from './src/config/env.js';
+    import { googlePublicConfig, verifyGoogleCredential, __setGoogleTokenVerifier } from './src/services/googleAuthService.js';
+    const now = Math.floor(Date.now() / 1000);
+    const out = {};
+    for (const [label, extra] of [['personal-gmail', {}], ['work-account', { hd: 'some-university.edu' }]]) {
+      const nonce = crypto.randomBytes(8).toString('hex');
+      __setGoogleTokenVerifier(async () => ({ aud: env.googleClientId, iss: 'https://accounts.google.com',
+        sub: 's-' + label, email: label + '@mail.test', email_verified: true,
+        iat: now - 5, exp: now + 600, nonce, ...extra }));
+      try { const id = await verifyGoogleCredential('token', { nonce }); out[label] = ['accepted', id.email]; }
+      catch (error) { out[label] = ['rejected', error.status, error.code]; }
+    }
+    const config = googlePublicConfig();
+    console.log(JSON.stringify({ mode: config.mode, policy: config.policy,
+      openRegistration: config.openRegistration, schoolApproved: config.schoolApproved, out }));
+  `;
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: backendRoot,
+    env: { ...process.env, GOOGLE_ACCESS_POLICY: 'open', GOOGLE_ALLOWED_HOSTED_DOMAINS: '', GOOGLE_CLIENT_ID: CLIENT_ID },
+    encoding: 'utf8',
+  });
+  const parsed = JSON.parse(output.trim().split('\n').pop());
+  assert.equal(parsed.mode, 'open');
+  assert.equal(parsed.policy, 'open');
+  assert.equal(parsed.openRegistration, true);
+  // Still not a school approval, even though the app now accepts any account.
+  assert.equal(parsed.schoolApproved, false);
+  assert.deepEqual(parsed.out['personal-gmail'], ['accepted', 'personal-gmail@mail.test']);
+  assert.deepEqual(parsed.out['work-account'], ['accepted', 'work-account@mail.test']);
+});
+
+test('the off policy refuses a valid credential, so open is never reached by accident', () => {
+  const script = `
+    import crypto from 'node:crypto';
+    import { env } from './src/config/env.js';
+    import { googleSignInMode, verifyGoogleCredential, __setGoogleTokenVerifier } from './src/services/googleAuthService.js';
+    const now = Math.floor(Date.now() / 1000);
+    const nonce = crypto.randomBytes(8).toString('hex');
+    __setGoogleTokenVerifier(async () => ({ aud: env.googleClientId, iss: 'https://accounts.google.com',
+      sub: 's1', email: 'anyone@gmail.com', email_verified: true, iat: now - 5, exp: now + 600, nonce }));
+    try { await verifyGoogleCredential('token', { nonce }); console.log('ACCEPTED'); }
+    catch (error) { console.log(JSON.stringify({ mode: googleSignInMode(), status: error.status })); }
+  `;
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: backendRoot,
+    env: { ...process.env, GOOGLE_ACCESS_POLICY: 'off', GOOGLE_ALLOWED_HOSTED_DOMAINS: '', GOOGLE_CLIENT_ID: CLIENT_ID },
+    encoding: 'utf8',
+  });
+  const parsed = JSON.parse(output.trim().split('\n').pop());
+  assert.equal(parsed.mode, 'unavailable');
+  assert.equal(parsed.status, 503);
+});
+
+test('a new Google sign-up is activated immediately and reaches attendance features', async () => {
+  const client = agent();
+  const started = await googleSignIn(client, { email: 'new.user@gmail.com', sub: 'google-sub-pending' });
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {
+    accountId: 'STU500', department: 'BSIT', name: 'New User',
+  });
+  assert.equal(completed.status, 201, JSON.stringify(completed.body));
+  // Verified identity plus a completed profile IS the registration. The account
+  // is active at once and is never parked waiting for an administrator.
+  assert.equal(completed.body.user.role, 'student');
+  assert.equal(completed.body.user.approvalStatus, 'approved');
+  assert.equal(completed.body.user.passwordHash, undefined);
+
+  // Signed in, and can read its own status...
+  const me = await client.get('/api/auth/me/');
+  assert.equal(me.status, 200);
+  assert.equal(me.body.approvalStatus, 'approved');
+
+  // ...and reaches the attendance features a Student actually has, with no
+  // approval step and no second request. This is what the dashboard load does.
+  for (const path of ['/api/events/', '/api/attendance/me/', '/api/reports/me.pdf']) {
+    const allowed = await client.get(path);
+    assert.equal(allowed.status, 200, `${path} must be reachable: ${JSON.stringify(allowed.body)}`);
+  }
+  // Still Student: activation never confers a privileged role.
+  assert.equal((await getModels().UserProfile.findOne({ userId: (await getModels().User.findOne({ accountIdNormalized: 'stu500' }))._id }).lean()).role, 'student');
+});
+
+test('automatic activation still refuses every privileged and administrative route', async () => {
+  const client = agent();
+  await googleSignIn(client, { email: 'new.user@gmail.com', sub: 'google-sub-student-only' });
+  await send(client, 'post', '/api/auth/google/complete-profile/', {
+    accountId: 'STU501', department: 'BSIT', name: 'Student Only',
+  });
+
+  // An active Student account is still not an administrator. Activation grants
+  // the student's own attendance features, never the administrator API.
+  for (const path of ['/api/admin/users/', '/api/admin/state/', '/api/admin/audit-log/']) {
+    const blocked = await client.get(path);
+    assert.equal(blocked.status, 403, `${path} must stay blocked: ${JSON.stringify(blocked.body)}`);
+  }
+  const create = await send(client, 'post', '/api/admin/users/', { id: 'HACK01', name: 'H', username: 'H', email: 'h@cot.edu', contact: '1', department: 'IT', role: 'Admin', passwordHash: 'x' });
+  assert.equal(create.status, 403, JSON.stringify(create.body));
+  // Faculty-only routes stay closed to a Student too.
+  assert.equal((await client.get('/api/reports/events/whatever.pdf')).status, 403);
+});
+
+test('an administrator can block and restore an account', async () => {
+  const { user } = await createUser({ username: 'STU600', role: 'student' });
+  await getModels().User.updateOne({ _id: user._id }, { $set: { approvalStatus: 'pending' } });
+  await createUser({ username: 'ADM001', role: 'admin' });
+  const { agent: adminClient } = await login('ADM001');
+
+  // A legacy pending record is still refused.
+  const { agent: pendingClient } = await login('STU600');
+  assert.equal((await pendingClient.get('/api/attendance/me/')).status, 403);
+
+  // Only an administrator can restore it, and doing so grants no role change.
+  const asStudent = await send(pendingClient, 'patch', '/api/admin/users/STU600/', { approvalStatus: 'approved' });
+  assert.equal(asStudent.status, 403, 'a student must never be able to restore anyone');
+
+  const approved = await send(adminClient, 'patch', '/api/admin/users/STU600/', { approvalStatus: 'approved' });
+  assert.equal(approved.status, 200, JSON.stringify(approved.body));
+  assert.equal(approved.body.approvalStatus, 'approved');
+
+  // The very same session now works, with no re-login.
+  assert.equal((await pendingClient.get('/api/attendance/me/')).status, 200);
+  assert.equal((await getModels().UserProfile.findOne({ userId: user._id }).lean()).role, 'student');
+});
+
+test('deactivating an account blocks it without touching the approval field', async () => {
+  await createUser({ username: 'STU650', role: 'student' });
+  await createUser({ username: 'ADM003', role: 'admin' });
+  const { agent: adminClient } = await login('ADM003');
+  const { agent: client } = await login('STU650');
+  assert.equal((await client.get('/api/attendance/me/')).status, 200);
+
+  await send(adminClient, 'patch', '/api/admin/users/STU650/', { status: 'Inactive' });
+  // The existing session is refused outright once the account is switched off.
+  assert.equal((await client.get('/api/attendance/me/')).status, 401);
+  // And it cannot sign back in.
+  const blockedClient = agent();
+  const again = await send(blockedClient, 'post', '/api/auth/login/', { identifier: 'STU650', password: 'test-pass-123' });
+  assert.equal(again.status, 400, JSON.stringify(again.body));
+
+  // Restoring re-enables it.
+  await send(adminClient, 'patch', '/api/admin/users/STU650/', { status: 'Active' });
+  const { agent: restored } = await login('STU650');
+  assert.equal((await restored.get('/api/attendance/me/')).status, 200);
+});
+
+test('a rejected account is refused even though it was signed in', async () => {
+  await createUser({ username: 'STU700', role: 'student' });
+  const { agent: client } = await login('STU700');
+  assert.equal((await client.get('/api/attendance/me/')).status, 200);
+
+  await createUser({ username: 'ADM002', role: 'admin' });
+  const { agent: adminClient } = await login('ADM002');
+  const rejected = await send(adminClient, 'patch', '/api/admin/users/STU700/', { approvalStatus: 'rejected' });
+  assert.equal(rejected.status, 200);
+  assert.equal(rejected.body.approvalStatus, 'rejected');
+
+  const blocked = await client.get('/api/attendance/me/');
+  assert.equal(blocked.status, 403, JSON.stringify(blocked.body));
+  assert.equal(blocked.body.code, 'account_rejected');
+});
+
+test('an unauthenticated request cannot approve an account or grant a privileged role', async () => {
+  const { user: target } = await createUser({ username: 'STU800', role: 'student' });
+  await getModels().User.updateOne({ _id: target._id }, { $set: { approvalStatus: 'pending' } });
+
+  // A valid CSRF token but no session. Sending it without a token would only
+  // prove CSRF works, so the token is fetched properly to reach authentication.
+  const client = agent();
+  const token = await csrfToken(client);
+  const anonymous = await client.patch('/api/admin/users/STU800/')
+    .set('X-CSRFToken', token)
+    .send({ approvalStatus: 'approved', role: 'Admin' });
+  assert.equal(anonymous.status, 401);
+  assert.equal((await getModels().User.findById(target._id).lean()).approvalStatus, 'pending');
+  assert.equal((await getModels().UserProfile.findOne({ userId: target._id }).lean()).role, 'student');
+});
+
+test('a new Google sign-up never receives a privileged role, whatever screen was chosen', async () => {
+  const client = agent();
+  await googleSignIn(client, { email: 'new.user@gmail.com', sub: 'google-sub-priv' }, { selectedRole: 'admin' });
+
+  // A browser-supplied role is refused outright, and no account is created.
+  const attempted = await send(client, 'post', '/api/auth/google/complete-profile/', {
+    accountId: 'STU900', department: 'BSIT', name: 'New User', role: 'admin',
+  });
+  assert.equal(attempted.status, 400, JSON.stringify(attempted.body));
+  assert.match(attempted.body.role, /assigned by an administrator/);
+  assert.equal(await getModels().User.countDocuments({ accountIdNormalized: 'stu900' }), 0);
+
+  // A clean submission, still chosen on the Administrator screen, produces an
+  // active STUDENT. Selecting a privileged account type grants nothing.
+  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {
+    accountId: 'STU900', department: 'BSIT', name: 'New User',
+  });
+  assert.equal(completed.status, 201, JSON.stringify(completed.body));
+  assert.equal(completed.body.user.role, 'student');
+  assert.equal(completed.body.user.approvalStatus, 'approved');
+  const created = await getModels().User.findOne({ accountIdNormalized: 'stu900' });
+  assert.equal(created.isStaff, false);
+  assert.equal(created.isSuperuser, false);
 });
 
 test('selecting Faculty cannot sign into a Student account, and no role is changed', async () => {

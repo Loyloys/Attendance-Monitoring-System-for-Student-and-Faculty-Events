@@ -1,13 +1,14 @@
 import { CalendarDays, CheckCircle2, Clock3, Download, FileDown } from 'lucide-react';
 import type { PersonalAttendanceData } from '../../types/eventAttendance';
+import { eventDateLabel, eventTimeLabel } from '../../utils/eventTime';
 
 interface Props {
   data: PersonalAttendanceData;
   onDownload: () => Promise<void>;
 }
 
-const dateLabel = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-const timeLabel = (value: string) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const dateLabel = eventDateLabel;
+const timeLabel = eventTimeLabel;
 
 export default function AttendanceHistory({ data, onDownload }: Props) {
   return <div className="space-y-6">

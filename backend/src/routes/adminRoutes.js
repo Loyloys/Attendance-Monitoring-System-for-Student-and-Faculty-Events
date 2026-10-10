@@ -9,6 +9,10 @@ router.get('/admin/state/', asyncRoute(controller.state));
 router.get('/admin/audit-log/', asyncRoute(controller.auditLog));
 router.post('/admin/import-legacy-browser/', asyncRoute(controller.importLegacyBrowserState));
 router.post('/admin/users/', asyncRoute(controller.createUser));
+// Declared before the `/admin/users/:accountId/` route so "registrations" is not
+// swallowed as an account id. `router.use('/admin', requireAuthentication,
+// requireRole('admin'))` above already restricts this to administrators.
+router.get('/admin/users/:accountId/registrations/', asyncRoute(controller.userRegistrations));
 router.route('/admin/users/:accountId/').patch(asyncRoute(controller.updateUser)).delete(asyncRoute(controller.deleteUser));
 router.post('/admin/attendance/', asyncRoute(controller.createAttendance));
 router.route('/admin/attendance/:recordId/').patch(asyncRoute(controller.updateAttendance)).delete(asyncRoute(controller.removeAttendance));

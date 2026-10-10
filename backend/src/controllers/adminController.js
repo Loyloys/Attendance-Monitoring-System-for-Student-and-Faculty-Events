@@ -11,6 +11,10 @@ import {
   updateAdminUser,
 } from '../services/adminService.js';
 
+import {
+  listUserEventRegistrations,
+} from '../services/adminService.js';
+
 import { archiveLegacyBrowserState } from '../services/legacyBrowserImportService.js';
 
 export async function state(request, response) {
@@ -28,6 +32,13 @@ export async function auditLog(request, response) {
 
 export async function createUser(request, response) {
   response.status(201).json(await createAdminUser(request.body, request.user));
+}
+
+// Per-user event registrations. Kept separate from the user list so an
+// administrator can inspect one person's registrations, and their attendance for
+// those events, as two independent facts. Administrator-only, via adminRoutes.
+export async function userRegistrations(request, response) {
+  response.json(await listUserEventRegistrations(request.params.accountId));
 }
 
 export async function updateUser(request, response) {

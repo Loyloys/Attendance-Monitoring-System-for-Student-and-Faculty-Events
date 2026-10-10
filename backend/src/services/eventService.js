@@ -10,8 +10,10 @@ import {
 } from '../models/index.js';
 import { ConflictError, PermissionError, ValidationError } from '../utils/errors.js';
 import { nextNumericId } from '../utils/ids.js';
-import { randomToken, sha256, stableCaseInsensitive, toLegacyUuid } from '../utils/identifiers.js';
-import { QR_PREFIX } from '../utils/domain.js';
+import { sha256, stableCaseInsensitive, toLegacyUuid } from '../utils/identifiers.js';
+import { QR_PREFIX, QUALIFICATION_REASONS } from '../utils/domain.js';
+import { requiredMinutesFor } from '../utils/attendancePolicy.js';
+import { manilaWallClockToInstant } from '../utils/eventTimeZone.js';
 import { effectiveEventStatus, eventAllows, isCheckInOpen, isSupervisor, verifyAttendanceLocation } from '../utils/events.js';
 import { serializeAdminEvent, serializeEventContext } from './eventSerializer.js';
 
@@ -80,27 +82,11 @@ export async function serializeAdminEvents(events) {
   return events.map((event) => serializeAdminEvent(event, byUser.get(String(event.organizerId))));
 }
 
-export async function createCheckinCode(event, facultyUser) {
-  if (!isSupervisor(event, facultyUser)) throw new PermissionError('Only assigned faculty can generate this event code.');
-  if (event.attendanceMethod !== 'qr') throw new ValidationError({ event: 'This event does not use QR check-in.' });
-  if (!isCheckInOpen(event)) throw new ValidationError({ event: 'The event check-in window is not open.' });
-
-  const now = new Date();
-  const expiresAt = new Date(Math.min(event.checkInClosesAt.getTime(), now.getTime() + 60 * 60 * 1_000));
-  await AttendanceCode.updateMany({ eventId: event._id, active: true }, { $set: { active: false } });
-  const token = randomToken();
-  await AttendanceCode.create({
-    _id: await nextNumericId('attendanceCode'),
-    eventId: event._id,
-    createdById: facultyUser._id,
-    tokenHash: sha256(token),
-    expiresAt,
-    active: true,
-    createdAt: now,
-  });
-  return { token: `${QR_PREFIX}:${event._id}:${token}`, expiresAt: expiresAt.toISOString() };
-}
-
+/**
+ * True when a scanned RFID/barcode identifier belongs to the signed-in person.
+ * Only ever called for non-QR methods; a QR scan identifies the EVENT, not the
+ * attendee, so it must not be able to check in somebody else on their behalf.
+ */
 function identifierMatchesUser(user, identifier) {
   if (typeof identifier !== 'string' || !identifier.trim()) return false;
   const supplied = stableCaseInsensitive(identifier);
@@ -109,7 +95,17 @@ function identifierMatchesUser(user, identifier) {
     .some((value) => stableCaseInsensitive(value) === supplied);
 }
 
-async function resolveScannedEvent(rawToken, eventId, user) {
+/**
+ * Resolves WHICH EVENT a check-in refers to, and - for QR events - proves that
+ * the caller actually presented a server-issued credential.
+ *
+ * The `method` argument is load-bearing. Without it, an event id alone was
+ * enough to check in to a QR event, because `attendancecodes` was only ever
+ * consulted when a token was supplied. A QR event now REQUIRES a token: there is
+ * nothing else that ties a request to the organiser's code, and the whole point
+ * of rotating that code is to be able to invalidate it.
+ */
+export async function resolveScannedEvent(rawToken, eventId, user) {
   if (rawToken) {
     const parts = typeof rawToken === 'string' ? rawToken.trim().split(':') : [];
     const scannedId = parts.length === 3 && parts[0] === QR_PREFIX ? normalizeEventId(parts[1]) : null;
@@ -130,6 +126,10 @@ async function resolveScannedEvent(rawToken, eventId, user) {
     return event;
   }
 
+  // No credential was presented. The event can still be resolved by id for the
+  // identifier-based methods (barcode / RFID), where the attendee picks the event
+  // and the identifier proves who they are. Whether that is acceptable is
+  // decided by the caller, which knows the EVENT's real method.
   if (!eventId) throw new ValidationError({ event: 'Select the event being scanned.' });
   const event = await Event.findOne({
     _id: normalizeEventId(eventId),
@@ -145,10 +145,24 @@ export async function recordEventAttendance(user, { token, eventId, identifier, 
   if (!['qr', 'barcode', 'rfid'].includes(method)) {
     throw new ValidationError({ method: 'Choose a supported event attendance method.' });
   }
+  // The event-id branch of resolveScannedEvent is a lookup, not a credential.
+  // For a QR event a real, server-issued code is mandatory: the event id, an
+  // arbitrary identifier, or a caller-chosen method must never stand in for it.
+  // Keyed on the EVENT's own method, so the message is accurate and a
+  // method-spoofing request cannot dodge the check.
   const event = await resolveScannedEvent(token, eventId, user);
+  if (event.attendanceMethod === 'qr' && !token) {
+    throw new ValidationError(
+      { scan: 'This event checks in with a QR code. Scan the event code, or paste it into the manual box.' },
+      'A valid event QR code is required for this event.',
+    );
+  }
   if (event.attendanceMethod !== method) throw new ValidationError({ method: 'This scan method is not enabled for the event.' });
   if (!eventAllows(event, user.profile)) throw new PermissionError('You are not allowed to attend this event.');
   if (!isCheckInOpen(event)) throw new ValidationError({ scan: 'The event check-in window is closed.' });
+  // Ownership of the presented identifier. Unreachable for QR now (that path
+  // requires a validated credential), and unchanged for barcode/RFID, where the
+  // identifier must belong to the signed-in person.
   if (method !== 'qr' && !identifierMatchesUser(user, identifier)) {
     throw new PermissionError('The scanned ID does not belong to your account.');
   }
@@ -163,15 +177,35 @@ export async function recordEventAttendance(user, { token, eventId, identifier, 
   const verified = needsLocation ? verifyAttendanceLocation(event, location) : null;
 
   const now = new Date();
+  // GST008: A SCAN ALONE MUST NOT QUALIFY A DURATION-REQUIRED ATTENDEE.
+  //
+  // This used to write `status: late|present` unconditionally, so the very act
+  // of scanning marked the attendee as having attended, however little verified
+  // time they then served. For an event that asks for verified in-zone minutes
+  // that is the whole question, so the scan now records PENDING and the
+  // qualification is decided later by the server, from credited seconds only.
+  //
+  // An event with NO duration requirement keeps `qualification: null` and its
+  // established `status` untouched, so nothing about its reporting changes.
+  const required = requiredMinutesFor(event);
+  const arrival = now > event.lateCutoff ? 'late' : 'present';
   try {
     return await EventAttendance.create({
       _id: await nextNumericId('eventAttendance'),
       eventId: event._id,
       attendeeId: user._id,
-      status: now > event.lateCutoff ? 'late' : 'present',
+      status: arrival,
       method,
       recordedAt: now,
       source: 'Scan',
+      ...(required
+        ? {
+          qualification: 'pending',
+          qualificationReason: QUALIFICATION_REASONS.DURATION_IN_PROGRESS,
+          requiredAttendanceMinutes: required,
+          verifiedSeconds: 0,
+        }
+        : {}),
       ...(verified
         ? {
           locationLatitude: verified.latitude,
@@ -230,10 +264,16 @@ export async function registerForEvent(user, eventId) {
   return { registered: true, created: false, message: 'You are already registered for this event.' };
 }
 
+/**
+ * Reads an administrator's wall-clock date and time AS ASIA/MANILA and returns
+ * the UTC instant to store.
+ *
+ * The `Z` this used to append is the whole bug: it told the Date constructor
+ * that Philippine local time was UTC, so "5:25 PM" was stored as 17:25Z instead
+ * of 09:25Z - eight hours late for every attendee. See utils/eventTimeZone.js.
+ */
 function parseLocalDateTime(date, time) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !/^\d{2}:\d{2}(?::\d{2})?$/.test(time || '')) return null;
-  const parsed = new Date(`${date}T${time.length === 5 ? `${time}:00` : time}Z`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return manilaWallClockToInstant(date, time);
 }
 
 function validateWriteValues(data, current = null, partial = false) {
@@ -261,7 +301,25 @@ function validateWriteValues(data, current = null, partial = false) {
     audience: data.audience ?? current?.audience ?? 'all',
     status: data.status ?? current?.status ?? 'published',
     attendanceMethod: data.method ?? current?.attendanceMethod ?? 'qr',
-    registrationRequired: data.requiredForAttendance ?? current?.registrationRequired ?? false,
+    // TWO INDEPENDENT QUESTIONS, TWO INDEPENDENT FIELDS.
+    //
+    // These used to be one value: `requiredForAttendance` (the "Required for
+    // percentage" checkbox) was written straight into `registrationRequired`.
+    // One checkbox labelled "counts toward a percentage" therefore decided
+    // whether every Student had to register before scanning, and because that
+    // checkbox defaulted to ON, every administrator-created event silently
+    // demanded registration nobody had asked for.
+    //
+    // Both default to FALSE on create. Neither is ever inferred from the other,
+    // so an administrator opts in to each one deliberately.
+    registrationRequired: data.registrationRequired ?? current?.registrationRequired ?? false,
+    requiredForAttendance: data.requiredForAttendance ?? current?.requiredForAttendance ?? false,
+    // Only supplied when the administrator sends it. Absent means "leave the
+    // existing deadline alone", so editing an event's title cannot silently
+    // close or reopen registration.
+    ...(data.registrationDeadline !== undefined
+      ? { registrationDeadline: data.registrationDeadline === null || data.registrationDeadline === '' ? null : new Date(data.registrationDeadline) }
+      : {}),
     startsAt,
     endsAt,
     lateCutoff,
@@ -271,7 +329,11 @@ function validateWriteValues(data, current = null, partial = false) {
   if (!['all', 'student', 'faculty'].includes(values.audience)) throw new ValidationError({ audience: 'Choose a valid audience.' });
   if (!['published', 'cancelled'].includes(values.status)) throw new ValidationError({ status: 'Choose a valid status.' });
   if (!['qr', 'barcode', 'rfid'].includes(values.attendanceMethod)) throw new ValidationError({ method: 'Choose a valid attendance method.' });
-  if (typeof values.registrationRequired !== 'boolean') throw new ValidationError({ requiredForAttendance: 'Choose true or false.' });
+  // Each boolean is validated under its OWN name. This used to report a bad
+  // `registrationRequired` as a problem with `requiredForAttendance`, which sent
+  // an administrator to fix the wrong checkbox.
+  if (typeof values.registrationRequired !== 'boolean') throw new ValidationError({ registrationRequired: 'Choose true or false.' });
+  if (typeof values.requiredForAttendance !== 'boolean') throw new ValidationError({ requiredForAttendance: 'Choose true or false.' });
 
   // Geofence: either all three parts are supplied, or none are. A half-set fence
   // would silently disable verification, so it is rejected instead.
@@ -313,6 +375,26 @@ function validateWriteValues(data, current = null, partial = false) {
   if (data.locationVerificationRequired !== undefined) {
     if (typeof data.locationVerificationRequired !== 'boolean') throw new ValidationError({ locationVerificationRequired: 'Choose true or false.' });
     values.locationVerificationRequired = data.locationVerificationRequired;
+  }
+
+  // GST006: the required in-zone attendance duration is administrator-set.
+  // It is never derived from the event length, and an omitted value leaves the
+  // stored requirement untouched, so existing events are never given a duration.
+  if (data.requiredAttendanceMinutes !== undefined) {
+    if (data.requiredAttendanceMinutes === null || data.requiredAttendanceMinutes === '') {
+      values.requiredAttendanceMinutes = null;
+    } else {
+      const minutes = Number(data.requiredAttendanceMinutes);
+      if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) {
+        throw new ValidationError({ requiredAttendanceMinutes: 'Enter the required attendance duration in whole minutes (1-1440).' });
+      }
+      // Validated against the window the event actually offers.
+      const windowMinutes = Math.floor((endsAt.getTime() - startsAt.getTime()) / 60_000);
+      if (minutes > windowMinutes) {
+        throw new ValidationError({ requiredAttendanceMinutes: `The required duration (${Math.round(minutes)} min) cannot exceed this event's length (${windowMinutes} min).` });
+      }
+      values.requiredAttendanceMinutes = Math.round(minutes);
+    }
   }
 
   if (!current || data.date !== undefined || data.start !== undefined || data.end !== undefined) {
