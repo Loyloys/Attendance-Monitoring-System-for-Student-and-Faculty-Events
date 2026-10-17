@@ -11,6 +11,7 @@ import {
   Menu,
   MessageSquare,
   QrCode,
+  UserCheck,
   Users,
   X,
 } from 'lucide-react';
@@ -47,6 +48,7 @@ const navByRole: Record<UserRole, AppNavItem[]> = {
   ],
   admin: [
     { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
+    { label: 'Signup requests', path: '/admin/signup-requests', icon: UserCheck },
     { label: 'User management', path: '/admin/users', icon: Users },
     { label: 'Event management', path: '/admin/events', icon: CalendarDays },
     { label: 'Event attendance', path: '/admin/attendance', icon: ClipboardCheck },

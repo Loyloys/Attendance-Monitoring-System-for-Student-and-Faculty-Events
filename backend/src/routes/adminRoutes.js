@@ -9,6 +9,11 @@ router.get('/admin/state/', asyncRoute(controller.state));
 router.get('/admin/audit-log/', asyncRoute(controller.auditLog));
 router.post('/admin/import-legacy-browser/', asyncRoute(controller.importLegacyBrowserState));
 router.post('/admin/users/', asyncRoute(controller.createUser));
+// AD003.3: email-only pending signup requests. Listed for review; approval
+// creates the User, rejection only marks the request. No User exists before approval.
+router.get('/admin/signup-requests/', asyncRoute(controller.signupRequests));
+router.post('/admin/signup-requests/:requestId/approve/', asyncRoute(controller.approveSignup));
+router.post('/admin/signup-requests/:requestId/reject/', asyncRoute(controller.rejectSignup));
 // Declared before the `/admin/users/:accountId/` route so "registrations" is not
 // swallowed as an account id. `router.use('/admin', requireAuthentication,
 // requireRole('admin'))` above already restricts this to administrators.

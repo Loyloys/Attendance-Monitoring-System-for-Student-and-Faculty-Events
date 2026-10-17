@@ -94,15 +94,12 @@ export class AuthService {
     return result;
   }
 
-  static async completeGoogleProfile(values: {
-    accountId: string;
-    department: string;
-    name: string;
-    phone: string;
-  }): Promise<AuthUser> {
-    const result = await eventApi.completeGoogleProfile(values);
-    activeUser = result.user;
-    return result.user;
+  static async completeGoogleProfile(): Promise<{ status: 'signed_in' | 'signup_pending'; user?: AuthUser; message?: string }> {
+    const result = await eventApi.completeGoogleProfile();
+    // AD003.3: a new signup stays pending with no session. Only a signed-in
+    // (already-approved) account lands in the active session.
+    if (result.status === 'signed_in' && result.user) activeUser = result.user;
+    return result;
   }
 
   static async linkGoogle(credential: string): Promise<AuthUser> {

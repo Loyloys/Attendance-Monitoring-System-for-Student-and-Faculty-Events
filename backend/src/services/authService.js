@@ -52,10 +52,17 @@ export async function authenticate(request, body) {
 }
 
 export async function updateProfile(user, data) {
-  const protectedFields = ['role', 'username', 'id', 'department', 'card_identifier'];
+  // GST001.3/GST012: users must not change their own role, approval status,
+  // active status, or other protected fields. Reject explicitly (do not silently
+  // ignore) so a caller knows the change was refused.
+  const protectedFields = [
+    'role', 'username', 'id', 'accountId', 'department', 'card_identifier',
+    'cardIdentifier', 'approvalStatus', 'isActive', 'isStaff', 'isSuperuser',
+    'googleSub', 'authProviders',
+  ];
   const supplied = protectedFields.filter((field) => Object.hasOwn(data, field));
   if (supplied.length) {
-    throw new ValidationError({ detail: 'Role, ID, department, and card assignments are administrator-managed.' });
+    throw new ValidationError({ detail: 'Role, ID, department, card, approval and account-status assignments are administrator-managed.' });
   }
 
   const updates = {};

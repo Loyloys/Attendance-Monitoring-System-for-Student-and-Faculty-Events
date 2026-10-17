@@ -57,7 +57,7 @@ export default function EventDashboard({ user, events, attendance, onNavigate, o
       </div>
       <div className="app-card p-6">
         <div className="flex items-center gap-2"><Ticket size={18} className="text-[#C2410C]" /><h2 className="app-section-title">Participation certificates</h2></div>
-        <p className="mt-2 text-xs leading-5 text-[#64748B]">Certificates are optional and appear only when an organizer issues one for an event you attended.</p>
+        <p className="mt-2 text-xs leading-5 text-[#64748B]">Certificates are optional and appear only when an organizer issues one for an event you attended. Students marked Absent are not eligible and see no download.</p>
         <div className="mt-5 space-y-2">
           {certificates.map(event => <div key={event.id} className="rounded-xl border border-[#E2E3DF] bg-[#FAF9F5] p-3 text-sm text-[#334155]"><p>{event.name}</p><button type="button" onClick={() => event.certificate_id && onCertificate(event.certificate_id)} className="mt-2 rounded text-xs font-semibold text-emerald-700 transition hover:text-emerald-800 hover:underline focus-visible:ring-2 focus-visible:ring-[#F97316] focus-visible:ring-offset-2">Download certificate</button></div>)}
           {!certificates.length && <p className="rounded-xl border border-dashed border-[#D8DAD5] p-4 text-xs text-[#94A3B8]">No certificates are available yet.</p>}

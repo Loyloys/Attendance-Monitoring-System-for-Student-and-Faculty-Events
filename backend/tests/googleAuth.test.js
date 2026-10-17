@@ -103,34 +103,29 @@ test('a linked Google identity signs into its account and keeps its role', async
   assert.equal((await client.get('/api/auth/me/')).body.username, 'FAC001');
 });
 
-test('a new Google identity registers as a student with no password', async () => {
+test('a new Google identity submits a pending signup request with no User yet', async () => {
   const client = agent();
   const started = await googleSignIn(client);
   assert.equal(started.status, 200, JSON.stringify(started.body));
   assert.equal(started.body.status, 'profile_incomplete');
   assert.equal(started.body.prefill.email, 'new.user@gmail.com');
   assert.equal(started.body.prefill.name, 'New User');
-  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU700', department: 'BSIT', name: 'New User', phone: '09171234567',
-  });
-  assert.equal(completed.status, 201, JSON.stringify(completed.body));
-  assert.equal(completed.body.user.role, 'student');
-  assert.equal(completed.body.user.id, 'STU700');
-  const stored = await getModels().User.findOne({ accountIdNormalized: 'stu700' }).select('+passwordHash');
-  assert.equal(stored.passwordHash, null);
-  assert.deepEqual([...stored.authProviders], ['google']);
-  assert.equal(stored.isStaff, false);
-  assert.equal(stored.isSuperuser, false);
-  const profile = await getModels().UserProfile.findOne({ userId: stored._id }).lean();
-  assert.equal(profile.role, 'student');
-  assert.equal((await client.get('/api/auth/me/')).status, 200);
+  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {});
+  // AD003.3: pending request stored; no User, no role, no session.
+  assert.equal(completed.status, 202, JSON.stringify(completed.body));
+  assert.equal(completed.body.status, 'signup_pending');
+  assert.equal(await getModels().User.countDocuments({ accountIdNormalized: 'stu700' }), 0);
+  const request = await getModels().SignupRequest.findOne({ googleEmailNormalized: 'new.user@gmail.com' }).lean();
+  assert.ok(request);
+  assert.equal(request.status, 'pending');
+  assert.equal((await client.get('/api/auth/me/')).status, 401);
 });
 
 
 test('profile completion cannot be bypassed without a verified identity', async () => {
   const client = agent();
   const response = await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU701', department: 'BSIT', name: 'Sneaky',
+    accountId: 'STU701', department: 'IT', name: 'Sneaky',
   });
   assert.equal(response.status, 400);
   assert.match(response.body.profile, /Start Google sign-in again/);
@@ -141,7 +136,7 @@ test('a browser supplied role is rejected during Google registration', async () 
   const client = agent();
   await googleSignIn(client);
   const response = await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU702', department: 'BSIT', name: 'Aspirer', role: 'admin',
+    accountId: 'STU702', department: 'IT', name: 'Aspirer', role: 'admin',
   });
   assert.equal(response.status, 400);
   assert.match(response.body.role, /assigned by an administrator/);
@@ -266,7 +261,7 @@ test('the nonce must match the session and cannot be replayed', async () => {
   assert.match(again.body.detail, /has expired|matched to your session/);
 });
 
-test('simultaneous registrations for one identity create a single account', async () => {
+test('simultaneous signup requests for one identity create a single pending request', async () => {
   const open = async (accountId) => {
     const client = agent();
     const opened = await googleSignIn(client);
@@ -278,25 +273,28 @@ test('simultaneous registrations for one identity create a single account', asyn
   const second = await open('STU705');
   const service = googleService;
   const [responseA, responseB] = await Promise.all([
-    send(first.client, 'post', '/api/auth/google/complete-profile/', { accountId: first.accountId, department: 'BSIT', name: 'Race One' }),
+    send(first.client, 'post', '/api/auth/google/complete-profile/', {}),
     (async () => {
       await stubVerifier(claims());
-      return send(second.client, 'post', '/api/auth/google/complete-profile/', { accountId: second.accountId, department: 'BSIT', name: 'Race Two' });
+      return send(second.client, 'post', '/api/auth/google/complete-profile/', {});
     })(),
   ]);
+  // AD003.3: both submissions converge on one pending request; no User exists.
   assert.ok(
-    [responseA.status, responseB.status].includes(201),
-    `expected one account to be created, got ${JSON.stringify([responseA.body, responseB.body])}`,
+    [responseA.status, responseB.status].every((status) => [202, 409].includes(status)),
+    `expected pending/duplicate handling, got ${JSON.stringify([responseA.body, responseB.body])}`,
   );
-  assert.equal(await getModels().User.countDocuments({ googleSub: 'google-sub-0001' }), 1);
-  assert.equal(await getModels().UserProfile.countDocuments(), 1);
+  assert.equal(await getModels().SignupRequest.countDocuments({ googleSub: 'google-sub-0001' }), 1);
+  assert.equal(await getModels().User.countDocuments({ googleSub: 'google-sub-0001' }), 0);
 });
 
-test('session survives a refresh and logout invalidates it', async () => {
+test('a pending signup reaches no attendance feature until admin approval', async () => {
   const client = agent();
   await googleSignIn(client);
-  await send(client, 'post', '/api/auth/google/complete-profile/', { accountId: 'STU706', department: 'BSIT', name: 'Session Test' });
-  assert.equal((await client.get('/api/auth/me/')).status, 200);
+  const submitted = await send(client, 'post', '/api/auth/google/complete-profile/', {});
+  assert.equal(submitted.status, 202, JSON.stringify(submitted.body));
+  // No session: refresh and logout paths stay unauthenticated.
+  assert.equal((await client.get('/api/auth/me/')).status, 401);
   assert.equal((await send(client, 'post', '/api/auth/logout/')).status, 204);
   assert.equal((await client.get('/api/auth/me/')).status, 401);
 });
@@ -357,7 +355,7 @@ test('a Google-only account cannot be signed into with a password', async () => 
   const client = agent();
   await googleSignIn(client);
   await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU703', department: 'BSIT', name: 'No Password',
+    accountId: 'STU703', department: 'IT', name: 'No Password',
   });
   const fresh = agent();
   const response = await send(fresh, 'post', '/api/auth/login/', { identifier: 'STU703', password: 'anything' });
@@ -628,52 +626,43 @@ test('the off policy refuses a valid credential, so open is never reached by acc
   assert.equal(parsed.status, 503);
 });
 
-test('a new Google sign-up is activated immediately and reaches attendance features', async () => {
+test('a new Google signup stays pending and reaches no attendance feature until approval', async () => {
   const client = agent();
   const started = await googleSignIn(client, { email: 'new.user@gmail.com', sub: 'google-sub-pending' });
   assert.equal(started.status, 200, JSON.stringify(started.body));
-  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU500', department: 'BSIT', name: 'New User',
-  });
-  assert.equal(completed.status, 201, JSON.stringify(completed.body));
-  // Verified identity plus a completed profile IS the registration. The account
-  // is active at once and is never parked waiting for an administrator.
-  assert.equal(completed.body.user.role, 'student');
-  assert.equal(completed.body.user.approvalStatus, 'approved');
-  assert.equal(completed.body.user.passwordHash, undefined);
+  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {});
+  // GST001.0/AD003.3: OAuth alone grants no role or access; no User exists.
+  assert.equal(completed.status, 202, JSON.stringify(completed.body));
+  assert.equal(completed.body.status, 'signup_pending');
+  assert.equal(await getModels().User.countDocuments({ accountIdNormalized: 'stu500' }), 0);
 
-  // Signed in, and can read its own status...
-  const me = await client.get('/api/auth/me/');
-  assert.equal(me.status, 200);
-  assert.equal(me.body.approvalStatus, 'approved');
-
-  // ...and reaches the attendance features a Student actually has, with no
-  // approval step and no second request. This is what the dashboard load does.
-  for (const path of ['/api/events/', '/api/attendance/me/', '/api/reports/me.pdf']) {
-    const allowed = await client.get(path);
-    assert.equal(allowed.status, 200, `${path} must be reachable: ${JSON.stringify(allowed.body)}`);
+  // No session, and the pending identity reaches no attendance feature.
+  assert.equal((await client.get('/api/auth/me/')).status, 401);
+  for (const path of ['/api/events/', '/api/attendance/me/']) {
+    const blocked = await client.get(path);
+    assert.equal(blocked.status, 401, `${path} must stay unreachable: ${JSON.stringify(blocked.body)}`);
   }
-  // Still Student: activation never confers a privileged role.
-  assert.equal((await getModels().UserProfile.findOne({ userId: (await getModels().User.findOne({ accountIdNormalized: 'stu500' }))._id }).lean()).role, 'student');
 });
 
-test('automatic activation still refuses every privileged and administrative route', async () => {
+test('an admin-approved signup creates the User with the assigned role', async () => {
   const client = agent();
   await googleSignIn(client, { email: 'new.user@gmail.com', sub: 'google-sub-student-only' });
-  await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU501', department: 'BSIT', name: 'Student Only',
-  });
+  await send(client, 'post', '/api/auth/google/complete-profile/', {});
 
-  // An active Student account is still not an administrator. Activation grants
-  // the student's own attendance features, never the administrator API.
-  for (const path of ['/api/admin/users/', '/api/admin/state/', '/api/admin/audit-log/']) {
-    const blocked = await client.get(path);
-    assert.equal(blocked.status, 403, `${path} must stay blocked: ${JSON.stringify(blocked.body)}`);
-  }
-  const create = await send(client, 'post', '/api/admin/users/', { id: 'HACK01', name: 'H', username: 'H', email: 'h@cot.edu', contact: '1', department: 'IT', role: 'Admin', passwordHash: 'x' });
-  assert.equal(create.status, 403, JSON.stringify(create.body));
-  // Faculty-only routes stay closed to a Student too.
-  assert.equal((await client.get('/api/reports/events/whatever.pdf')).status, 403);
+  await createUser({ username: 'ADM009', role: 'admin' });
+  const { agent: adminClient } = await login('ADM009');
+  const pending = await getModels().SignupRequest.findOne({ googleSub: 'google-sub-student-only' }).lean();
+  assert.ok(pending);
+  const approved = await send(adminClient, 'post', `/api/admin/signup-requests/${pending._id}/approve/`, {
+    role: 'Student', department: 'IT', accountId: 'STU501',
+  });
+  assert.equal(approved.status, 201, JSON.stringify(approved.body));
+  assert.equal(approved.body.role, 'Student');
+  const created = await getModels().User.findOne({ accountIdNormalized: 'stu501' }).select('+passwordHash');
+  assert.ok(created);
+  assert.equal(created.passwordHash, null);
+  // Approval creates the account but never signs the pending browser in.
+  assert.equal((await client.get('/api/auth/me/')).status, 401);
 });
 
 test('an administrator can block and restore an account', async () => {
@@ -752,29 +741,27 @@ test('an unauthenticated request cannot approve an account or grant a privileged
   assert.equal((await getModels().UserProfile.findOne({ userId: target._id }).lean()).role, 'student');
 });
 
-test('a new Google sign-up never receives a privileged role, whatever screen was chosen', async () => {
+test('a new Google signup stays pending and never receives a privileged role', async () => {
   const client = agent();
   await googleSignIn(client, { email: 'new.user@gmail.com', sub: 'google-sub-priv' }, { selectedRole: 'admin' });
 
-  // A browser-supplied role is refused outright, and no account is created.
+  // A browser-supplied role is refused outright, and no request is stored.
   const attempted = await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU900', department: 'BSIT', name: 'New User', role: 'admin',
+    accountId: 'STU900', department: 'IT', name: 'New User', role: 'admin',
   });
   assert.equal(attempted.status, 400, JSON.stringify(attempted.body));
   assert.match(attempted.body.role, /assigned by an administrator/);
   assert.equal(await getModels().User.countDocuments({ accountIdNormalized: 'stu900' }), 0);
 
-  // A clean submission, still chosen on the Administrator screen, produces an
-  // active STUDENT. Selecting a privileged account type grants nothing.
-  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU900', department: 'BSIT', name: 'New User',
-  });
-  assert.equal(completed.status, 201, JSON.stringify(completed.body));
-  assert.equal(completed.body.user.role, 'student');
-  assert.equal(completed.body.user.approvalStatus, 'approved');
-  const created = await getModels().User.findOne({ accountIdNormalized: 'stu900' });
-  assert.equal(created.isStaff, false);
-  assert.equal(created.isSuperuser, false);
+  // A clean submission, still chosen on the Administrator screen, produces a
+  // PENDING request. Selecting a privileged account type grants nothing.
+  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {});
+  assert.equal(completed.status, 202, JSON.stringify(completed.body));
+  assert.equal(completed.body.status, 'signup_pending');
+  assert.equal(await getModels().User.countDocuments({ accountIdNormalized: 'stu900' }), 0);
+  const pending = await getModels().SignupRequest.findOne({ googleSub: 'google-sub-priv' }).lean();
+  assert.ok(pending);
+  assert.equal(pending.status, 'pending');
 });
 
 test('selecting Faculty cannot sign into a Student account, and no role is changed', async () => {
@@ -805,7 +792,7 @@ test('a matching selection signs in normally and an invented selection is ignore
   assert.equal(invented.body.user.role, 'faculty');
 });
 
-test('a new identity chosen on the Faculty screen still registers as a Student', async () => {
+test('a new identity chosen on the Faculty screen stays pending with no role granted', async () => {
   const client = agent();
   const started = await googleSignIn(client, {}, { selectedRole: 'faculty' });
   assert.equal(started.status, 200, JSON.stringify(started.body));
@@ -814,19 +801,16 @@ test('a new identity chosen on the Faculty screen still registers as a Student',
   // The selected account type is never forwarded as a role, and a role supplied
   // at this step is still refused outright.
   const attempted = await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU708', department: 'BSIT', name: 'New User', role: 'faculty',
+    accountId: 'STU708', department: 'IT', name: 'New User', role: 'faculty',
   });
   assert.equal(attempted.status, 400);
   assert.match(attempted.body.role, /assigned by an administrator/);
   assert.equal(await getModels().User.countDocuments({ accountIdNormalized: 'stu708' }), 0);
 
-  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {
-    accountId: 'STU708', department: 'BSIT', name: 'New User',
-  });
-  assert.equal(completed.status, 201, JSON.stringify(completed.body));
-  assert.equal(completed.body.user.role, 'student');
-  const created = await getModels().User.findOne({ accountIdNormalized: 'stu708' });
-  assert.equal((await getModels().UserProfile.findOne({ userId: created._id }).lean()).role, 'student');
-  assert.equal(created.isSuperuser, false);
-  assert.equal(created.isStaff, false);
+  const completed = await send(client, 'post', '/api/auth/google/complete-profile/', {});
+  // AD003.3: pending request; no User and no role until admin approval.
+  assert.equal(completed.status, 202, JSON.stringify(completed.body));
+  assert.equal(completed.body.status, 'signup_pending');
+  assert.equal(await getModels().User.countDocuments({ accountIdNormalized: 'stu708' }), 0);
+  assert.ok(await getModels().SignupRequest.findOne({ googleSub: 'google-sub-0001' }).lean());
 });

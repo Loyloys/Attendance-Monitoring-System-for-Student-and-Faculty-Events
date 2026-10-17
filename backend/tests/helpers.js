@@ -80,6 +80,8 @@ let identifiers;
 async function ensureGatedIndexes() {
   await models.AttendanceSession.createIndexes();
   await models.AttendanceCode.createIndexes();
+  // AD003.3: isolated-test only. The live rollout stays approval-gated.
+  await models.SignupRequest.createIndexes();
 }
 
 export const minutes = (value) => value * 60 * 1_000;

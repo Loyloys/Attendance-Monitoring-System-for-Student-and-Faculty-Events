@@ -3,6 +3,7 @@ import AccountTypeSelection from './auth/AccountTypeSelection';
 import Login from './auth/Login';
 import CompleteGoogleProfile from './auth/CompleteGoogleProfile';
 import RegistrationComplete from './auth/RegistrationComplete';
+import SignupPending from './auth/SignupPending';
 import RequireAuth from './auth/RequireAuth';
 import Portal from './pages/Portal';
 import AdminWorkspace from './pages/admin/Workspace';
@@ -19,6 +20,8 @@ export default function AppRoutes() {
       <Route path="/login/faculty" element={<Login />} />
       <Route path="/login/administrator" element={<Login />} />
       <Route path="/login/complete-profile" element={<CompleteGoogleProfile />} />
+      {/* AD003.3: pending state after a signup request. No account exists yet. */}
+      <Route path="/login/pending" element={<SignupPending />} />
       {/* Shown for a moment after a new Student account is created, confirming the
           registration succeeded and automatically activating the account. */}
       <Route
@@ -59,6 +62,8 @@ export default function AppRoutes() {
       <Route path="/faculty/mark-attendance" element={<Navigate to="/portal?view=attendance" replace />} />
 
       <Route path="/admin/dashboard" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      {/* AD003.3: review of email-only signup requests; approval creates the User. */}
+      <Route path="/admin/signup-requests" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/users" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/events" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/attendance" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />

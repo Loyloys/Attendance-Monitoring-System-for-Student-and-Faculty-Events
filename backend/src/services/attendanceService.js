@@ -30,6 +30,10 @@ export async function personalAttendance(user) {
         status: record.status,
         method: record.method,
         recordedAt: new Date(record.recordedAt).toISOString(),
+        // GST009: verified duration, requirement, and qualification for the UI.
+        verifiedSeconds: typeof record.verifiedSeconds === 'number' ? record.verifiedSeconds : 0,
+        requiredAttendanceMinutes: record.requiredAttendanceMinutes ?? null,
+        qualification: record.qualification ?? null,
       };
     }),
   };

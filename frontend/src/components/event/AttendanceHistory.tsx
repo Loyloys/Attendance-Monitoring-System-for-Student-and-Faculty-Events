@@ -1,6 +1,7 @@
 import { CalendarDays, CheckCircle2, Clock3, Download, FileDown } from 'lucide-react';
-import type { PersonalAttendanceData } from '../../types/eventAttendance';
+import type { PersonalAttendanceData, PersonalAttendanceRecord } from '../../types/eventAttendance';
 import { eventDateLabel, eventTimeLabel } from '../../utils/eventTime';
+import { formatVerified } from '../../utils/attendanceTracking';
 
 interface Props {
   data: PersonalAttendanceData;
@@ -16,7 +17,7 @@ export default function AttendanceHistory({ data, onDownload }: Props) {
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[
       ['Attendance percentage', `${data.summary.attendancePercentage}%`], ['Present', data.summary.present], ['Late', data.summary.late], ['Absent', data.summary.absent],
     ].map(([label, value]) => <div key={label} className="app-card p-5"><p className="text-3xl font-bold text-[#10203B]">{value}</p><p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-[#64748B]">{label}</p></div>)}</div>
-    <section className="app-card overflow-hidden"><div className="border-b border-[#E2E3DF] p-6"><h2 className="app-section-title">Event attendance history</h2><p className="mt-1 text-xs text-[#64748B]">Present, late, and absent statuses are calculated by the server.</p></div><div className="app-table-wrap"><table className="app-table"><thead><tr><th>Event</th><th>Date and time</th><th>Status</th><th>Method</th><th>Recorded</th></tr></thead><tbody>{data.records.map(record => <tr key={record.id}><td className="font-semibold text-[#10203B]">{record.eventName}</td><td><span className="inline-flex items-center gap-2"><CalendarDays size={14} className="text-[#C2410C]" />{dateLabel(record.eventDate)} · {timeLabel(record.eventDate)}</span></td><td><Status status={record.status} /></td><td className="capitalize">{record.method === 'rfid' ? 'RFID / ID' : record.method}</td><td>{dateLabel(record.recordedAt)}</td></tr>)}</tbody></table></div>{!data.records.length && <div className="app-empty-state"><Clock3 size={30} className="text-[#CBD5E1]" /><p className="mt-3 text-sm text-[#64748B]">No event attendance has been recorded yet.</p></div>}</section>
+    <section className="app-card overflow-hidden"><div className="border-b border-[#E2E3DF] p-6"><h2 className="app-section-title">Event attendance history</h2><p className="mt-1 text-xs text-[#64748B]">Present, late, and absent statuses are calculated by the server.</p></div><div className="app-table-wrap"><table className="app-table"><thead><tr><th>Event</th><th>Date and time</th><th>Status</th><th>Method</th><th>Verified duration</th><th>Attendance %</th><th>Recorded</th></tr></thead><tbody>{data.records.map(record => <tr key={record.id}><td className="font-semibold text-[#10203B]">{record.eventName}</td><td><span className="inline-flex items-center gap-2"><CalendarDays size={14} className="text-[#C2410C]" />{dateLabel(record.eventDate)} · {timeLabel(record.eventDate)}</span></td><td><Status status={record.status} /></td><td className="capitalize">{record.method === 'rfid' ? 'RFID / ID' : record.method}</td><td>{formatVerified(record.verifiedSeconds ?? 0)}{record.requiredAttendanceMinutes ? ` / ${record.requiredAttendanceMinutes} min` : ''}</td><td>{recordAttendancePercentage(record)}%</td><td>{dateLabel(record.recordedAt)}</td></tr>)}</tbody></table></div>{!data.records.length && <div className="app-empty-state"><Clock3 size={30} className="text-[#CBD5E1]" /><p className="mt-3 text-sm text-[#64748B]">No event attendance has been recorded yet.</p></div>}</section>
     <p className="flex items-center gap-2 text-xs text-[#94A3B8]"><Download size={14} /> The PDF is generated on the server and always limited to your account.</p>
   </div>;
 }
@@ -24,5 +25,14 @@ export default function AttendanceHistory({ data, onDownload }: Props) {
 function Status({ status }: { status: 'present' | 'late' | 'absent' }) {
   const styles = { present: 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100', late: 'border-amber-300/20 bg-amber-300/10 text-amber-100', absent: 'border-rose-300/20 bg-rose-300/10 text-rose-100' };
   return <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${styles[status]}`}><CheckCircle2 size={12} />{status}</span>;
+}
+
+/** GST009: per-event attendance percentage from the server-verified duration. */
+function recordAttendancePercentage(record: PersonalAttendanceRecord): number {
+  const required = record.requiredAttendanceMinutes;
+  if (typeof required === 'number' && required > 0) {
+    return Math.min(100, Math.round(((record.verifiedSeconds ?? 0) / (required * 60)) * 100));
+  }
+  return record.status === 'absent' ? 0 : 100;
 }
 

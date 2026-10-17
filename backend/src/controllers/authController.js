@@ -45,8 +45,16 @@ export async function googleAuthenticate(request, response) {
 
 export async function googleCompleteProfile(request, response) {
   const result = await completeGoogleProfile(request, request.body);
-  rotateCsrfToken(request, response);
-  response.status(201).json({ status: result.status, user: serializeAuthUser(result.user) });
+  if (result.status === 'signed_in') {
+    rotateCsrfToken(request, response);
+    response.json({ status: result.status, user: serializeAuthUser(result.user) });
+    return;
+  }
+  // AD003.3: pending signup request stored; no session, no role, no access.
+  response.status(202).json({
+    status: result.status,
+    message: 'Your signup request is pending administrator approval. You will be notified once it is reviewed.',
+  });
 }
 
 export async function googleLink(request, response) {

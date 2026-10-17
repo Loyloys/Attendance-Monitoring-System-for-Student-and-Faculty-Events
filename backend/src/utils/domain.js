@@ -4,6 +4,43 @@ export const ROLES = Object.freeze({
   ADMIN: 'admin',
 });
 
+/**
+ * The department/program values a NEW account may choose on the Google signup
+ * profile-completion form. The server re-validates every submission against
+ * this list (see completeGoogleProfile), so it is the single source of truth -
+ * the frontend dropdown mirrors it for convenience only.
+ *
+ * DELIBERATELY NARROW: this list gates new signup submissions only. Existing
+ * profiles carry legacy values ("Information Technology", "BSIT", "COT", ...)
+ * that must keep working untouched, so neither the admin account-editing API
+ * nor signup approval checks against this list, and no record is rewritten.
+ */
+export const DEPARTMENTS = Object.freeze(['IT', 'BSEMC', 'BSFT', 'BSAT', 'BSET']);
+
+/**
+ * The pending role an account request gets from the applicant's VERIFIED Google
+ * email domain. The match is exact and case-insensitive on the whole domain:
+ * "@student.buksu.edu.ph.evil.example" or "@notstudent.buksu.edu.ph" never
+ * match. An address on any other domain gets NO inferred role, and the
+ * administrator must then assign one explicitly during approval.
+ */
+export const PENDING_ROLE_BY_EMAIL_DOMAIN = Object.freeze({
+  'student.buksu.edu.ph': ROLES.STUDENT,
+  'faculty.buksu.edu.ph': ROLES.FACULTY,
+});
+
+/**
+ * Infers the pending role for a verified email address, or '' when its domain
+ * is not one of the exact matches above. Only ever called with the email claim
+ * Google has already verified - never with browser input.
+ */
+export function pendingRoleForEmail(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  const separator = normalized.lastIndexOf('@');
+  const domain = separator === -1 ? '' : normalized.slice(separator + 1);
+  return PENDING_ROLE_BY_EMAIL_DOMAIN[domain] || '';
+}
+
 export const EVENT_AUDIENCES = Object.freeze(['all', 'student', 'faculty']);
 export const EVENT_STATUSES = Object.freeze(['published', 'cancelled']);
 export const ATTENDANCE_METHODS = Object.freeze(['qr', 'barcode', 'rfid']);

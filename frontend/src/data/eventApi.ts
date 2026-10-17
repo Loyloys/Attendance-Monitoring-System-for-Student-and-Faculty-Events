@@ -159,6 +159,21 @@ export class ApiError extends Error {
 }
 
 export type GooglePrefill = { name: string; email: string; picture: string };
+
+/** A pending/approved/rejected signup request, as the admin review screen sees it. */
+export type AdminSignupRequest = {
+  id: string;
+  googleEmail: string;
+  accountId: string;
+  name: string;
+  department: string;
+  phone: string;
+  // Role inferred from the verified email domain ('' when none matched).
+  pendingRole: 'student' | 'faculty' | '';
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string | null;
+  reviewedAt: string | null;
+};
 export type EnvironmentInfo = {
   environment: string;
   /** Text the server asks us to show on every screen. Empty on the normal app. */
@@ -210,7 +225,8 @@ export function environmentSnapshot(): EnvironmentInfo {
 
 export type GoogleAuthResult =
   | { status: 'signed_in'; user: AuthUser }
-  | { status: 'profile_incomplete'; prefill: GooglePrefill };
+  | { status: 'profile_incomplete'; prefill: GooglePrefill }
+  | { status: 'signup_pending'; message: string };
 /**
  * What the server actually enforces, so the card never claims more than is true.
  * `institutional` is the only mode that is school-approved; `development_test`
@@ -386,10 +402,32 @@ export const eventApi = {
       body: JSON.stringify({ credential, selectedRole }),
     });
   },
-  async completeGoogleProfile(values: { accountId: string; department: string; name: string; phone: string }) {
-    return requestJson<{ status: 'signed_in'; user: AuthUser }>('/auth/google/complete-profile/', {
+  async completeGoogleProfile() {
+    // Email-only account request: the server takes everything it stores from
+    // the verified Google identity, so the browser deliberately sends nothing.
+    return requestJson<{ status: 'signed_in' | 'signup_pending'; user?: AuthUser; message?: string }>('/auth/google/complete-profile/', {
+      method: 'POST',
+      body: '{}',
+    });
+  },
+  /**
+   * AD003.3 admin review of email-only signup requests. Approval creates the
+   * User with the administrator-assigned account ID, department (one of the
+   * fixed five) and role; rejection never creates one.
+   */
+  adminSignupRequests(status: 'pending' | 'approved' | 'rejected' = 'pending') {
+    return requestJson<AdminSignupRequest[]>(`/admin/signup-requests/?status=${status}`);
+  },
+  async approveSignupRequest(id: string, values: { accountId: string; department: string; role?: string }) {
+    return requestJson<{ id: string }>(`/admin/signup-requests/${encodeURIComponent(id)}/approve/`, {
       method: 'POST',
       body: JSON.stringify(values),
+    });
+  },
+  async rejectSignupRequest(id: string) {
+    return requestJson<{ id: string; status: string }>(`/admin/signup-requests/${encodeURIComponent(id)}/reject/`, {
+      method: 'POST',
+      body: '{}',
     });
   },
   async linkGoogle(credential: string) {

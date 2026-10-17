@@ -1,15 +1,14 @@
 import crypto from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { env } from '../config/env.js';
-import { RevokedIdentifier, User, UserProfile } from '../models/index.js';
-import { ROLES } from '../utils/domain.js';
+import { RevokedIdentifier, SignupRequest, User, UserProfile } from '../models/index.js';
+import { ROLES, pendingRoleForEmail } from '../utils/domain.js';
 import {
   AppError,
   AuthenticationError,
   ConflictError,
   PermissionError,
   ValidationError,
-  requireString,
 } from '../utils/errors.js';
 import { stableCaseInsensitive } from '../utils/identifiers.js';
 import { regenerateSession } from '../utils/session.js';
@@ -17,6 +16,8 @@ import { regenerateSession } from '../utils/session.js';
 // Google-only accounts may never be given a fabricated password.
 export const GOOGLE_SIGNED_IN = 'signed_in';
 export const GOOGLE_PROFILE_INCOMPLETE = 'profile_incomplete';
+// AD003.3: a verified identity whose signup request is awaiting admin approval.
+export const GOOGLE_SIGNUP_PENDING = 'signup_pending';
 
 function googleNotConfigured() {
   return new AppError(503, 'Google sign-in is not available on this server yet.');
@@ -380,112 +381,76 @@ export async function authenticateWithGoogle(request, body) {
   return { status: GOOGLE_PROFILE_INCOMPLETE, prefill: prefillFrom(identity, null) };
 }
 
-const ACCOUNT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{2,29}$/;
-
-
 /**
- * Step 2. Creates the account for a verified Google identity.
+ * Step 2. Submits an EMAIL-ONLY account request for a verified Google identity.
  *
- * The role is fixed to student on the server, and a browser supplied role is
- * rejected outright so nobody can self-assign Faculty or Administrator. The unique
- * partial index on googleSub makes simultaneous registrations for one identity
- * collapse into a single account rather than creating duplicates.
+ * GST001.0 / AD003.3: OAuth alone must not grant an application role or access,
+ * and NO User account is created here. The applicant provides NOTHING typed:
+ * the email and name come from the VERIFIED ID token (never browser input), and
+ * the pending role is inferred server-side from the verified email domain (see
+ * PENDING_ROLE_BY_EMAIL_DOMAIN). Department/course is assigned by an
+ * administrator during approval and is never collected from the applicant.
+ * Repeat submissions update the same pending request (safe handling of repeats).
  */
 export async function completeGoogleProfile(request, body) {
   const identity = request.session.pendingGoogleIdentity;
   if (!identity) {
     throw new ValidationError({ profile: 'Start Google sign-in again before completing your profile.' });
   }
-  if (Object.hasOwn(body || {}, 'role')) {
+  if (Object.hasOwn(body || {}, 'role') || Object.hasOwn(body || {}, 'approvalStatus') || Object.hasOwn(body || {}, 'isActive')) {
     throw new ValidationError({ role: 'Your role is assigned by an administrator and cannot be chosen here.' });
   }
-
-  const accountId = requireString(body.accountId, 'accountId', { min: 3, max: 30 }).toUpperCase();
-  if (!ACCOUNT_ID_PATTERN.test(accountId)) {
-    throw new ValidationError({ accountId: 'Use 3 to 30 letters, numbers, dots, dashes or underscores.' });
-  }
-  const department = requireString(body.department, 'department', { min: 2, max: 150 });
-  const fullName = requireString(body.name || identity.name, 'name', { min: 2, max: 150 });
-  const phone = body.phone === undefined || body.phone === null
-    ? ''
-    : requireString(body.phone, 'phone', { min: 0, max: 40 });
-
-  const accountIdNormalized = stableCaseInsensitive(accountId);
-  const usernameNormalized = accountIdNormalized;
-
-  const revoked = await RevokedIdentifier.exists({
-    _id: { $regex: `^${accountIdNormalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:` },
-  });
-  if (revoked) throw new ConflictError({ accountId: 'That account ID can no longer be used.' });
-
-  if (await User.exists({ $or: [{ accountIdNormalized }, { usernameNormalized }] })) {
-    throw new ConflictError({ accountId: 'That account ID is already in use.' });
+  if (Object.hasOwn(body || {}, 'department')) {
+    // The department dropdown moved to the ADMIN approval screen. A browser that
+    // still submits one (stale page, scripted request) is told so explicitly
+    // rather than having the value silently ignored.
+    throw new ValidationError({ department: 'Your department is assigned by an administrator when your request is reviewed.' });
   }
 
-  const { firstName, lastName } = splitName(fullName);
+  // From the verified Google identity only. An unmatched domain simply gets no
+  // inferred role; the administrator assigns one at approval.
+  const pendingRole = pendingRoleForEmail(identity.email);
 
-  let user;
+  // A simultaneous approval already created the account for this identity.
+  // Sign that account in instead of failing, so one person never ends up with two users.
+  const approved = await loadLinkedUser(identity.sub).catch(() => null);
+  if (approved) {
+    delete request.session.pendingGoogleIdentity;
+    return signInDocument(request, approved.document);
+  }
+
   try {
-    user = await User.create({
-      accountId,
-      accountIdNormalized,
-      username: accountId,
-      usernameNormalized,
-      passwordHash: null,
-      authProviders: ['google'],
-      email: identity.email,
-      emailNormalized: identity.emailNormalized,
-      firstName: firstName.slice(0, 150),
-      lastName: lastName.slice(0, 150),
-      isActive: true,
-      // Automatic activation. Completing the profile IS the registration step, so
-      // the account is usable immediately and is never parked in a manual queue.
-      // This is NOT a bypass of authentication: the Google credential was already
-      // verified against signature, audience, issuer, expiry, nonce and
-      // `email_verified` above, the role is forced to Student, and the account
-      // still has to pass `requireAuthentication` and CSRF on every request.
-      approvalStatus: 'approved',
-      isStaff: false,
-      isSuperuser: false,
-      profileCompleted: true,
-      dateJoined: new Date(),
-      dataSource: 'google',
-      ...googleFields(identity),
-    });
+    await SignupRequest.findOneAndUpdate(
+      { googleSub: identity.sub },
+      {
+        $set: {
+          googleEmail: identity.email,
+          googleEmailNormalized: identity.emailNormalized,
+          googleHostedDomain: identity.hostedDomain || '',
+          googlePictureUrl: identity.picture || '',
+          // Verified Google profile details, kept for the administrator's review.
+          displayName: (identity.name || '').slice(0, 150),
+          pendingRole,
+          status: 'pending',
+          reviewedAt: null,
+          reviewedBy: null,
+        },
+        // Email-only request: accountId, department and phone stay empty until
+        // an administrator assigns them during approval. A repeat submission
+        // never overwrites them with browser input because it never receives any.
+        $setOnInsert: { createdAt: new Date(), accountId: '', department: '', phone: '' },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
   } catch (error) {
     if (error?.code === 11000) {
-      const field = Object.keys(error.keyPattern || error.keyValue || {})[0] || '';
-      if (field === 'googleSub') {
-        // A simultaneous request already claimed this identity. Sign that account
-        // in instead of failing, so one person can never end up with two users.
-        const winner = await loadLinkedUser(identity.sub);
-        if (winner) {
-          delete request.session.pendingGoogleIdentity;
-          return signInDocument(request, winner.document);
-        }
-      }
-      throw new ConflictError({ accountId: 'That account ID is already in use.' });
+      throw new ConflictError({ accountId: 'A request for this Google account is already in review.' });
     }
     throw error;
   }
 
-  try {
-    await UserProfile.create({
-      userId: user._id,
-      role: ROLES.STUDENT,
-      displayName: fullName,
-      phone,
-      department,
-      cardIdentifier: null,
-    });
-  } catch (error) {
-    // Never leave a user behind without the profile record the app requires.
-    await User.deleteOne({ _id: user._id }).catch(() => {});
-    throw error;
-  }
-
   delete request.session.pendingGoogleIdentity;
-  return signInDocument(request, user);
+  return { status: GOOGLE_SIGNUP_PENDING };
 }
 
 /**

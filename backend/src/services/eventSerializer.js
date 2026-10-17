@@ -145,7 +145,11 @@ export function serializeEventContext(event, context) {
       && registrationOkay
       && !attendance,
     feedback_submitted: Boolean(feedbackSubmitted),
-    certificate_id: certificateId === null || certificateId === undefined ? null : String(certificateId),
+    // GST014: an Absent student must not be exposed a file or download URL.
+    // The certificate id is withheld when the persisted attendance is absent.
+    certificate_id: attendance?.status === 'absent'
+      ? null
+      : (certificateId === null || certificateId === undefined ? null : String(certificateId)),
     check_in_opens_at: iso(event.checkInOpensAt),
     check_in_closes_at: iso(event.checkInClosesAt),
     late_cutoff: iso(event.lateCutoff),

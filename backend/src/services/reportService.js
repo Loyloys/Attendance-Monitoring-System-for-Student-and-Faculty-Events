@@ -86,6 +86,12 @@ export async function certificatePdf(user, certificateId) {
   if (user.profile.role !== 'student') throw new PermissionError('This action is not available for your role.');
   const certificate = await EventCertificate.findOne({ _id: certificateId, studentId: user._id }).lean();
   if (!certificate) throw new NotFoundError('Certificate not found.');
+  // GST014: a student whose persisted attendance status is Absent must be
+  // refused by the backend download endpoint. No file or URL is exposed.
+  const attendance = await EventAttendance.findOne({ eventId: certificate.eventId, attendeeId: user._id }).lean();
+  if (!attendance || attendance.status === 'absent') {
+    throw new PermissionError('A certificate is available only when your attendance for this event is recorded as present or late.');
+  }
   const event = await Event.findById(certificate.eventId).lean();
   const organizer = await UserProfile.findOne({ userId: event.organizerId }).lean();
   const content = await renderPdf({

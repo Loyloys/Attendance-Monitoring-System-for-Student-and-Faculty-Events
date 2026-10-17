@@ -47,6 +47,9 @@ export async function connectDatabase(uri = env.mongoUri) {
  *     issuance converge on one credential. Excluding only the tracking model would
  *     still let a routine restart apply the QR index to the live database, which is
  *     exactly the rollout that has to be authorised.
+ *   - `SignupRequest`     - AD003.3 email-only pending requests. A new collection
+ *     plus its indexes must never be created implicitly on the live database by a
+ *     routine start; creation waits for explicit approval.
  *
  * Nothing is lost in the meantime:
  *   - tracking endpoints stay refused until their index exists;
@@ -59,7 +62,7 @@ export async function connectDatabase(uri = env.mongoUri) {
  * Excluding a model here does NOT drop an index that already exists: `createIndexes`
  * only ever creates what is missing, and nothing in this file removes anything.
  */
-export const INDEX_CREATION_EXCLUDED_MODELS = Object.freeze(['AttendanceSession', 'AttendanceCode']);
+export const INDEX_CREATION_EXCLUDED_MODELS = Object.freeze(['AttendanceSession', 'AttendanceCode', 'SignupRequest']);
 
 /**
  * Creates the collections and indexes of every NON-excluded model.

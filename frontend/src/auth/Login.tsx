@@ -27,14 +27,14 @@ const ACCOUNTS: Record<UserRole, { title: string; blurb: string; identifierLabel
     blurb: 'Sign in to see your events and record your own attendance.',
     identifierLabel: 'Student ID or email',
     identifierHint: 'e.g. STU001 or you@institution.edu',
-    signupNote: 'New students can create an account with Google. Your Google account is verified, then your student number is recorded with your profile.',
+    signupNote: 'New students submit a signup request with Google. An administrator approves it before any account is created.',
   },
   faculty: {
     title: 'Faculty Sign In',
     blurb: 'Sign in to monitor attendance and manage college events.',
     identifierLabel: 'Faculty ID or email',
     identifierHint: 'e.g. FAC001 or you@institution.edu',
-    signupNote: 'Faculty accounts are approved by an administrator. Continue with Google to start as a Student account.',
+    signupNote: 'Faculty accounts are approved by an administrator. Continue with Google to submit a signup request.',
   },
   admin: {
     title: 'Administrator Sign In',
@@ -120,10 +120,16 @@ const Login: React.FC = () => {
       // holding a null user and send the person back to /login.
       const result = await loginWithGoogle(credential, account);
       if (result.status === 'signed_in') {
-        // Every account that exists is usable immediately: a completed Google
-        // registration is activated by the server, and an administrator-blocked
-        // or deactivated account is refused by it.
+        // Only an existing, already-approved account reaches this branch. A new
+        // Google signup is parked as a pending request (see below) and a
+        // deactivated or blocked account is refused by the server.
         goToDashboard(result.user.role);
+        return;
+      }
+      if (result.status === 'signup_pending') {
+        // AD003.3: this identity already submitted a signup request, so there is
+        // no account to profile and no session to open - only the pending page.
+        navigate('/login/pending', { replace: true, state: {} });
         return;
       }
       navigate('/login/complete-profile', {
@@ -356,14 +362,14 @@ const Login: React.FC = () => {
         ) : (
           <div id="auth-panel-signup" role="tabpanel" aria-labelledby="auth-tab-signup" className="space-y-4">
             <p className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-xs font-semibold leading-5 text-orange-900">
-              Choose <span className="font-bold">Continue with Google</span> above to register.
-              We verify your Google account, then ask only for the details this application needs.
+              Choose <span className="font-bold">Continue with Google</span> above to submit a signup request.
+              We verify your Google account, then an administrator reviews your request before any account is created.
             </p>
             <p className="text-xs leading-5 text-slate-600">{copy.signupNote}</p>
             <ul className="space-y-2 text-xs font-medium leading-5 text-slate-600">
               <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />Your Google password is never seen by COT.</li>
               <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />We never request Gmail, Drive or contacts access.</li>
-              <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />New accounts are active as Student straight away; an administrator assigns any role change.</li>
+              <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />New requests stay pending until an administrator approves them and assigns your role.</li>
             </ul>
             <button
               type="button"

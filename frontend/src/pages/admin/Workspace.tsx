@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import {
   Activity, AlertCircle, ArrowRight, BarChart3, CalendarDays, CheckCircle2, Clock,
@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthService } from '../../data/authService';
-import { eventApi, type AdminEventCreated, type AdminEventRequest, type SavedVenue } from '../../data/eventApi';
+import { eventApi, type AdminEventCreated, type AdminEventRequest, type AdminSignupRequest, type SavedVenue } from '../../data/eventApi';
 import {
   addAttendance, addUser, correctAttendance,
   eventParticipationLabel, getAttendanceCounts, getAttendancePercentage, getFormResults, getLiveEvent,
@@ -22,9 +22,10 @@ import Button from '../../components/common/Button';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import EventQrPanel from '../../components/common/EventQRCode';
 import UseMyLocation from '../../components/admin/UseMyLocation';
+import { DEPARTMENTS } from '../../utils/departments';
 import type { LocationQualityPolicy } from '../../utils/eventQr';
 
-export type AdminSection = 'dashboard' | 'users' | 'events' | 'attendance' | 'reports' | 'feedback';
+export type AdminSection = 'dashboard' | 'signups' | 'users' | 'events' | 'attendance' | 'reports' | 'feedback';
 
 type UserForm = {
   id?: string;
@@ -72,7 +73,7 @@ type EventForm = {
   venueRadiusMeters?: number;
 };
 
-const emptyUserForm: UserForm = { name: '', username: '', email: '', contact: '', role: 'Student', department: 'BSIT', password: '' };
+const emptyUserForm: UserForm = { name: '', username: '', email: '', contact: '', role: 'Student', department: '', password: '' };
 const emptyEventForm: EventForm = {
   name: '', description: '', date: '', start: '08:00', end: '16:00', venue: '', organizer: 'College of Technologies',
   origin: 'Admin', audience: 'All', department: 'College of Technologies', method: 'QR Code', identifierRange: 'All active attendees', cutoff: '08:15', status: 'Approved',
@@ -217,7 +218,7 @@ function UserEditor({ form, editingId, setForm, onSubmit, onClose, error }: { fo
     <label><span className={labelClass}>Username</span><input className={inputClass} value={form.username} onChange={event => set('username', event.target.value)} required /></label>
     <label><span className={labelClass}>Email</span><input type="email" className={inputClass} value={form.email} onChange={event => set('email', event.target.value)} required /></label>
     <label><span className={labelClass}>Contact details</span><input className={inputClass} value={form.contact} onChange={event => set('contact', event.target.value)} placeholder="Phone or email" required /></label>
-    <label><span className={labelClass}>Department / course</span><input className={inputClass} value={form.department} onChange={event => set('department', event.target.value)} required /></label>
+    <label><span className={labelClass}>Department / course</span><select className={inputClass} value={form.department} onChange={event => set('department', event.target.value)} required><option value="" disabled>Select department or program</option>{form.department && !DEPARTMENTS.includes(form.department) && <option value={form.department}>{form.department}</option>}{DEPARTMENTS.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
     <label><span className={labelClass}>Role</span><select className={inputClass} value={form.role} onChange={event => set('role', event.target.value)}><option>Student</option><option>Faculty</option><option>Admin</option></select></label>
     <label><span className={labelClass}>{form.id ? 'New password (optional)' : 'Temporary password'}</span><input type="password" className={inputClass} value={form.password} onChange={event => set('password', event.target.value)} required={!form.id} /></label>
     {error && <p className="rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-sm text-rose-200 sm:col-span-2">{error}</p>}
@@ -528,6 +529,154 @@ function UsersSection({ users }: { users: AdminUserAccount[] }) {
     {detailAccountId && <UserRegistrationDetails accountId={detailAccountId} onClose={() => setDetailAccountId(null)} />}
     {editing !== undefined && <UserEditor form={form} editingId={editing?.id} setForm={setForm} onSubmit={save} onClose={() => setEditing(undefined)} error={error} />}
   </section>;
+}
+
+/**
+ * AD003.3: review of email-only signup requests. The applicant submitted only
+ * a verified Google email; the administrator assigns the account ID and one of
+ * the five departments here, and approval is what creates the User. Rejection
+ * never creates one.
+ */
+function SignupRequestsSection() {
+  const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [requests, setRequests] = useState<AdminSignupRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [forms, setForms] = useState<Record<string, { accountId: string; department: string; role: string }>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async (next: 'pending' | 'approved' | 'rejected') => {
+    setLoading(true);
+    setError('');
+    try {
+      setRequests(await eventApi.adminSignupRequests(next));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load signup requests.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(status); }, [load, status]);
+
+  // The inferred pending role is preselected; an unmatched request starts blank
+  // so the administrator must choose one deliberately.
+  const defaultRole = (request: AdminSignupRequest) => (request.pendingRole === 'student' ? 'Student' : request.pendingRole === 'faculty' ? 'Faculty' : '');
+  const formFor = (request: AdminSignupRequest) => forms[request.id] ?? { accountId: '', department: '', role: defaultRole(request) };
+  const setFormFor = (id: string, patch: Partial<{ accountId: string; department: string; role: string }>) =>
+    setForms(current => ({ ...current, [id]: { accountId: current[id]?.accountId ?? '', department: current[id]?.department ?? '', role: current[id]?.role ?? '', ...patch } }));
+
+  const approve = async (request: AdminSignupRequest) => {
+    const form = formFor(request);
+    setError('');
+    setNotice('');
+    if (!form.accountId.trim()) { setError('Enter the account ID before approving.'); return; }
+    if (!DEPARTMENTS.includes(form.department)) { setError('Select a department or course before approving.'); return; }
+    if (!form.role) { setError('Assign a role before approving.'); return; }
+    setBusyId(request.id);
+    try {
+      await eventApi.approveSignupRequest(request.id, {
+        accountId: form.accountId.trim(),
+        department: form.department,
+        role: form.role,
+      });
+      setNotice(`Request from ${request.googleEmail} approved — the account can now sign in.`);
+      await load(status);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to approve the request.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const reject = async (request: AdminSignupRequest) => {
+    setError('');
+    setNotice('');
+    setBusyId(request.id);
+    try {
+      await eventApi.rejectSignupRequest(request.id);
+      setNotice(`Request from ${request.googleEmail} rejected. No account was created.`);
+      await load(status);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to reject the request.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <section className="space-y-5" data-testid="signup-requests-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-bold text-[#10203B]">Signup requests</h2>
+          <p className="text-xs text-[#64748B]">Applicants submit only their verified Google email. Approving creates the account with the account ID, department and role assigned here.</p>
+        </div>
+        <div className="flex gap-1 rounded-xl border border-[#E2E3DF] bg-[#FAF9F5] p-1">
+          {(['pending', 'approved', 'rejected'] as const).map(item => (
+            <button key={item} type="button" onClick={() => setStatus(item)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold capitalize transition ${status === item ? 'bg-[#FFF1E6] text-[#C2410C]' : 'text-[#64748B] hover:bg-[#FAF9F5] hover:text-[#10203B]'}`}>{item}</button>
+          ))}
+        </div>
+      </div>
+      {error && <p role="alert" data-testid="signup-error" className="rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-sm text-rose-200">{error}</p>}
+      {notice && <p role="status" data-testid="signup-notice" className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-200">{notice}</p>}
+      {loading
+        ? <EmptyState message="Loading signup requests…" />
+        : requests.length === 0
+          ? <EmptyState message={`No ${status} signup requests.`} />
+          : (
+            <div className="overflow-x-auto rounded-2xl border border-[#E2E3DF]">
+              <table className="w-full min-w-[980px] text-left text-sm">
+                <thead className="border-b border-[#E2E3DF] bg-[#FAF9F5] text-xs uppercase tracking-wider text-[#64748B]">
+                  <tr>
+                    <th className="px-5 py-4">Applicant</th>
+                    <th className="px-5 py-4">Requested</th>
+                    <th className="px-5 py-4">Inferred role</th>
+                    {status === 'pending' && <th className="px-5 py-4">Assign account</th>}
+                    <th className="px-5 py-4 text-right">{status === 'pending' ? 'Actions' : 'Outcome'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.06]">
+                  {requests.map(request => (
+                    <tr key={request.id} className="align-top hover:bg-[#FAF9F5]" data-testid="signup-request-row">
+                      <td className="px-5 py-4">
+                        <p className="font-semibold text-[#10203B]">{request.name || 'Google applicant'}</p>
+                        <p className="text-xs text-[#64748B]">{request.googleEmail}</p>
+                        {request.accountId && <p className="text-xs text-[#64748B]">ID on request: {request.accountId}</p>}
+                      </td>
+                      <td className="px-5 py-4 text-xs text-[#64748B]">{request.createdAt ? new Date(request.createdAt).toLocaleString() : '—'}</td>
+                      <td className="px-5 py-4">
+                        {request.pendingRole
+                          ? <StatusBadge status="info">{request.pendingRole === 'student' ? 'Student' : 'Faculty'}</StatusBadge>
+                          : <span className="text-xs text-[#94A3B8]">Not inferred — assign one</span>}
+                      </td>
+                      {status === 'pending' && (
+                        <td className="px-5 py-4">
+                          <div className="grid gap-3 sm:w-96">
+                            <label><span className={labelClass}>Account ID</span><input className={inputClass} value={formFor(request).accountId} onChange={event => setFormFor(request.id, { accountId: event.target.value })} placeholder="e.g. 2401117404" data-testid="signup-account-id" /></label>
+                            <label><span className={labelClass}>Department / course</span><select className={inputClass} value={formFor(request).department} onChange={event => setFormFor(request.id, { department: event.target.value })} data-testid="signup-department"><option value="" disabled>Select department or program</option>{DEPARTMENTS.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
+                            <label><span className={labelClass}>Role</span><select className={inputClass} value={formFor(request).role} onChange={event => setFormFor(request.id, { role: event.target.value })} data-testid="signup-role"><option value="" disabled>Assign a role</option><option>Student</option><option>Faculty</option><option>Admin</option></select></label>
+                          </div>
+                        </td>
+                      )}
+                      <td className="px-5 py-4 text-right">
+                        {status === 'pending'
+                          ? (
+                            <div className="flex justify-end gap-2">
+                              <Button variant="glass" onClick={() => void reject(request)} disabled={busyId === request.id} data-testid="signup-reject">Reject</Button>
+                              <Button onClick={() => void approve(request)} disabled={busyId === request.id} data-testid="signup-approve">Approve</Button>
+                            </div>
+                          )
+                          : <StatusBadge status={request.status === 'approved' ? 'success' : 'error'}>{request.status}</StatusBadge>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+    </section>
+  );
 }
 
 function EventsSection() {
@@ -997,11 +1146,11 @@ export default function AdminWorkspace() {
   const location = useLocation();
   const pathnameSection = location.pathname.split('/').pop();
   const requested = searchParams.get('section') || pathnameSection;
-  const section: AdminSection = requested === 'users' || requested === 'events' || requested === 'attendance' || requested === 'reports' || requested === 'feedback' ? requested : 'dashboard';
+  const section: AdminSection = requested === 'users' || requested === 'events' || requested === 'attendance' || requested === 'reports' || requested === 'feedback' || requested === 'signups' ? requested : 'dashboard';
   const go = (next: AdminSection) => { navigate(`/admin/${next === 'dashboard' ? 'dashboard' : next}`); };
   const user = AuthService.getCurrentUser();
   if (loadingState) return <div className="flex min-h-64 items-center justify-center text-sm text-[#64748B]">Loading administrator workspace…</div>;
   if (workspaceError) return <div role="alert" className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-5 text-sm text-rose-200">{workspaceError}</div>;
-  return <div className="min-h-full"><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#94A3B8]">Signed in as {user?.name || 'Administrator'}</p><p className="mt-1 text-sm text-[#64748B]">Required Admin functions · functional requirements workspace</p></div><div className="flex items-center gap-3"><p role="status" data-testid="admin-sync-status" className={`text-xs ${syncFailed ? 'font-semibold text-amber-600' : pollExhausted ? 'font-semibold text-amber-600' : 'text-[#94A3B8]'}`}>{syncFailed ? 'Showing the last loaded data \u2014 the latest refresh failed' : pollExhausted ? 'Live updates paused \u2014 refresh to resume' : lastSyncedAt ? `Live \u00b7 updated ${lastSyncedAt.toLocaleTimeString()}` : 'Loading\u2026'}</p><button type="button" onClick={() => void refreshNow()} data-testid="admin-refresh-now" className="shrink-0 rounded-lg border border-[#E2E3DF] px-2.5 py-1 text-[11px] font-semibold text-[#475569] transition hover:bg-[#FAF9F5] hover:text-[#10203B]">Refresh now</button></div><nav className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-[#E2E3DF] bg-[#FAF9F5] p-1">{([{ id: 'dashboard', label: 'Dashboard' }, { id: 'users', label: 'Users' }, { id: 'events', label: 'Events' }, { id: 'attendance', label: 'Attendance' }, { id: 'reports', label: 'Reports' }, { id: 'feedback', label: 'Feedback' }] as const).map(item => <button type="button" key={item.id} onClick={() => go(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${section === item.id ? 'bg-[#FFF1E6] text-[#C2410C]' : 'text-[#64748B] hover:bg-[#FAF9F5] hover:text-[#10203B]'}`}>{item.label}</button>)}</nav></div>{section === 'dashboard' && <DashboardSection state={state} onNavigate={go} />}{section === 'users' && <UsersSection users={state.users} />}{section === 'events' && <EventsSection />}{section === 'attendance' && <AttendanceSection events={state.events} attendance={state.attendance} users={state.users} />}{section === 'reports' && <ReportsSection state={state} />}{section === 'feedback' && <FeedbackSection state={state} />}</div>;
+  return <div className="min-h-full"><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#94A3B8]">Signed in as {user?.name || 'Administrator'}</p><p className="mt-1 text-sm text-[#64748B]">Required Admin functions · functional requirements workspace</p></div><div className="flex items-center gap-3"><p role="status" data-testid="admin-sync-status" className={`text-xs ${syncFailed ? 'font-semibold text-amber-600' : pollExhausted ? 'font-semibold text-amber-600' : 'text-[#94A3B8]'}`}>{syncFailed ? 'Showing the last loaded data \u2014 the latest refresh failed' : pollExhausted ? 'Live updates paused \u2014 refresh to resume' : lastSyncedAt ? `Live \u00b7 updated ${lastSyncedAt.toLocaleTimeString()}` : 'Loading\u2026'}</p><button type="button" onClick={() => void refreshNow()} data-testid="admin-refresh-now" className="shrink-0 rounded-lg border border-[#E2E3DF] px-2.5 py-1 text-[11px] font-semibold text-[#475569] transition hover:bg-[#FAF9F5] hover:text-[#10203B]">Refresh now</button></div><nav className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-[#E2E3DF] bg-[#FAF9F5] p-1">{([{ id: 'dashboard', label: 'Dashboard' }, { id: 'signups', label: 'Signups' }, { id: 'users', label: 'Users' }, { id: 'events', label: 'Events' }, { id: 'attendance', label: 'Attendance' }, { id: 'reports', label: 'Reports' }, { id: 'feedback', label: 'Feedback' }] as const).map(item => <button type="button" key={item.id} onClick={() => go(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${section === item.id ? 'bg-[#FFF1E6] text-[#C2410C]' : 'text-[#64748B] hover:bg-[#FAF9F5] hover:text-[#10203B]'}`}>{item.label}</button>)}</nav></div>{section === 'dashboard' && <DashboardSection state={state} onNavigate={go} />}{section === 'signups' && <SignupRequestsSection />}{section === 'users' && <UsersSection users={state.users} />}{section === 'events' && <EventsSection />}{section === 'attendance' && <AttendanceSection events={state.events} attendance={state.attendance} users={state.users} />}{section === 'reports' && <ReportsSection state={state} />}{section === 'feedback' && <FeedbackSection state={state} />}</div>;
 }
 

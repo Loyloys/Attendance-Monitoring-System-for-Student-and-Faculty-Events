@@ -1,20 +1,18 @@
 ﻿import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { AlertCircle, BadgeCheck, IdCard, Loader2, Mail, Phone, School, UserRound } from 'lucide-react';
+import { AlertCircle, BadgeCheck, Loader2, Mail, ShieldCheck, UserRound } from 'lucide-react';
 import { AuthService } from '../data/authService';
 import { useAuth } from '../context/AuthContext';
 import type { GooglePrefill } from '../data/eventApi';
 
-type FieldErrors = Partial<Record<'accountId' | 'name' | 'department' | 'phone', string>>;
-
-const inputClass = 'auth-light-input pl-11';
-
-const fieldClass = (hasError: boolean) => `relative ${hasError ? 'rounded-xl ring-1 ring-rose-400' : ''}`;
-
 /**
- * Step two of Google registration. The verified Google name and email are shown
- * read-only, because the server is the authority for both, and only the fields
- * this application actually needs are collected.
+ * Step two of Google signup: this is an ACCOUNT REQUEST, not an account.
+ *
+ * The applicant provides nothing typed - the verified Google identity below
+ * (name and email) is the entire request, taken from the verified ID token on
+ * the server. Department/course and the final role are assigned by an
+ * administrator during approval; no User exists and no session is granted
+ * until then.
  */
 const CompleteGoogleProfile: React.FC = () => {
   const location = useLocation();
@@ -27,47 +25,25 @@ const CompleteGoogleProfile: React.FC = () => {
     ? locationState.selectedRole
     : null;
 
-  const [accountId, setAccountId] = useState('');
-  const [name, setName] = useState(prefill.name);
-  const [department, setDepartment] = useState('');
-  const [phone, setPhone] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-
-  const validate = () => {
-    const next: FieldErrors = {};
-    if (!accountId.trim()) next.accountId = 'Enter your student or staff ID.';
-    else if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,29}$/.test(accountId.trim())) next.accountId = 'Use 3 to 30 letters, numbers, dots, dashes or underscores.';
-    if (!name.trim()) next.name = 'Enter your full name.';
-    if (!department.trim()) next.department = 'Enter your department or program.';
-    if (phone.trim().length > 40) next.phone = 'Phone must not exceed 40 characters.';
-    setFieldErrors(next);
-    return Object.keys(next).length === 0;
-  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
-    if (!validate()) return;
     setIsLoading(true);
     try {
-      // Goes through the auth context so the new session also lands in React state.
-      // The service alone would leave the route guards holding a null user, and
-      // the redirect below would bounce the new account straight back to /login.
-      await AuthService.completeGoogleProfile({
-        accountId: accountId.trim().toUpperCase(),
-        department: department.trim(),
-        name: name.trim(),
-        phone: phone.trim(),
-      });
-      await refreshSession();
-      // A new Google sign-up is activated on the server the moment it is
-      // created, so the person can use the app straight away. This route
-      // confirms that and then forwards to the dashboard.
-      navigate('/registration-complete', { replace: true });
+      // AD003.3: submitting stores an email-only pending signup request. No User
+      // exists yet, so there is no session to refresh and no dashboard to enter.
+      const result = await AuthService.completeGoogleProfile();
+      if (result.status === 'signed_in') {
+        await refreshSession();
+        navigate('/registration-complete', { replace: true });
+        return;
+      }
+      navigate('/login/pending', { replace: true, state: { email: prefill.email } });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not create your account.');
+      setError(caught instanceof Error ? caught.message : 'We could not submit your account request.');
       setIsLoading(false);
     }
   };
@@ -83,8 +59,8 @@ const CompleteGoogleProfile: React.FC = () => {
         <div className="mb-7 text-center">
           <img src="/brand/sbo-logo.jpg" alt="College of Technologies Student Body Organization" className="mx-auto mb-4 h-16 w-16 rounded-full bg-white object-contain p-1 shadow-md ring-1 ring-slate-200" />
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-orange-600">COT Event Attendance</p>
-          <h1 id="profile-title" className="auth-light-title">Complete your profile</h1>
-          <p className="auth-light-subtitle">Confirm your details so your new Student account can be created.</p>
+          <h1 id="profile-title" className="auth-light-title">Request an account</h1>
+          <p className="auth-light-subtitle">Submit an account request with your verified Google email. Nothing else is needed.</p>
         </div>
 
         <div className="mb-6 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -100,52 +76,22 @@ const CompleteGoogleProfile: React.FC = () => {
           </div>
         </div>
 
-
         <form className="space-y-5" onSubmit={handleSubmit} noValidate>
-          <div>
-            <label htmlFor="accountId" className="auth-light-label">Student or staff ID</label>
-            <div className={fieldClass(Boolean(fieldErrors.accountId))}>
-              <IdCard className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} aria-hidden="true" />
-              <input id="accountId" name="accountId" type="text" autoComplete="off" value={accountId} onChange={event => setAccountId(event.target.value)} aria-invalid={Boolean(fieldErrors.accountId)} aria-describedby={fieldErrors.accountId ? 'accountId-error' : undefined} placeholder="e.g. STU001" className={inputClass} />
-            </div>
-            {fieldErrors.accountId && <p id="accountId-error" role="alert" className="mt-2 text-xs font-semibold text-rose-600">{fieldErrors.accountId}</p>}
-          </div>
+          <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-medium leading-5 text-slate-600">
+            This submits an <strong>account request</strong>, not an account. An administrator reviews every request
+            and assigns the department and role. You cannot sign in and no account is created until your request
+            is approved.
+          </p>
 
-          <div>
-            <label htmlFor="fullName" className="auth-light-label">Full name</label>
-            <div className={fieldClass(Boolean(fieldErrors.name))}>
-              <UserRound className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} aria-hidden="true" />
-              <input id="fullName" name="name" type="text" autoComplete="name" value={name} onChange={event => setName(event.target.value)} aria-invalid={Boolean(fieldErrors.name)} aria-describedby={fieldErrors.name ? 'name-error' : undefined} className={inputClass} />
-            </div>
-            {fieldErrors.name && <p id="name-error" role="alert" className="mt-2 text-xs font-semibold text-rose-600">{fieldErrors.name}</p>}
-          </div>
-
-          <div>
-            <label htmlFor="department" className="auth-light-label">Department or program</label>
-            <div className={fieldClass(Boolean(fieldErrors.department))}>
-              <School className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} aria-hidden="true" />
-              <input id="department" name="department" type="text" autoComplete="organization-title" value={department} onChange={event => setDepartment(event.target.value)} aria-invalid={Boolean(fieldErrors.department)} aria-describedby={fieldErrors.department ? 'department-error' : undefined} placeholder="e.g. BSIT" className={inputClass} />
-            </div>
-            {fieldErrors.department && <p id="department-error" role="alert" className="mt-2 text-xs font-semibold text-rose-600">{fieldErrors.department}</p>}
-          </div>
-
-          <div>
-            <label htmlFor="phone" className="auth-light-label">Contact number <span className="font-normal text-slate-400">(optional)</span></label>
-            <div className={fieldClass(Boolean(fieldErrors.phone))}>
-              <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} aria-hidden="true" />
-              <input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} aria-invalid={Boolean(fieldErrors.phone)} aria-describedby={fieldErrors.phone ? 'phone-error' : undefined} placeholder="09XXXXXXXXX" className={inputClass} />
-            </div>
-            {fieldErrors.phone && <p id="phone-error" role="alert" className="mt-2 text-xs font-semibold text-rose-600">{fieldErrors.phone}</p>}
-          </div>
-
-          <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-xs font-semibold leading-5 text-orange-900">
-            New accounts start as Student. Faculty and Administrator access is granted by an administrator.
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-900">
+            <ShieldCheck size={16} className="mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
+            Access requires Administrator approval. Signing up with Google alone grants no role or access.
           </div>
 
           {error && <p role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold leading-5 text-rose-700"><AlertCircle className="mt-0.5 shrink-0" size={16} />{error}</p>}
 
           <button type="submit" disabled={isLoading} className="auth-light-button">
-            {isLoading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Creating your account...</> : 'Create my account'}
+            {isLoading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Submitting your request...</> : 'Submit account request'}
           </button>
           <button
             type="button"

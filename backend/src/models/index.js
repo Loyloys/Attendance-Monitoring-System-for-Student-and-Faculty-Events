@@ -16,6 +16,7 @@ import EvaluationResponse from './EvaluationResponse.js';
 import RevokedIdentifier from './RevokedIdentifier.js';
 import MigrationRun from './MigrationRun.js';
 import LegacyBrowserSnapshot from './LegacyBrowserSnapshot.js';
+import SignupRequest from './SignupRequest.js';
 
 export {
   User,
@@ -36,4 +37,5 @@ export {
   RevokedIdentifier,
   MigrationRun,
   LegacyBrowserSnapshot,
+  SignupRequest,
 };

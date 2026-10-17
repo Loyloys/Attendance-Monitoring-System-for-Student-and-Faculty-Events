@@ -1,12 +1,15 @@
 import {
   addAttendance,
   adminState,
+  approveSignupRequest,
   correctAttendance,
   createAdminUser,
   deleteAdminUser,
   deleteAttendance,
   deleteForm,
   listAuditLog,
+  listSignupRequests,
+  rejectSignupRequest,
   saveForm,
   updateAdminUser,
 } from '../services/adminService.js';
@@ -32,6 +35,19 @@ export async function auditLog(request, response) {
 
 export async function createUser(request, response) {
   response.status(201).json(await createAdminUser(request.body, request.user));
+}
+
+// AD003.3: email-only pending signup requests (no User exists yet).
+export async function signupRequests(request, response) {
+  response.json(await listSignupRequests(request.query.status));
+}
+
+export async function approveSignup(request, response) {
+  response.status(201).json(await approveSignupRequest(request.params.requestId, request.body, request.user));
+}
+
+export async function rejectSignup(request, response) {
+  response.json(await rejectSignupRequest(request.params.requestId, request.user));
 }
 
 // Per-user event registrations. Kept separate from the user list so an

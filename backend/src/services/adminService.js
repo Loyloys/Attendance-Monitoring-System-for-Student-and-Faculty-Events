@@ -10,6 +10,7 @@ import {
   EvaluationForm,
   EvaluationResponse,
   RevokedIdentifier,
+  SignupRequest,
   User,
   UserProfile,
 } from '../models/index.js';
@@ -19,6 +20,7 @@ import { nextNumericId } from '../utils/ids.js';
 import { stableCaseInsensitive } from '../utils/identifiers.js';
 import { createDjangoPassword } from '../utils/passwords.js';
 import { effectiveEventStatus } from '../utils/events.js';
+import { DEPARTMENTS } from '../utils/domain.js';
 import { serializeAdminEvents } from './eventService.js';
 import { serializeAdminAttendance, serializeAdminUser, serializeEventFeedback } from './adminSerializer.js';
 import { finalizeExpiredSessions } from './attendanceSessionService.js';
@@ -293,6 +295,129 @@ export async function updateAdminUser(accountId, data, actor) {
   }
 
   return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
+}
+
+/**
+ * AD003.3: email-only pending signup requests.
+ *
+ * Lists SignupRequests (no User exists yet for these people). Reuse: the same
+ * serializeAdminUser shape is NOT used here because there is no User/Profile;
+ * a dedicated serializer keeps the pending-request surface explicit.
+ */
+export async function listSignupRequests(status = 'pending') {
+  const query = ['pending', 'approved', 'rejected'].includes(status) ? { status } : {};
+  const rows = await SignupRequest.find(query).sort({ createdAt: -1 }).lean();
+  return rows.map((row) => ({
+    id: String(row._id),
+    googleEmail: row.googleEmail || '',
+    accountId: row.accountId || '',
+    name: row.displayName || '',
+    department: row.department || '',
+    phone: row.phone || '',
+    // Role inferred from the verified email domain at submission, so the
+    // approval screen can preselect it. Empty when no domain matched.
+    pendingRole: row.pendingRole || '',
+    status: row.status,
+    createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
+    reviewedAt: row.reviewedAt ? new Date(row.reviewedAt).toISOString() : null,
+  }));
+}
+
+/**
+ * AD003.3: approve a pending signup request. The Admin assigns the role and
+ * department/course here; only at approval is the User (+UserProfile) created.
+ * The request is marked approved so a repeat approval cannot create a duplicate.
+ */
+export async function approveSignupRequest(requestId, data, actor) {
+  const signup = await SignupRequest.findById(String(requestId));
+  if (!signup || signup.status !== 'pending') throw new NotFoundError('Signup request not found or already reviewed.');
+  // The pending role was inferred from the VERIFIED email domain at submission.
+  // An administrator may assign a different one explicitly; a request with no
+  // inferred role must be given one here. A browser-supplied value is validated
+  // against the known role list, so an invented one is refused.
+  const role = (data.role ? roleMap[data.role] : signup.pendingRole) || null;
+  if (!role) throw new ValidationError({ role: 'Assign a role: Student, Faculty, or Admin.' });
+  // Department/course is ONLY assigned here, by an administrator, from the fixed
+  // list. It is never collected from the applicant, so a legacy or invented
+  // value (including one stored on an old request) is refused rather than
+  // silently creating an account with it.
+  const department = String(data.department || '').trim();
+  if (!DEPARTMENTS.includes(department)) {
+    throw new ValidationError({ department: `Select a department or course: ${DEPARTMENTS.join(', ')}.` });
+  }
+  const accountId = String(data.accountId || signup.accountId || '').trim().toUpperCase();
+  if (!accountId) throw new ValidationError({ accountId: 'Account ID is required.' });
+  const normalized = stableCaseInsensitive(accountId);
+  // An identifier retired by an earlier identity change may never be reused -
+  // the check moved here from signup because the applicant no longer supplies
+  // an account ID; the administrator chooses it at approval.
+  const revoked = await RevokedIdentifier.exists({
+    _id: { $regex: `^${normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:` },
+  });
+  if (revoked) throw new ConflictError('That account ID can no longer be used.');
+  if (await User.exists({ $or: [{ accountIdNormalized: normalized }, { usernameNormalized: normalized }] })) {
+    throw new ConflictError('Account ID, username, or email is already in use.');
+  }
+  if (await User.exists({ emailNormalized: signup.googleEmailNormalized })) {
+    throw new ConflictError('Account ID, username, or email is already in use.');
+  }
+  const parts = String(signup.displayName || '').trim().split(/\s+/).filter(Boolean);
+  const user = await User.create({
+    accountId,
+    accountIdNormalized: normalized,
+    username: accountId,
+    usernameNormalized: normalized,
+    passwordHash: null,
+    authProviders: ['google'],
+    googleSub: signup.googleSub,
+    googleEmail: signup.googleEmail,
+    googleEmailNormalized: signup.googleEmailNormalized,
+    googleHostedDomain: signup.googleHostedDomain || '',
+    googlePictureUrl: signup.googlePictureUrl || '',
+    googleLinkedAt: new Date(),
+    firstName: (parts[0] || '').slice(0, 150),
+    lastName: parts.slice(1).join(' ').slice(0, 150),
+    email: signup.googleEmail,
+    emailNormalized: signup.googleEmailNormalized,
+    isActive: true,
+    approvalStatus: 'approved',
+    approvalReviewedAt: new Date(),
+    approvalReviewedBy: actor?._id || null,
+    isStaff: role === 'admin',
+    isSuperuser: false,
+    profileCompleted: true,
+    dateJoined: new Date(),
+    dataSource: 'google',
+  });
+  const profile = await UserProfile.create({
+    userId: user._id,
+    role,
+    displayName: signup.displayName || accountId,
+    phone: signup.phone || '',
+    department,
+    cardIdentifier: null,
+  }).catch(async (error) => {
+    await User.deleteOne({ _id: user._id }).catch(() => {});
+    throw error;
+  });
+  signup.status = 'approved';
+  signup.reviewedAt = new Date();
+  signup.reviewedBy = actor?._id || null;
+  await signup.save();
+  await recordAudit(actor, 'account_approved', { userId: user._id, accountId }, `Signup request approved as ${role}`);
+  return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
+}
+
+/** AD003.3: reject a pending signup request. No User is ever created. */
+export async function rejectSignupRequest(requestId, actor) {
+  const signup = await SignupRequest.findById(String(requestId));
+  if (!signup || signup.status !== 'pending') throw new NotFoundError('Signup request not found or already reviewed.');
+  signup.status = 'rejected';
+  signup.reviewedAt = new Date();
+  signup.reviewedBy = actor?._id || null;
+  await signup.save();
+  await recordAudit(actor, 'account_rejected', { userId: null, accountId: signup.accountId || signup.googleEmail }, 'Signup request rejected');
+  return { id: String(signup._id), status: signup.status };
 }
 
 export async function deleteAdminUser(accountId, actor) {

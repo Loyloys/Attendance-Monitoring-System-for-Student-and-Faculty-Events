@@ -131,6 +131,12 @@ export interface PersonalAttendanceRecord {
   status: AttendanceStatus;
   method: AttendanceMethod;
   recordedAt: string;
+  /** GST009: server-verified in-zone seconds (0 when none). */
+  verifiedSeconds?: number;
+  /** GST009: required verified minutes for the event, null when unconfigured. */
+  requiredAttendanceMinutes?: number | null;
+  /** GST009: duration qualification, null when the event needs no duration. */
+  qualification?: 'pending' | 'present' | 'late' | 'absent' | null;
 }
 
 export interface PersonalAttendanceData {

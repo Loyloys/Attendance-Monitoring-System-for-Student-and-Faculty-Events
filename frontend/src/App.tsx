@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter } from 'react-router-dom';
-import { FlaskConical } from 'lucide-react';
+import { FlaskConical, Moon, Sun } from 'lucide-react';
 import AppRoutes from './routes';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { Toaster } from 'react-hot-toast';
 import { loadEnvironment, type EnvironmentInfo } from './data/eventApi';
 
@@ -31,10 +32,28 @@ const EnvironmentBanner: React.FC = () => {
   );
 };
 
+/** GST001.5: persisted light/dark toggle, visible on every screen. */
+const ThemeToggle: React.FC = () => {
+  const { theme, toggle } = useTheme();
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-pressed={theme === 'dark'}
+      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      className="fixed bottom-5 right-5 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-[#E2E3DF] bg-white text-[#64748B] shadow-lg outline-none transition hover:text-[#C2410C] focus-visible:ring-2 focus-visible:ring-[#F97316] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+    >
+      {theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+    </button>
+  );
+};
+
 const App: React.FC = () => (
   <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <ThemeProvider>
     <AuthProvider>
-      <div className="min-h-screen bg-[#F5F4EC] font-sans text-[#334155] selection:bg-orange-200 selection:text-[#10203B]">
+      <div className="min-h-screen bg-[#F5F4EC] font-sans text-[#334155] selection:bg-orange-200 selection:text-[#10203B] dark:bg-slate-950 dark:text-slate-200">
         <Toaster
           position="top-right"
           toastOptions={{
@@ -54,8 +73,10 @@ const App: React.FC = () => (
         />
         <EnvironmentBanner />
         <AppRoutes />
+        <ThemeToggle />
       </div>
     </AuthProvider>
+    </ThemeProvider>
   </BrowserRouter>
 );
 
