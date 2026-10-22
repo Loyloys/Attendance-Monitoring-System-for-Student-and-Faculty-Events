@@ -18,7 +18,7 @@ export default function EventDashboard({ user, events, attendance, onNavigate, o
   const upcoming = events.filter(event => event.status === 'upcoming' || event.status === 'ongoing');
   const certificates = events.filter(event => event.certificate_id);
   return <div className="space-y-7">
-    <section className="relative overflow-hidden rounded-3xl border border-[#F0DAC2] bg-gradient-to-br from-[#FFF7ED] via-[#FDFBF7] to-[#F6F5EF] p-7 shadow-[0_18px_44px_-26px_rgba(16,32,59,0.4)] sm:p-9">
+    <section className="dashboard-welcome relative overflow-hidden rounded-3xl border border-[#F0DAC2] bg-gradient-to-br from-[#FFF7ED] via-[#FDFBF7] to-[#F6F5EF] p-7 shadow-[0_18px_44px_-26px_rgba(16,32,59,0.4)] sm:p-9">
       <div className="relative z-10 max-w-3xl">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#C2410C]">COT event attendance portal</p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-[#10203B] sm:text-4xl">Welcome, {user.name.split(' ')[0]}.</h1>
@@ -67,4 +67,3 @@ export default function EventDashboard({ user, events, attendance, onNavigate, o
     </section>
   </div>;
 }
-

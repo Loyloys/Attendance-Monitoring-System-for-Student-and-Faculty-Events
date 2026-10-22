@@ -10,11 +10,12 @@ import FacultyMonitor from '../components/event/FacultyMonitor';
 import AttendanceTracker from '../components/event/AttendanceTracker';
 import EventFeedback from '../components/event/EventFeedback';
 import ProfilePanel from '../components/event/ProfilePanel';
+import Announcements from '../components/event/Announcements';
 import { useAuth } from '../context/AuthContext';
 import { eventApi } from '../data/eventApi';
 import type { AttendanceSession, EventRecord, MonitoredEventAttendance, MonitoredSession, PersonalAttendanceData } from '../types/eventAttendance';
 
-type View = 'dashboard' | 'events' | 'attendance' | 'history' | 'monitor' | 'feedback' | 'profile';
+type View = 'dashboard' | 'events' | 'attendance' | 'history' | 'monitor' | 'feedback' | 'profile' | 'announcements';
 const emptyAttendance: PersonalAttendanceData = { summary: { present: 0, late: 0, absent: 0, attendancePercentage: 0 }, records: [] };
 
 export default function Portal() {
@@ -22,7 +23,7 @@ export default function Portal() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedView = searchParams.get('view');
-  const initialView: View = ['dashboard', 'events', 'attendance', 'history', 'monitor', 'feedback', 'profile'].includes(requestedView || '') ? requestedView as View : 'dashboard';
+  const initialView: View = ['dashboard', 'events', 'attendance', 'history', 'monitor', 'feedback', 'profile', 'announcements'].includes(requestedView || '') ? requestedView as View : 'dashboard';
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [attendance, setAttendance] = useState<PersonalAttendanceData>(emptyAttendance);
   const [managedEvents, setManagedEvents] = useState<EventRecord[]>([]);
@@ -118,7 +119,9 @@ export default function Portal() {
     catch (caught) { toast.error(caught instanceof Error ? caught.message : 'Registration failed.'); }
   };
   const handleRecorded = async (confirmation: { eventName: string; status: string }) => {
-    toast.success(`${confirmation.eventName}: ${confirmation.status.toUpperCase()} attendance recorded.`);
+    toast.success(confirmation.status === 'pending'
+      ? `${confirmation.eventName}: check-in recorded; qualification is pending verified attendance time.`
+      : `${confirmation.eventName}: ${confirmation.status.toUpperCase()} attendance recorded.`);
     await refresh();
   };
   const handleDownload = async (kind: 'mine' | 'event' | 'certificate', id?: string) => {
@@ -139,6 +142,7 @@ export default function Portal() {
 
   const content = (() => {
     if (!user) return null;
+    if (view === 'announcements') return <Announcements />;
     if (loading) return <div className="app-card p-12 text-center text-sm text-[#64748B]">Loading your event workspace…</div>;
     if (error) return <div className="app-card p-8"><h1 className="app-page-title">Unable to load events</h1><p className="mt-2 text-sm text-rose-600">{error}</p><button type="button" onClick={() => void refresh()} className="app-button-primary mt-5">Try again</button></div>;
     if (view === 'dashboard') return <EventDashboard user={user} events={events} attendance={attendance} onNavigate={next => go(next as View)} onScan={openScanner} onCertificate={id => void handleDownload('certificate', id)} />;

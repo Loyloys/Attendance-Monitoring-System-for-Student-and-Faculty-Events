@@ -84,9 +84,8 @@ export class AuthService {
    * Verifies the Google credential on the server. A returning user is signed in
    * here; an unknown identity returns a prefill for the profile step instead.
    *
-   * `selectedRole` is the account type chosen on the first screen. It is sent only
-   * so the server can explain a mismatch and point at the right sign-in screen. It
-   * never assigns a role: the server ignores it unless it matches the stored one.
+   * The optional selectedRole argument is retained for older callers as a
+   * mismatch hint only; it never assigns or changes a role.
    */
   static async googleAuthenticate(credential: string, selectedRole?: string): Promise<GoogleAuthResult> {
     const result = await eventApi.googleAuthenticate(credential, selectedRole);
@@ -108,4 +107,3 @@ export class AuthService {
     return linked;
   }
 }
-

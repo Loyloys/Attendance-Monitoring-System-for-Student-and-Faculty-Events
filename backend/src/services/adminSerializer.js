@@ -21,11 +21,15 @@ export function serializeAdminUser(user, { eventRegistrationCount = 0, attendanc
     contact: user.profile.phone || user.email || '',
     role: { student: 'Student', faculty: 'Faculty', admin: 'Admin' }[user.profile.role],
     department: user.profile.department || '',
-    status: user.isActive ? 'Active' : 'Inactive',
-    // Only `rejected` (and any historical `pending`) is ever blocked now;
-    // registration activates a new Student account immediately.
+    status: user.archivedAt ? 'Archived' : user.isActive ? 'Active' : 'Inactive',
+    // Retained for eligibility checks and existing clients; authentication
+    // continues to enforce legacy pending/rejected states.
     approvalStatus: approval,
     signedUpViaGoogle: Boolean(user.googleSub),
+    // Boolean only: tells the Admin screen whether the account still needs an
+    // application password (e.g. approved Google-linked accounts). The hash
+    // itself is never serialized.
+    hasApplicationPassword: typeof user.passwordHash === 'string' && user.passwordHash.length > 0,
     createdAt: new Date(user.dateJoined).toISOString(),
     eventRegistrationCount,
     attendanceCount,

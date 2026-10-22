@@ -53,7 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // A Google identity that is not yet linked to an account has no session yet, so
   // this only settles the session for identities that map to an existing account.
-  // `selectedRole` is forwarded purely so the server can explain a role mismatch;
+  // The optional legacy selectedRole hint can only produce a mismatch message;
   // it never assigns a role.
   const loginWithGoogle = useCallback(async (credential: string, selectedRole?: string): Promise<GoogleSignInOutcome> => {
     const result = await AuthService.googleAuthenticate(credential, selectedRole);

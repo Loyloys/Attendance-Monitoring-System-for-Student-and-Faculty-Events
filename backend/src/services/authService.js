@@ -4,6 +4,7 @@ import { stableCaseInsensitive } from '../utils/identifiers.js';
 import { ValidationError } from '../utils/errors.js';
 import { clearLoginFailures, loginIsLocked, recordLoginFailure } from './loginThrottle.js';
 import { serializeAuthUser } from './userSerializer.js';
+import { isApproved } from '../middleware/authentication.js';
 
 export async function authenticate(request, body) {
   const identifier = typeof body.identifier === 'string' ? body.identifier.trim() : body.identifier;
@@ -29,6 +30,9 @@ export async function authenticate(request, body) {
       { usernameNormalized: normalized },
       { accountIdNormalized: normalized },
       { emailNormalized: normalized },
+      // The address verified by Google may differ from the contact email on
+      // older or linked accounts. It still identifies the same approved User.
+      { googleEmailNormalized: normalized },
     ],
   }).select('+passwordHash').limit(2);
   const user = matches[0];
@@ -36,14 +40,38 @@ export async function authenticate(request, body) {
   // failed attempt rather than crashing, and report the same generic error so the
   // response never reveals which accounts exist.
   const hasPassword = typeof user?.passwordHash === 'string' && user.passwordHash.length > 0;
-  if (revoked || matches.length > 1 || !user || !user.isActive || !hasPassword || !verifyDjangoPassword(password, user.passwordHash)) {
+  const eligible = Boolean(user) && user.isActive && !user.archivedAt && isApproved(user);
+  if (
+    revoked
+    || matches.length > 1
+    || !user
+    || !user.isActive
+    || user.archivedAt
+    || !isApproved(user)
+    || !hasPassword
+    || !verifyDjangoPassword(password, user.passwordHash)
+  ) {
     await recordLoginFailure(request, identifier);
-    throw new ValidationError({ detail: 'The ID/username or password is incorrect.' });
+    // Approved, active accounts that simply never completed the application
+    // password-setup flow get actionable guidance instead of the generic
+    // mismatch error. Blocked (pending/rejected/inactive/archived), revoked,
+    // ambiguous, or unknown identifiers keep the generic response so the
+    // endpoint never discloses which accounts exist.
+    // Never accept a Google password or an SMTP App Password here: only the
+    // stored Django application-password hash is ever verified above.
+    if (eligible && !hasPassword && !revoked && matches.length <= 1) {
+      const setupRequired = new ValidationError({
+        detail: 'No application password is set for this account. Use Google sign-in, or ask an administrator to send your application password setup link.',
+      });
+      setupRequired.code = 'password_setup_required';
+      throw setupRequired;
+    }
+    throw new ValidationError({ detail: 'The account identifier or password is incorrect.' });
   }
   const profile = await UserProfile.findOne({ userId: user._id });
   if (!profile) {
     await recordLoginFailure(request, identifier);
-    throw new ValidationError({ detail: 'The ID/username or password is incorrect.' });
+    throw new ValidationError({ detail: 'The account identifier or password is incorrect.' });
   }
   await clearLoginFailures(request, identifier);
   user.lastLogin = new Date();

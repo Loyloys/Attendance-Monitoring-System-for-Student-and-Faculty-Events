@@ -16,14 +16,57 @@ test('administrator account operations persist in MongoDB without exposing passw
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.equal(created.body.password, undefined);
-  const updated = await send(agent, 'patch', '/api/admin/users/STU900/', { status: 'Inactive' });
-  assert.equal(updated.status, 200);
-  assert.equal(updated.body.status, 'Inactive');
+  const inactiveCreate = await send(agent, 'post', '/api/admin/users/', {
+    id: 'STU901', username: 'student901', name: 'Student Nine Hundred One',
+    email: 'student901@cot.edu', contact: '09120000001', department: 'BSIT',
+    role: 'Student', password: 'temporary-pass', status: 'Inactive',
+  });
+  assert.equal(inactiveCreate.status, 400);
+  assert.equal(await getModels().User.exists({ accountId: 'STU901' }), null);
+  const statusChange = await send(agent, 'patch', '/api/admin/users/STU900/', { status: 'Inactive' });
+  assert.equal(statusChange.status, 400);
+  assert.match(statusChange.body.status, /not available/i);
   const state = await agent.get('/api/admin/state/');
   assert.equal(state.status, 200);
-  assert.ok(state.body.users.some((user) => user.id === 'STU900' && user.status === 'Inactive'));
+  assert.ok(state.body.users.some((user) => user.id === 'STU900' && user.status === 'Active'));
   const stored = await getModels().User.findOne({ accountId: 'STU900' }).select('+passwordHash');
   assert.match(stored.passwordHash, /^pbkdf2_sha256\$/);
+});
+
+test('AD002.5: archiving blocks access and preserves the account and attendance history; restore is reversible', async () => {
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  const student = await createUser({ username: 'STU001', role: 'student' });
+  await createUser({ username: 'ADM001', role: 'admin' });
+  const event = await createEvent(faculty.user);
+  const recordId = await nextId('eventAttendance');
+  await getModels().EventAttendance.create({
+    _id: recordId,
+    eventId: event._id,
+    attendeeId: student.user._id,
+    status: 'present',
+    method: 'qr',
+    recordedAt: new Date(),
+  });
+  const { agent: admin } = await login('ADM001');
+  const { agent: studentSession } = await login('STU001');
+
+  const archived = await send(admin, 'post', '/api/admin/users/STU001/archive/', {});
+  assert.equal(archived.status, 200, JSON.stringify(archived.body));
+  assert.equal(archived.body.status, 'Archived');
+  const storedArchive = await getModels().User.findOne({ accountId: 'STU001' }).lean();
+  assert.ok(storedArchive.archivedAt);
+  assert.equal(storedArchive.archivedWasActive, true);
+  assert.equal((await studentSession.get('/api/auth/me/')).status, 401);
+  assert.ok(await getModels().User.findOne({ accountId: 'STU001' }));
+  assert.ok(await getModels().UserProfile.findOne({ userId: student.user._id }));
+  assert.equal(await getModels().EventAttendance.countDocuments({ attendeeId: student.user._id }), 1);
+  assert.equal(await getModels().AuditLog.countDocuments({ action: 'account_archived', targetUserId: student.user._id }), 1);
+
+  const restored = await send(admin, 'post', '/api/admin/users/STU001/restore/', {});
+  assert.equal(restored.status, 200, JSON.stringify(restored.body));
+  assert.equal(restored.body.status, 'Active');
+  assert.equal((await (await login('STU001')).agent.get('/api/auth/me/')).status, 200);
+  assert.equal(await getModels().AuditLog.countDocuments({ action: 'account_restored', targetUserId: student.user._id }), 1);
 });
 
 test('manual attendance correction and removal use the shared unique attendance collection', async () => {
@@ -233,7 +276,7 @@ test('one event with a missing createdAt cannot take down the whole admin worksp
 
 test('deleting an account with attendance history is refused instead of silently cascade-deleting it', async () => {
   // AD002.5: attendance/feedback history is the institutional record and must
-  // never be silently erased. Deactivation is the reversible alternative.
+  // never be silently erased. Archiving is the reversible alternative.
   const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
   await createUser({ username: 'ADM001', role: 'admin' });
   const student = await createUser({ username: 'STU001', role: 'student' });
@@ -258,30 +301,26 @@ test('deleting an account with attendance history is refused instead of silently
   const refused = await send(agent, 'delete', '/api/admin/users/STU001/');
   assert.equal(refused.status, 409, JSON.stringify(refused.body));
   assert.match(refused.body.detail, /attendance history/i);
-  assert.match(refused.body.detail, /Deactivate the account instead/);
+  assert.match(refused.body.detail, /Archive the account instead/);
 
   // The history is untouched - this is the whole point of the guard.
   assert.equal(await getModels().EventAttendance.countDocuments({ attendeeId: student.user._id }), 1);
   assert.equal(await getModels().EventRegistration.countDocuments({ attendeeId: student.user._id }), 1);
   assert.equal(await getModels().User.countDocuments({ _id: student.user._id }), 1);
 
-  // And deactivation still works, removing access while keeping every record.
-  assert.equal((await send(agent, 'patch', '/api/admin/users/STU001/', { status: 'Inactive' })).status, 200);
+  // Blocking/deactivation is no longer exposed through the account update API.
+  assert.equal((await send(agent, 'patch', '/api/admin/users/STU001/', { status: 'Inactive' })).status, 400);
   assert.equal(await getModels().EventAttendance.countDocuments({ attendeeId: student.user._id }), 1);
 });
 
-test('the last active administrator cannot be demoted or deactivated', async () => {
+test('the last active administrator cannot be demoted', async () => {
   await createUser({ username: 'ADM001', role: 'admin' });
   const { agent } = await login('ADM001');
 
-  // AD003: protect the final Admin from an accidental change of role or status.
+  // AD003: protect the final Admin from an accidental role change.
   const demote = await send(agent, 'patch', '/api/admin/users/ADM001/', { role: 'Faculty' });
   assert.equal(demote.status, 400, JSON.stringify(demote.body));
   assert.match(demote.body.detail, /active Admin/i);
-
-  const deactivate = await send(agent, 'patch', '/api/admin/users/ADM001/', { status: 'Inactive' });
-  assert.equal(deactivate.status, 400, JSON.stringify(deactivate.body));
-  assert.match(deactivate.body.detail, /active Admin/i);
 
   // Nothing changed.
   const profile = await getModels().UserProfile.findOne({ role: 'admin' }).lean();

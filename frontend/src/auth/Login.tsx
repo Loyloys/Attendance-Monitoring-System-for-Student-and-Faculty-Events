@@ -1,12 +1,10 @@
-﻿﻿import React, { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
-  ArrowLeft,
   Eye,
   EyeOff,
   FlaskConical,
-  Info,
   Loader2,
   LockKeyhole,
   LogIn,
@@ -16,53 +14,17 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { AuthService } from '../data/authService';
 import type { GoogleSignInMode } from '../data/eventApi';
-import type { UserRole } from '../types/eventAttendance';
 import GoogleSignInButton from './GoogleSignInButton';
 
-type Tab = 'signin' | 'signup';
-
-const ACCOUNTS: Record<UserRole, { title: string; blurb: string; identifierLabel: string; identifierHint: string; signupNote: string }> = {
-  student: {
-    title: 'Student Sign In',
-    blurb: 'Sign in to see your events and record your own attendance.',
-    identifierLabel: 'Student ID or email',
-    identifierHint: 'e.g. STU001 or you@institution.edu',
-    signupNote: 'New students submit a signup request with Google. An administrator approves it before any account is created.',
-  },
-  faculty: {
-    title: 'Faculty Sign In',
-    blurb: 'Sign in to monitor attendance and manage college events.',
-    identifierLabel: 'Faculty ID or email',
-    identifierHint: 'e.g. FAC001 or you@institution.edu',
-    signupNote: 'Faculty accounts are approved by an administrator. Continue with Google to submit a signup request.',
-  },
-  admin: {
-    title: 'Administrator Sign In',
-    blurb: 'Sign in to administer accounts, events and reports.',
-    identifierLabel: 'Administrator ID or email',
-    identifierHint: 'e.g. admin or you@institution.edu',
-    signupNote: 'Administrator accounts are pre-authorized. They cannot be created through public sign-up.',
-  },
-};
-
-const isUserRole = (value: string | undefined): value is UserRole =>
-  value === 'student' || value === 'faculty' || value === 'admin';
-
 const Login: React.FC = () => {
-  const { accountType } = useParams<{ accountType: string }>();
-  const account: UserRole = isUserRole(accountType) ? accountType : 'student';
-  const copy = ACCOUNTS[account];
-
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [roleMismatch, setRoleMismatch] = useState<{ message: string; path: string } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [tab, setTab] = useState<Tab>('signin');
   const [google, setGoogle] = useState<{ clientId: string; nonce: string } | null>(null);
-  const [googleState, setGoogleState] = useState<'idle' | 'working' | 'unavailable'>('idle');
+  const [googleState, setGoogleState] = useState<'checking' | 'idle' | 'working' | 'unavailable' | 'error'>('checking');
+  const [googleNotice, setGoogleNotice] = useState('');
   // What the server is actually enforcing. The card is labelled from this value
   // alone, so it can never describe the private test list as an institutional
   // restriction, or vice versa.
@@ -70,36 +32,65 @@ const Login: React.FC = () => {
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
-  // The client id and the single-use nonce both come from the server, so the
-  // button can never be rendered with a client id the backend would reject.
-  // VITE_GOOGLE_CLIENT_ID may supply the id ahead of time, but the server stays
-  // the authority: a mismatched value still fails verification there, and the
-  // nonce is only ever issued by the backend.
+  // The client id and single-use nonce both come from the backend so the button
+  // cannot be configured with an audience that the server would reject.
   useEffect(() => {
     let active = true;
     AuthService.googleConfig()
       .then(config => {
         if (!active) return;
         setGoogleMode(config.mode ?? (config.enabled ? 'institutional' : 'unavailable'));
-        if (!config.enabled) {
+        if (!config.settingAvailable) {
           setGoogleState('unavailable');
+          setGoogleNotice('Google sign-in status could not be read from the server. You can still sign in below with your application password.');
+          return;
+        }
+        if (!config.settingEnabled) {
+          setGoogleState('unavailable');
+          setGoogleNotice('Google sign-in is disabled in Admin settings. An authorized Admin can enable it under Settings > Google OAuth.');
+          return;
+        }
+        if (!config.configurationAvailable) {
+          setGoogleState('unavailable');
+          if (!config.clientIdPresent) {
+            setGoogleNotice('Google sign-in is not configured on the backend. The operator must configure GOOGLE_CLIENT_ID before it can be enabled.');
+          } else if (config.policy === 'off') {
+            setGoogleNotice('Google sign-in is disabled by the backend access policy. The operator must configure GOOGLE_ACCESS_POLICY before it can be enabled.');
+          } else {
+            setGoogleNotice('Google sign-in backend configuration is incomplete. The operator must check GOOGLE_ACCESS_POLICY and its required policy-specific settings.');
+          }
+          return;
+        }
+        if (!config.enabled || !config.clientId) {
+          setGoogleState('error');
+          setGoogleNotice('The server returned inconsistent Google sign-in configuration. You can still sign in below with your application password.');
           return;
         }
         return AuthService.googleSession().then(session => {
           if (!active || !session.enabled || !session.nonce) {
-            if (active) setGoogleState('unavailable');
+            if (active) {
+              setGoogleState('unavailable');
+              setGoogleNotice(session.settingAvailable && !session.settingEnabled
+                ? 'Google sign-in is disabled in Admin settings. An authorized Admin can enable it under Settings > Google OAuth.'
+                : 'Google sign-in could not be prepared by the server. You can still sign in below with your application password.');
+            }
             return;
           }
           if (session.mode) setGoogleMode(session.mode);
-          const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || session.clientId;
-          if (!clientId) {
-            setGoogleState('unavailable');
+          if (!session.clientId) {
+            setGoogleState('error');
+            setGoogleNotice('The backend did not provide its configured Google client ID. You can still sign in below with your application password.');
             return;
           }
-          setGoogle({ clientId, nonce: session.nonce });
+          setGoogle({ clientId: session.clientId, nonce: session.nonce });
+          setGoogleState('idle');
         });
       })
-      .catch(() => { if (active) setGoogleState('unavailable'); });
+      .catch(() => {
+        if (!active) return;
+        setGoogleState('error');
+        setGoogleNotice('Could not check Google sign-in availability because the server did not respond. You can still sign in below with your application password.');
+      });
     return () => { active = false; };
   }, []);
 
@@ -109,16 +100,9 @@ const Login: React.FC = () => {
 
   const handleGoogleCredential = useCallback(async (credential: string) => {
     setError('');
-    setNotice('');
-    setRoleMismatch(null);
     setGoogleState('working');
     try {
-      // The selected account type travels with the credential purely so the
-      // server can explain a role mismatch. It never assigns a role.
-      // This goes through the auth context so the signed-in user also lands in
-      // React state; calling the service directly would leave the route guards
-      // holding a null user and send the person back to /login.
-      const result = await loginWithGoogle(credential, account);
+      const result = await loginWithGoogle(credential);
       if (result.status === 'signed_in') {
         // Only an existing, already-approved account reaches this branch. A new
         // Google signup is parked as a pending request (see below) and a
@@ -134,31 +118,25 @@ const Login: React.FC = () => {
       }
       navigate('/login/complete-profile', {
         replace: true,
-        state: { prefill: result.prefill, selectedRole: account },
+        state: { prefill: result.prefill },
       });
     } catch (caught) {
-      const payload = (caught as { payload?: { code?: string; detail?: string; correctPath?: string } }).payload;
-      if (payload?.code === 'role_mismatch' && payload.correctPath) {
-        setRoleMismatch({ message: payload.detail || 'Your account role does not match this sign-in.', path: payload.correctPath });
-      } else {
-        setError(caught instanceof Error ? caught.message : 'We could not complete Google sign-in.');
-      }
+      setError(caught instanceof Error ? caught.message : 'We could not complete Google sign-in.');
       setGoogleState('idle');
     }
-  }, [account, goToDashboard, loginWithGoogle, navigate]);
+  }, [goToDashboard, loginWithGoogle, navigate]);
 
   const handleGoogleError = useCallback((message: string) => {
     setError(message);
-    setGoogleState((state) => (state === 'unavailable' ? state : 'idle'));
+    setGoogleState('idle');
   }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
-    setNotice('');
     const normalizedIdentifier = identifier.trim();
     if (!normalizedIdentifier) {
-      setError('Enter your ID or username.');
+      setError('Enter your account email, ID, or username.');
       return;
     }
     if (!password) {
@@ -178,138 +156,110 @@ const Login: React.FC = () => {
   };
 
   return (
-    <main className="auth-light flex min-h-screen items-center justify-center px-4 py-8 sm:px-6">
-      <section className="auth-light-card w-full max-w-[440px] px-6 py-8 sm:px-9 sm:py-10" aria-labelledby="login-title">
-        <Link
-          to="/login"
-          className="mb-6 inline-flex items-center gap-1.5 rounded text-sm font-semibold text-slate-500 outline-none transition hover:text-orange-600 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-          Back to account selection
-        </Link>
+    <main className="auth-light flex min-h-screen flex-col lg:flex-row">
+      <section className="relative isolate flex min-h-[230px] flex-col justify-between overflow-hidden bg-slate-900 px-6 py-6 sm:px-8 lg:min-h-screen lg:w-[46%] lg:p-12 xl:w-1/2">
+        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+          <div className="absolute -left-24 top-1/4 h-96 w-96 rounded-full bg-orange-500/20 blur-3xl" />
+          <div className="absolute -right-20 bottom-0 h-80 w-80 rounded-full bg-orange-400/10 blur-3xl" />
+          <svg className="absolute -right-40 top-1/2 h-[140%] w-[140%] -translate-y-1/2 text-white/[0.07]" viewBox="0 0 600 600" fill="none" aria-hidden="true">
+            {[60, 120, 180, 240, 300, 360].map(radius => (
+              <circle key={radius} cx="300" cy="300" r={radius} stroke="currentColor" strokeWidth="1" />
+            ))}
+          </svg>
+        </div>
 
-        <header className="mb-7 text-center">
+        <div className="relative flex items-center gap-3">
           <img
             src="/brand/sbo-logo.jpg"
-            alt="College of Technologies Student Body Organization"
-            className="mx-auto mb-4 h-16 w-16 rounded-full bg-white object-contain p-1 shadow-md ring-1 ring-slate-200"
+            alt=""
+            className="h-12 w-12 rounded-full bg-white object-contain p-1 shadow-lg shadow-black/40"
           />
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-orange-600">COT Event Attendance</p>
-          <h1 id="login-title" className="auth-light-title">{copy.title}</h1>
-          <p className="auth-light-subtitle">{copy.blurb}</p>
-        </header>
-
-        {/* Google sign-in: the primary no-typing path. */}
-        <div className="mb-6">
-          {google ? (
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-full">
-                <GoogleSignInButton
-                  clientId={google.clientId}
-                  nonce={google.nonce}
-                  text={tab === 'signup' ? 'signup' : 'signin'}
-                  onCredential={handleGoogleCredential}
-                  onError={handleGoogleError}
-                />
-              </div>
-              {/*
-                Stacked under the button rather than beside it. Google renders
-                the button at a fixed width (up to 400px), so a side-by-side
-                layout squeezed this text to its min-content width inside the
-                card and pushed it outside. Stacking has no width to negotiate.
-              */}
-              <p className="w-full text-center text-xs font-medium leading-5 text-slate-600">
-                {googleMode === 'development_test'
-                  ? "Sign in with the Google account on this server's private test list."
-                  : 'Continue with Google to sign in or create an account.'}
-              </p>
-            </div>
-          ) : (
-            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center text-xs font-semibold leading-5 text-amber-800">
-              {googleState === 'unavailable'
-                ? 'Google sign-in is not available on this server yet. Use your ID and password below.'
-                : 'Preparing Google sign-in...'}
-            </p>
-          )}
-
-          {/*
-            Stated as its own visible banner whenever the private test policy is
-            the one being enforced, so nobody can mistake it for an approved
-            school configuration.
-          */}
-          {google && googleMode === 'development_test' && (
-            <p role="status" className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-900">
-              <FlaskConical size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              Development testing only - not school-approved. Only the specific Google accounts listed on
-              this server may sign in. Password sign-in below works normally.
-            </p>
-          )}
-
-          {googleState === 'working' && (
-            <p role="status" className="mt-3 flex items-center justify-center gap-2 text-xs font-semibold text-orange-700">
-              <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Verifying with Google...
-            </p>
-          )}
-        </div>
-
-        <div className="my-6 flex items-center gap-4" role="separator" aria-label="or continue with">
-          <span className="h-px flex-1 bg-slate-200" />
-          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">or continue with</span>
-          <span className="h-px flex-1 bg-slate-200" />
-        </div>
-
-        <div role="tablist" aria-label="Account access" className="mb-5 grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
-          {(['signin', 'signup'] as Tab[]).map(option => (
-            <button
-              key={option}
-              type="button"
-              role="tab"
-              id={`auth-tab-${option}`}
-              aria-selected={tab === option}
-              aria-controls={`auth-panel-${option}`}
-              onClick={() => { setTab(option); setError(''); setNotice(''); }}
-              className={`rounded-lg px-4 py-2.5 text-sm font-bold outline-none transition focus-visible:ring-2 focus-visible:ring-orange-500 ${
-                tab === option ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {option === 'signin' ? 'Sign In' : 'Create Account'}
-            </button>
-          ))}
-        </div>
-
-        {error && (
-          <p role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold leading-5 text-rose-700">
-            <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />{error}
-          </p>
-        )}
-        {roleMismatch && (
-          <div role="alert" className="mb-4 rounded-xl border border-orange-200 bg-orange-50 p-4">
-            <p className="flex items-start gap-2 text-xs font-semibold leading-5 text-orange-900">
-              <AlertCircle size={16} className="mt-0.5 shrink-0 text-orange-600" aria-hidden="true" />
-              {roleMismatch.message}
-            </p>
-            <Link to={roleMismatch.path} className="auth-light-link mt-2 inline-block text-xs">
-              Go to the correct sign-in
-            </Link>
+          <div>
+            <p className="text-sm font-black tracking-tight text-white">COT Event Attendance</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-orange-400">College of Technologies</p>
           </div>
-        )}
-        {notice && (
-          <p role="status" className="mb-4 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs font-semibold leading-5 text-sky-800">
-            <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />{notice}
-          </p>
-        )}
+        </div>
 
-        {tab === 'signin' ? (
-          <form
-            id="auth-panel-signin"
-            role="tabpanel"
-            aria-labelledby="auth-tab-signin"
-            className="space-y-5"
-            onSubmit={handleSubmit}
-            noValidate
-          >
+        <div className="relative my-8 max-w-lg lg:my-0">
+          <h2 className="text-3xl font-extrabold leading-[1.05] tracking-[-0.03em] text-white sm:text-4xl xl:text-[3.4rem]">
+            Welcome to COT Event Attendance
+          </h2>
+          <p className="mt-4 text-base font-semibold text-slate-200 sm:text-lg">
+            A faster, safer way to check in to college events.
+          </p>
+          <p className="mt-4 hidden text-sm leading-6 text-slate-400 sm:block">
+            Sign in securely to access your event attendance workspace. Google handles your identity when you choose Google sign-in; this application never sees your Google password.
+          </p>
+        </div>
+
+        <p className="relative hidden items-center gap-2 text-xs font-semibold text-slate-500 lg:flex">
+          <ShieldCheck size={14} aria-hidden="true" />
+          Secure, event-only access. This is not the university&apos;s official sign-in service.
+        </p>
+      </section>
+
+      <section className="flex flex-1 items-center justify-center px-5 py-9 sm:px-8 lg:py-14">
+        <div className="w-full max-w-md">
+          <header className="mb-7">
+            <h1 id="login-title" className="text-[2rem] font-bold leading-tight tracking-[-0.02em] text-slate-900">Sign in to your account</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-600">Use your account email, ID, or username and application password.</p>
+          </header>
+
+          <div className="mb-6">
+            {google ? (
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-full">
+                  <GoogleSignInButton
+                    clientId={google.clientId}
+                    nonce={google.nonce}
+                    text="signin"
+                    onCredential={handleGoogleCredential}
+                    onError={handleGoogleError}
+                  />
+                </div>
+                <p className="w-full text-center text-xs font-medium leading-5 text-slate-600">
+                  {googleMode === 'development_test'
+                    ? "Sign in with the Google account on this server's private test list."
+                    : 'Continue with Google to sign in.'}
+                </p>
+              </div>
+            ) : (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center text-xs font-semibold leading-5 text-amber-800">
+                {googleNotice || (googleState === 'checking'
+                  ? 'Checking Google sign-in availability...'
+                  : 'Google sign-in is not available. You can still sign in below with your application password.')}
+              </p>
+            )}
+
+            {google && googleMode === 'development_test' && (
+              <p role="status" className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-900">
+                <FlaskConical size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+                Development testing only - not school-approved. Only the specific Google accounts listed on
+                this server may sign in. Password sign-in below works normally.
+              </p>
+            )}
+
+            {googleState === 'working' && (
+              <p role="status" className="mt-3 flex items-center justify-center gap-2 text-xs font-semibold text-orange-700">
+                <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Verifying with Google...
+              </p>
+            )}
+          </div>
+
+          <div className="my-6 flex items-center gap-4" role="separator" aria-label="or continue with">
+            <span className="h-px flex-1 bg-slate-200" />
+            <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">or continue with</span>
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          {error && (
+            <p role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold leading-5 text-rose-700">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />{error}
+            </p>
+          )}
+          <form className="space-y-5" onSubmit={handleSubmit} noValidate>
             <div>
-              <label htmlFor="identifier" className="auth-light-label">{copy.identifierLabel}</label>
+              <label htmlFor="identifier" className="auth-light-label">Email, ID, or username</label>
               <div className="relative">
                 <Mail size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                 <input
@@ -319,14 +269,14 @@ const Login: React.FC = () => {
                   autoComplete="username"
                   value={identifier}
                   onChange={event => setIdentifier(event.target.value)}
-                  placeholder={copy.identifierHint}
+                  placeholder="e.g. you@institution.edu or STU001"
                   className="auth-light-input pl-11"
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="password" className="auth-light-label">Password</label>
+              <label htmlFor="password" className="auth-light-label">Application password</label>
               <div className="relative">
                 <LockKeyhole size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                 <input
@@ -336,7 +286,7 @@ const Login: React.FC = () => {
                   autoComplete="current-password"
                   value={password}
                   onChange={event => setPassword(event.target.value)}
-                  placeholder="Enter your password"
+                  placeholder="Enter your application password"
                   className="auth-light-input pl-11 pr-11"
                 />
                 <button
@@ -352,38 +302,22 @@ const Login: React.FC = () => {
             </div>
 
             <p className="text-xs leading-5 text-slate-500">
-              Forgot your password? Password recovery is handled by an administrator.
+              This is your application password, not your Google password. Google passwords and Gmail SMTP App Passwords never work here. Approved Google-only accounts can use Google sign-in above or ask an administrator to send or resend their application password setup link.
             </p>
 
             <button type="submit" disabled={isLoading} className="auth-light-button">
-              {isLoading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Signing in...</> : <><LogIn size={18} aria-hidden="true" /> Sign In</>}
+              {isLoading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Signing in...</> : <><LogIn size={18} aria-hidden="true" /> Sign in</>}
             </button>
           </form>
-        ) : (
-          <div id="auth-panel-signup" role="tabpanel" aria-labelledby="auth-tab-signup" className="space-y-4">
-            <p className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-xs font-semibold leading-5 text-orange-900">
-              Choose <span className="font-bold">Continue with Google</span> above to submit a signup request.
-              We verify your Google account, then an administrator reviews your request before any account is created.
-            </p>
-            <p className="text-xs leading-5 text-slate-600">{copy.signupNote}</p>
-            <ul className="space-y-2 text-xs font-medium leading-5 text-slate-600">
-              <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />Your Google password is never seen by COT.</li>
-              <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />We never request Gmail, Drive or contacts access.</li>
-              <li className="flex gap-2"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-orange-400" aria-hidden="true" />New requests stay pending until an administrator approves them and assigns your role.</li>
-            </ul>
-            <button
-              type="button"
-              onClick={() => setTab('signin')}
-              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold text-slate-700 outline-none transition hover:border-orange-400 hover:bg-orange-50/60 hover:text-orange-700 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
-            >
-              Already have an account? Sign in
-            </button>
-          </div>
-        )}
 
-        <p className="mt-7 flex items-center justify-center gap-2 border-t border-slate-100 pt-5 text-xs font-semibold text-slate-400">
-          <ShieldCheck size={14} aria-hidden="true" /> Secure event-only access
-        </p>
+          <p className="mt-5 text-center text-sm text-slate-600">
+            Need an account? <Link to="/signup" className="auth-light-link">Request one separately</Link>
+          </p>
+
+          <p className="mt-7 flex items-center justify-center gap-2 border-t border-slate-100 pt-5 text-xs font-semibold text-slate-400 lg:hidden">
+            <ShieldCheck size={14} aria-hidden="true" /> Secure event-only access
+          </p>
+        </div>
       </section>
     </main>
   );

@@ -128,7 +128,7 @@ export interface PersonalAttendanceRecord {
   eventId: string;
   eventName: string;
   eventDate: string;
-  status: AttendanceStatus;
+  status: AttendanceStatus | 'pending';
   method: AttendanceMethod;
   recordedAt: string;
   /** GST009: server-verified in-zone seconds (0 when none). */
@@ -150,15 +150,27 @@ export interface AttendanceConfirmation {
   eventName: string;
   eventDate: string;
   eventTime: string;
-  status: AttendanceStatus;
+  status: AttendanceStatus | 'pending';
   method: AttendanceMethod;
   recordedAt: string;
+  qualification?: 'pending' | AttendanceStatus | null;
+  requiredAttendanceMinutes?: number | null;
   /** GST004: true when the server accepted and stored a verified position. */
   locationVerified?: boolean;
   /** How precise the accepted fix was, in metres (±). Null when not verified. */
   locationAccuracyMeters?: number | null;
   locationDistanceMeters?: number | null;
   message: string;
+}
+
+export interface AttendanceQrPreview {
+  eventId: string;
+  eventName: string;
+  method: AttendanceMethod;
+  eligible: boolean;
+  reason: string | null;
+  locationRequired: boolean;
+  requiredAttendanceMinutes: number | null;
 }
 
 export interface MonitoredEventAttendance {
@@ -173,4 +185,3 @@ export interface MonitoredEventAttendance {
     recordedAt: string;
   }>;
 }
-

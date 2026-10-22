@@ -37,8 +37,10 @@ export async function connectDatabase(uri = env.mongoUri) {
  * would make a normal `npm start` write to the live database. `autoIndex` and
  * `autoCreate` are therefore both disabled on connect (see connectDatabase), which
  * makes this function the ONLY thing a normal start uses, and it skips these
- * models. They are created instead by an explicit, separately approved rollout step
- * (`scripts/create-attendance-session-indexes.js`).
+ * models. They are created by an explicit, separately approved rollout step
+ * appropriate to each model. `scripts/create-attendance-session-indexes.js`
+ * provisions only the two attendance models; it does not provision signup or
+ * Admin-feature indexes.
  *
  * BOTH approval-gated models belong here:
  *   - `AttendanceSession` - `unique_user_event_session` backs the single-session
@@ -49,7 +51,14 @@ export async function connectDatabase(uri = env.mongoUri) {
  *     exactly the rollout that has to be authorised.
  *   - `SignupRequest`     - AD003.3 email-only pending requests. A new collection
  *     plus its indexes must never be created implicitly on the live database by a
- *     routine start; creation waits for explicit approval.
+ *     routine start; creation waits for explicit approval. Existing databases may
+ *     also have the previous full unique `googleSub` index, which must be reviewed
+ *     and replaced with the partial unique index before multiple email-only
+ *     requests can be safely accepted.
+ *   - `SystemSetting`, `Announcement`, and `EmailActionToken` - Admin settings,
+ *     announcements, and one-use email tokens. Token expiration is enforced by
+ *     application queries; TTL cleanup remains inactive until its index is
+ *     explicitly provisioned.
  *
  * Nothing is lost in the meantime:
  *   - tracking endpoints stay refused until their index exists;
@@ -62,7 +71,14 @@ export async function connectDatabase(uri = env.mongoUri) {
  * Excluding a model here does NOT drop an index that already exists: `createIndexes`
  * only ever creates what is missing, and nothing in this file removes anything.
  */
-export const INDEX_CREATION_EXCLUDED_MODELS = Object.freeze(['AttendanceSession', 'AttendanceCode', 'SignupRequest']);
+export const INDEX_CREATION_EXCLUDED_MODELS = Object.freeze([
+  'AttendanceSession',
+  'AttendanceCode',
+  'SignupRequest',
+  'SystemSetting',
+  'Announcement',
+  'EmailActionToken',
+]);
 
 /**
  * Creates the collections and indexes of every NON-excluded model.

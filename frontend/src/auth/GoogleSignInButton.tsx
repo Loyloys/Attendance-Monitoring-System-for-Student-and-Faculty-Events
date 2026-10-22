@@ -93,7 +93,7 @@ export default function GoogleSignInButton({ clientId, nonce, text, onCredential
           type: 'standard',
           theme: 'filled_black',
           size: 'large',
-          shape: 'pill',
+          shape: 'rectangular',
           width: Math.min(container.current.clientWidth || 400, 400),
           text,
           logo_alignment: 'left',

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agent, createUser, csrfToken, login, request, reset, send, setup, teardown } from './helpers.js';
+import { agent, createUser, getModels, csrfToken, login, request, reset, send, setup, teardown } from './helpers.js';
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -50,13 +50,61 @@ test('logs in, restores the session, and logs out', async () => {
   assert.equal((await agent.get('/api/auth/me/')).status, 401);
 });
 
+test('identifiers use the stored role and ignore a browser-supplied role', async () => {
+  const student = await createUser({ username: 'STU010', role: 'student', email: 'student010@cot.edu' });
+  await createUser({ username: 'FAC010', role: 'faculty', email: 'faculty010@cot.edu' });
+  await createUser({ username: 'ADM010', role: 'admin', email: 'admin010@cot.edu' });
+  const attempts = [
+    { identifier: student.user.accountId, suppliedRole: 'admin', expectedRole: 'student' },
+    { identifier: 'faculty010@cot.edu', suppliedRole: 'admin', expectedRole: 'faculty' },
+    { identifier: 'ADM010', suppliedRole: 'student', expectedRole: 'admin' },
+  ];
+  for (const { identifier, suppliedRole, expectedRole } of attempts) {
+    const client = agent();
+    const response = await send(client, 'post', '/api/auth/login/', {
+      identifier,
+      password: 'test-pass-123',
+      role: suppliedRole,
+    });
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    assert.equal(response.body.role, expectedRole);
+    assert.equal((await client.get('/api/auth/me/')).body.role, expectedRole);
+  }
+});
+
+test('pending, rejected, inactive, and archived accounts receive no login session', async () => {
+  const blockedAccounts = [
+    { username: 'STU011', approvalStatus: 'pending' },
+    { username: 'STU012', approvalStatus: 'rejected' },
+    { username: 'STU013', isActive: false },
+    { username: 'STU014', archivedAt: new Date() },
+  ];
+  for (const { username, ...changes } of blockedAccounts) {
+    const { user } = await createUser({ username, role: 'student' });
+    await getModels().User.updateOne({ _id: user._id }, { $set: changes });
+  }
+
+  const messages = [];
+  for (const { username } of blockedAccounts) {
+    const client = agent();
+    const response = await send(client, 'post', '/api/auth/login/', {
+      identifier: username,
+      password: 'test-pass-123',
+    });
+    assert.equal(response.status, 400, JSON.stringify(response.body));
+    messages.push(response.body.detail);
+    assert.equal((await client.get('/api/auth/me/')).status, 401);
+  }
+  assert.ok(messages.every(message => message === 'The account identifier or password is incorrect.'));
+});
+
 test('rejects an incorrect password without disclosing which field failed', async () => {
   await createUser({ username: 'STU001', role: 'student' });
   const client = agent();
   const token = await csrfToken(client);
   const response = await client.post('/api/auth/login/').set('X-CSRFToken', token).send({ identifier: 'STU001', password: 'wrong' });
   assert.equal(response.status, 400);
-  assert.equal(response.body.detail, 'The ID/username or password is incorrect.');
+  assert.equal(response.body.detail, 'The account identifier or password is incorrect.');
 });
 
 test('rejects ambiguous email identifiers', async () => {

@@ -1,3 +1,5 @@
+import { polygonValidationError } from './geofence.js';
+
 export const ROLES = Object.freeze({
   STUDENT: 'student',
   FACULTY: 'faculty',
@@ -41,7 +43,14 @@ export function pendingRoleForEmail(email) {
   return PENDING_ROLE_BY_EMAIL_DOMAIN[domain] || '';
 }
 
-export const EVENT_AUDIENCES = Object.freeze(['all', 'student', 'faculty']);
+/** Returns an account ID only for a verified, exact ten-digit institutional address. */
+export function accountIdForVerifiedInstitutionalEmail(email, isVerified) {
+  if (!isVerified) return '';
+  const match = /^(\d{10})@(student|faculty)\.buksu\.edu\.ph$/i.exec(String(email || '').trim());
+  return match ? match[1] : '';
+}
+
+export const EVENT_AUDIENCES = Object.freeze(['all', 'student', 'faculty', ...DEPARTMENTS.map((department) => department.toLowerCase())]);
 export const EVENT_STATUSES = Object.freeze(['published', 'cancelled']);
 export const ATTENDANCE_METHODS = Object.freeze(['qr', 'barcode', 'rfid']);
 export const ATTENDANCE_STATUSES = Object.freeze(['present', 'late', 'absent']);
@@ -92,11 +101,18 @@ export const LOCATION_POLICY = Object.freeze({
 
 /** An event is geofenced only when it has a complete centre and a positive radius. */
 export function geofenceFor(event) {
+  if (event?.geofenceType === 'polygon') {
+    const polygon = Array.isArray(event.geofencePolygon)
+      ? event.geofencePolygon.map((point) => ({ latitude: point.latitude, longitude: point.longitude }))
+      : [];
+    if (polygonValidationError(polygon)) return null;
+    return { type: 'polygon', polygon };
+  }
   const latitude = event?.venueLatitude;
   const longitude = event?.venueLongitude;
   const radiusMeters = event?.venueRadiusMeters;
   if (typeof latitude !== 'number' || typeof longitude !== 'number' || typeof radiusMeters !== 'number') return null;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radiusMeters)) return null;
   if (radiusMeters <= 0) return null;
-  return { latitude, longitude, radiusMeters };
+  return { type: 'circle', latitude, longitude, radiusMeters };
 }

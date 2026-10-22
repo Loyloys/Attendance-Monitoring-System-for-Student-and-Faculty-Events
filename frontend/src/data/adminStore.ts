@@ -2,9 +2,9 @@ import { useSyncExternalStore } from 'react';
 import { eventApi } from './eventApi';
 
 export type AdminRole = 'Admin' | 'Faculty' | 'Student';
-export type AccountStatus = 'Active' | 'Inactive';
+export type AccountStatus = 'Active' | 'Inactive' | 'Archived';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
-export type EventAudience = 'All' | 'Student' | 'Faculty';
+export type EventAudience = 'All' | 'Student' | 'Faculty' | 'IT' | 'BSEMC' | 'BSFT' | 'BSAT' | 'BSET';
 /**
  * Display statuses only. The STORED statuses are just `published` and
  * `cancelled` (backend EVENT_STATUSES); `Approved`, `Ongoing` and `Completed`
@@ -24,9 +24,15 @@ export interface AdminUserAccount {
   role: AdminRole;
   department: string;
   status: AccountStatus;
-  /** Administrator-controlled access state. New registrations are `approved` at once. */
+  /** Legacy access state, retained for password-setup eligibility and display. */
   approvalStatus: ApprovalStatus;
   signedUpViaGoogle?: boolean;
+  /**
+   * False for approved Google-linked accounts that never completed the
+   * application-password setup flow. Only a boolean is ever sent; the stored
+   * hash is never exposed.
+   */
+  hasApplicationPassword?: boolean;
   createdAt: string;
   /**
    * How many events this person has a CURRENT (`registered`) event registration
@@ -122,8 +128,12 @@ export interface AdminEvent {
   venueLatitude?: number;
   venueLongitude?: number;
   venueRadiusMeters?: number;
+  geofenceType?: 'circle' | 'polygon';
+  geofencePolygon?: { latitude: number; longitude: number }[];
   targetPrograms?: string[];
   qrExpiresAt?: string;
+  /** When set, the event is archived and hidden from students and faculty. */
+  archivedAt?: string | null;
   /** GST006: required in-zone minutes. Null/undefined means "not configured" - it
    * is never backfilled, so existing events keep tracking switched off. */
   requiredAttendanceMinutes?: number | null;
@@ -306,10 +316,16 @@ const eventCoversDepartment = (eventDepartment: string, userDepartment: string) 
   return !eventValue || eventValue === 'all' || eventValue === 'all cot programs' || eventValue === 'college of technologies' || eventValue === userValue || eventValue.includes(userValue) || userValue.includes(eventValue);
 };
 
+const audienceCoversUser = (audience: EventAudience, user: AdminUserAccount) =>
+  audience === 'All'
+  || audience === user.role
+  || audience.toLowerCase() === user.department.toLowerCase();
+
 export const getExpectedAttendeeIds = (eventId: string, target: AdminState = state) => {
   const event = target.events.find(item => item.id === eventId);
   if (!event) return [] as string[];
-  return target.users.filter(user => user.status === 'Active' && user.role !== 'Admin' && (event.audience === 'All' || event.audience === user.role) && eventCoversDepartment(event.department, user.department)).map(user => user.id);
+  const departmentTarget = event.audience !== 'All' && event.audience !== 'Student' && event.audience !== 'Faculty';
+  return target.users.filter(user => user.status === 'Active' && user.role !== 'Admin' && audienceCoversUser(event.audience, user) && (departmentTarget || eventCoversDepartment(event.department, user.department))).map(user => user.id);
 };
 
 export const getAttendanceCountsWithExpected = (eventId: string, target: AdminState = state) => {
@@ -324,7 +340,7 @@ export const getAttendancePercentage = (personId: string, role: 'Student' | 'Fac
   // `Pending` is no longer excluded because it can no longer occur: the stored
   // statuses are only published/cancelled and the rest are derived. Cancelled
   // events are still excluded, since a cancelled event is not attendance-bearing.
-  const requiredEvents = target.events.filter(event => event.requiredForAttendance && event.status !== 'Cancelled' && (event.audience === 'All' || event.audience === role) && (!person || eventCoversDepartment(event.department, person.department)));
+  const requiredEvents = target.events.filter(event => event.requiredForAttendance && event.status !== 'Cancelled' && (event.audience === 'All' || event.audience === role || Boolean(person && event.audience.toLowerCase() === person.department.toLowerCase())) && (!person || event.audience.toLowerCase() === person.department.toLowerCase() || eventCoversDepartment(event.department, person.department)));
   if (!requiredEvents.length) return 0;
   const attended = requiredEvents.filter(event => target.attendance.some(record => record.eventId === event.id && record.personId === personId && (record.status === 'Present' || record.status === 'Late'))).length;
   return Math.round((attended / requiredEvents.length) * 100);
@@ -350,9 +366,8 @@ export const reportRows = (filters: { eventId?: string; department?: string; sta
 };
 
 
-// `approvalStatus` is excluded: an administrator-created account is approved by
-// the act of creating it. Only Google self-registrations arrive as `pending`.
-export async function addUser(input: Omit<AdminUserAccount, 'id' | 'createdAt' | 'status' | 'legacyRole' | 'approvalStatus' | 'signedUpViaGoogle'> & { id?: string; status?: AccountStatus }) {
+// An administrator-created account is approved by the act of creating it.
+export async function addUser(input: Omit<AdminUserAccount, 'id' | 'createdAt' | 'status' | 'legacyRole' | 'approvalStatus' | 'signedUpViaGoogle'> & { id?: string }) {
   if (!input.id) throw new Error('Account ID is required.');
   const created = await eventApi.createAdminUser({
     ...input,
@@ -385,18 +400,19 @@ export async function loadUserRegistrations(id: string) {
   return eventApi.adminUserRegistrations(id);
 }
 
-export async function updateUser(id: string, patch: Partial<Omit<AdminUserAccount, 'createdAt' | 'legacyRole'>>) {
+export async function updateUser(id: string, patch: Partial<Omit<AdminUserAccount, 'createdAt' | 'legacyRole' | 'status' | 'approvalStatus'>>) {
   const updated = await eventApi.updateAdminUser(id, patch);
   await refreshAdminState();
   return updated;
 }
 
-export async function setUserStatus(id: string, status: AccountStatus) {
-  return updateUser(id, { status });
+export async function removeUser(id: string) {
+  await eventApi.archiveAdminUser(id);
+  await refreshAdminState();
 }
 
-export async function removeUser(id: string) {
-  await eventApi.deleteAdminUser(id);
+export async function restoreUser(id: string) {
+  await eventApi.restoreAdminUser(id);
   await refreshAdminState();
 }
 
@@ -434,4 +450,3 @@ export async function removeForm(id: string) {
 }
 
 export const getFormResults = (formId: string) => state.responses.filter(response => response.formId === formId);
-

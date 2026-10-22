@@ -33,6 +33,11 @@ process.env.LOGIN_RATE_LIMIT = '500';
 // exercises far more Google sign-ins in a minute than any real user would, so
 // the budget is raised HERE rather than weakened in the product default (60).
 process.env.GOOGLE_AUTH_RATE_LIMIT = '2000';
+// The email verification / password-setup endpoints have their own budget. The
+// signup + verify + setup suites legitimately exercise more than the product
+// default (10 per 15 minutes) from a single IP, so the budget is raised HERE
+// rather than weakened in the product default.
+process.env.EMAIL_ACTION_RATE_LIMIT = '500';
 process.env.GOOGLE_CLIENT_ID = '1234567890-test.apps.googleusercontent.com';
 // Encrypts stored QR credentials. Test-only value; the real one is an operator
 // secret that must never appear in source control.
@@ -136,6 +141,11 @@ export async function reset() {
   await dropTestDatabase();
   await database.ensureDatabaseIndexes();
   await ensureGatedIndexes();
+  await models.SystemSetting.findByIdAndUpdate(
+    'google_oauth_enabled',
+    { $set: { value: true } },
+    { upsert: true },
+  );
 }
 
 export async function csrfToken(agent) {

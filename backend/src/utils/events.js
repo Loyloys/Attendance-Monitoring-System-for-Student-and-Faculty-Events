@@ -13,6 +13,7 @@
  */
 import { LOCATION_POLICY, geofenceFor } from '../utils/domain.js';
 import { ValidationError } from '../utils/errors.js';
+import { distanceToPolygonMeters, pointInPolygon } from './geofence.js';
 
 const EARTH_RADIUS_METERS = 6_371_008.8;
 
@@ -97,16 +98,17 @@ export function verifyAttendanceLocation(event, submitted, now = new Date()) {
     throw new ValidationError({ location: 'That location reading has an invalid timestamp. Try again.' });
   }
 
-  const distance = distanceMeters(latitude, longitude, fence.latitude, fence.longitude);
-  const limit = fence.radiusMeters + LOCATION_POLICY.slackMeters;
-
-  if (distance > limit) {
-    const distanceText = distance >= 1000
-      ? `${(distance / 1000).toFixed(1)} km`
-      : `${Math.round(distance)} m`;
-    throw new ValidationError({
-      location: `You appear to be ${distanceText} from the event venue, which is outside the ${fence.radiusMeters} m check-in zone. Move to the venue and try again.`,
-    });
+  const isPolygon = fence.type === 'polygon';
+  const distance = isPolygon
+    ? distanceToPolygonMeters(latitude, longitude, fence.polygon)
+    : distanceMeters(latitude, longitude, fence.latitude, fence.longitude);
+  const inside = isPolygon
+    ? pointInPolygon(latitude, longitude, fence.polygon) || distance <= LOCATION_POLICY.slackMeters
+    : distance <= fence.radiusMeters + LOCATION_POLICY.slackMeters;
+  if (!inside) {
+    const distanceText = distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${Math.round(distance)} m`;
+    const zone = isPolygon ? 'polygon attendance boundary' : `${fence.radiusMeters} m check-in zone`;
+    throw new ValidationError({ location: `You appear to be ${distanceText} outside the event ${zone}. Move to the venue and try again.` });
   }
 
   return {

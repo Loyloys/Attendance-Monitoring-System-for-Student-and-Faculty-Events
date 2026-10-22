@@ -17,6 +17,9 @@ import RevokedIdentifier from './RevokedIdentifier.js';
 import MigrationRun from './MigrationRun.js';
 import LegacyBrowserSnapshot from './LegacyBrowserSnapshot.js';
 import SignupRequest from './SignupRequest.js';
+import SystemSetting from './SystemSetting.js';
+import Announcement from './Announcement.js';
+import EmailActionToken from './EmailActionToken.js';
 
 export {
   User,
@@ -38,4 +41,7 @@ export {
   MigrationRun,
   LegacyBrowserSnapshot,
   SignupRequest,
+  SystemSetting,
+  Announcement,
+  EmailActionToken,
 };

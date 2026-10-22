@@ -11,10 +11,11 @@ import {
 import { ConflictError, PermissionError, ValidationError } from '../utils/errors.js';
 import { nextNumericId } from '../utils/ids.js';
 import { sha256, stableCaseInsensitive, toLegacyUuid } from '../utils/identifiers.js';
-import { QR_PREFIX, QUALIFICATION_REASONS } from '../utils/domain.js';
+import { EVENT_AUDIENCES, QR_PREFIX, QUALIFICATION_REASONS } from '../utils/domain.js';
 import { requiredMinutesFor } from '../utils/attendancePolicy.js';
 import { manilaWallClockToInstant } from '../utils/eventTimeZone.js';
 import { effectiveEventStatus, eventAllows, isCheckInOpen, isSupervisor, verifyAttendanceLocation } from '../utils/events.js';
+import { polygonValidationError } from '../utils/geofence.js';
 import { serializeAdminEvent, serializeEventContext } from './eventSerializer.js';
 
 function normalizeEventId(value) {
@@ -29,13 +30,18 @@ export async function availableEventsForUser(user) {
   }
   return Event.find({
     status: 'published',
-    $or: [{ audience: 'all' }, { audience: user.profile.role }],
+    archivedAt: null,
+    $or: [{ audience: 'all' }, { audience: user.profile.role }, { audience: String(user.profile.department || '').toLowerCase() }],
   }).sort({ startsAt: 1, name: 1 }).lean();
 }
 
 export async function managedEventsForUser(user) {
   if (user.profile.role !== 'faculty') throw new PermissionError('This action is not available for your role.');
   return Event.find({
+    // An archived event is withdrawn from the faculty's working list as well.
+    // Its attendance and registration records are untouched, so it still
+    // appears in the faculty's own history and reports.
+    archivedAt: null,
     $or: [{ organizerId: user._id }, { supervisors: user._id }],
   }).sort({ startsAt: 1, name: 1 }).lean();
 }
@@ -113,7 +119,7 @@ export async function resolveScannedEvent(rawToken, eventId, user) {
     const event = await Event.findOne({
       _id: scannedId,
       status: 'published',
-      $or: [{ audience: 'all' }, { audience: user.profile.role }],
+      $or: [{ audience: 'all' }, { audience: user.profile.role }, { audience: String(user.profile.department || '').toLowerCase() }],
     }).lean();
     if (!event) throw new ValidationError({ scan: 'This event is not available to your account.' });
     const code = await AttendanceCode.findOne({
@@ -134,10 +140,86 @@ export async function resolveScannedEvent(rawToken, eventId, user) {
   const event = await Event.findOne({
     _id: normalizeEventId(eventId),
     status: 'published',
-    $or: [{ audience: 'all' }, { audience: user.profile.role }],
+    $or: [{ audience: 'all' }, { audience: user.profile.role }, { audience: String(user.profile.department || '').toLowerCase() }],
   }).lean();
   if (!event) throw new ValidationError({ event: 'Event not found or not available to your account.' });
   return event;
+}
+
+/**
+ * Read-only QR preflight used to identify an event and decide whether the
+ * attendee should be asked for location before the check-in request. This is
+ * advisory UI data only; recordEventAttendance repeats every authoritative
+ * eligibility, credential, registration, duplicate, and location check.
+ */
+export async function previewEventAttendance(user, rawToken, now = new Date()) {
+  if (!['student', 'faculty'].includes(user.profile.role)) {
+    throw new PermissionError('This action is not available for your role.');
+  }
+  const parts = typeof rawToken === 'string' ? rawToken.trim().split(':') : [];
+  const eventId = parts.length === 3 && parts[0] === QR_PREFIX && parts[1]
+    ? normalizeEventId(parts[1])
+    : null;
+  if (!eventId || !parts[2]) {
+    throw new ValidationError({ scan: 'Invalid event QR code. Scan a current event check-in code.' });
+  }
+
+  const event = await Event.findById(eventId).lean();
+  const audienceAllowed = event && (
+    event.audience === 'all'
+    || event.audience === user.profile.role
+    || event.audience === String(user.profile.department || '').toLowerCase()
+  );
+  if (!event || !audienceAllowed) {
+    throw new ValidationError({ scan: 'This event is not available to your account.' });
+  }
+
+  const code = await AttendanceCode.findOne({
+    eventId: event._id,
+    tokenHash: sha256(parts[2]),
+    active: true,
+  }).lean();
+  if (!code) {
+    throw new ValidationError({ scan: 'This event QR code is invalid, expired, or has been replaced.' });
+  }
+
+  const locationRequired = event.locationVerificationRequired !== false;
+  const requiredAttendanceMinutes = requiredMinutesFor(event) || null;
+  let reason = null;
+  if (event.status !== 'published') {
+    reason = 'This event is not open for attendance.';
+  } else if (new Date(code.expiresAt) <= now) {
+    reason = 'This event check-in code has expired. Ask the organizer for the current code.';
+  } else if (!isCheckInOpen(event, now)) {
+    reason = now < event.checkInOpensAt
+      ? 'Check-in for this event has not opened yet.'
+      : 'The check-in window for this event is closed.';
+  } else if (event.registrationRequired && user.profile.role === 'student') {
+    const registration = await EventRegistration.findOne({
+      eventId: event._id,
+      attendeeId: user._id,
+      status: 'registered',
+    }).lean();
+    if (!registration) reason = 'Register for this event before checking in.';
+  }
+
+  if (!reason) {
+    const attendance = await EventAttendance.findOne({
+      eventId: event._id,
+      attendeeId: user._id,
+    }).lean();
+    if (attendance) reason = 'Your attendance for this event has already been recorded.';
+  }
+
+  return {
+    eventId: event._id,
+    eventName: event.name,
+    method: event.attendanceMethod,
+    eligible: !reason && event.attendanceMethod === 'qr',
+    reason: reason || (event.attendanceMethod !== 'qr' ? 'This event does not accept QR check-in.' : null),
+    locationRequired,
+    requiredAttendanceMinutes,
+  };
 }
 
 export async function recordEventAttendance(user, { token, eventId, identifier, method, location }) {
@@ -227,7 +309,7 @@ export async function registerForEvent(user, eventId) {
   const event = await Event.findOne({
     _id: normalizeEventId(eventId),
     status: 'published',
-    $or: [{ audience: 'all' }, { audience: 'student' }],
+    $or: [{ audience: 'all' }, { audience: 'student' }, { audience: String(user.profile.department || '').toLowerCase() }],
   }).lean();
   if (!event) throw new ValidationError({ event: 'Event not found.' });
   if (!event.registrationRequired) throw new ValidationError({ event: 'This event does not require registration.' });
@@ -298,6 +380,7 @@ function validateWriteValues(data, current = null, partial = false) {
     name: data.name !== undefined ? String(data.name).trim() : current?.name,
     description: data.description !== undefined ? String(data.description).trim() : current?.description || '',
     venue: data.venue !== undefined ? String(data.venue).trim() : current?.venue,
+    geofenceType: data.geofenceType ?? current?.geofenceType ?? 'circle',
     audience: data.audience ?? current?.audience ?? 'all',
     status: data.status ?? current?.status ?? 'published',
     attendanceMethod: data.method ?? current?.attendanceMethod ?? 'qr',
@@ -326,7 +409,7 @@ function validateWriteValues(data, current = null, partial = false) {
   };
   if (!values.name || values.name.length > 180) throw new ValidationError({ name: 'Name is required and must not exceed 180 characters.' });
   if (!values.venue || values.venue.length > 180) throw new ValidationError({ venue: 'Venue is required and must not exceed 180 characters.' });
-  if (!['all', 'student', 'faculty'].includes(values.audience)) throw new ValidationError({ audience: 'Choose a valid audience.' });
+  if (!EVENT_AUDIENCES.includes(values.audience)) throw new ValidationError({ audience: 'Choose a valid audience.' });
   if (!['published', 'cancelled'].includes(values.status)) throw new ValidationError({ status: 'Choose a valid status.' });
   if (!['qr', 'barcode', 'rfid'].includes(values.attendanceMethod)) throw new ValidationError({ method: 'Choose a valid attendance method.' });
   // Each boolean is validated under its OWN name. This used to report a bad
@@ -335,19 +418,47 @@ function validateWriteValues(data, current = null, partial = false) {
   if (typeof values.registrationRequired !== 'boolean') throw new ValidationError({ registrationRequired: 'Choose true or false.' });
   if (typeof values.requiredForAttendance !== 'boolean') throw new ValidationError({ requiredForAttendance: 'Choose true or false.' });
 
-  // Geofence: either all three parts are supplied, or none are. A half-set fence
+  if (!['circle', 'polygon'].includes(values.geofenceType)) {
+    throw new ValidationError({ geofenceType: 'Choose a circular or polygon attendance boundary.' });
+  }
+  if (values.geofenceType === 'polygon') {
+    const polygon = data.geofencePolygon !== undefined ? data.geofencePolygon : current?.geofencePolygon;
+    const error = polygonValidationError(polygon);
+    if (error) throw new ValidationError({ geofencePolygon: error });
+    const hasLatitude = data.venueLatitude !== undefined
+      ? data.venueLatitude !== null && data.venueLatitude !== ''
+      : current?.venueLatitude != null;
+    const hasLongitude = data.venueLongitude !== undefined
+      ? data.venueLongitude !== null && data.venueLongitude !== ''
+      : current?.venueLongitude != null;
+    if (!hasLatitude || !hasLongitude) {
+      throw new ValidationError({ venue: 'Select a saved venue or a verified map result before configuring the polygon fence.' });
+    }
+    const latitude = Number(data.venueLatitude ?? current.venueLatitude);
+    const longitude = Number(data.venueLongitude ?? current.venueLongitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) throw new ValidationError({ venueLatitude: 'Select a venue with a valid latitude.' });
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw new ValidationError({ venueLongitude: 'Select a venue with a valid longitude.' });
+    values.venueLatitude = latitude;
+    values.venueLongitude = longitude;
+    values.venueRadiusMeters = null;
+    values.geofencePolygon = polygon.map((point) => ({ latitude: Number(point.latitude), longitude: Number(point.longitude) }));
+  } else {
+    values.geofencePolygon = [];
+  }
+
+  // Circle: either all three parts are supplied, or none are. A half-set fence
   // would silently disable verification, so it is rejected instead.
   const hasLatitude = data.venueLatitude !== undefined && data.venueLatitude !== null && data.venueLatitude !== '';
   const hasLongitude = data.venueLongitude !== undefined && data.venueLongitude !== null && data.venueLongitude !== '';
   const hasRadius = data.venueRadiusMeters !== undefined && data.venueRadiusMeters !== null && data.venueRadiusMeters !== '';
   const supplied = [hasLatitude, hasLongitude, hasRadius].filter(Boolean).length;
 
-  if (supplied !== 0 && supplied !== 3) {
+  if (values.geofenceType === 'circle' && supplied !== 0 && supplied !== 3) {
     throw new ValidationError({
       venue: 'Enter the venue latitude, longitude and radius together, or leave all three blank to disable the check-in zone.',
     });
   }
-  if (supplied === 3) {
+  if (values.geofenceType === 'circle' && supplied === 3) {
     const latitude = Number(data.venueLatitude);
     const longitude = Number(data.venueLongitude);
     const radiusMeters = Number(data.venueRadiusMeters);
@@ -359,7 +470,7 @@ function validateWriteValues(data, current = null, partial = false) {
     values.venueRadiusMeters = radiusMeters;
   }
 
-  if (current) {
+  if (current && values.geofenceType === 'circle') {
     if (supplied === 0 && data.venueLatitude === undefined) {
       // Nothing supplied and nothing being cleared: keep the existing fence.
       values.venueLatitude = current.venueLatitude;
@@ -420,7 +531,60 @@ export async function updateEvent(eventId, data) {
   return event;
 }
 
-export function cancelEvent(event) {
+/**
+ * Cancel an event.
+ *
+ * Scoped to the `status` field for the same reason as `archiveEvent`: a full
+ * `save()` re-validates every path, so a legacy record missing an unrelated
+ * required field could not be cancelled either.
+ */
+export async function cancelEvent(event) {
+  await Event.updateOne({ _id: event._id }, { $set: { status: 'cancelled' } });
   event.status = 'cancelled';
-  return event.save();
+  return event;
+}
+
+/**
+ * Archive an event. This removes it from the student/faculty listings while
+ * keeping attendance, registration and report data intact for administrators.
+ * Only an administrator reaches this (the route enforces the role).
+ *
+ * WHY THIS WRITES ONLY THE ARCHIVE FIELDS INSTEAD OF SAVING THE DOCUMENT.
+ *
+ * `event.save()` re-validates the WHOLE document against the schema. A record
+ * that predates the current schema - or that a seeding/migration route wrote
+ * while a required path was missing - then fails validation on a field the
+ * archive action never touches, and the administrator is told the event could
+ * not be archived even though nothing about archiving was wrong.
+ *
+ * That is not hypothetical: the demo seed wrote "Demo Student Developers
+ * Meetup" without a `venue`, so archiving it answered 400
+ * `{ "venue": "Path 'venue' is required." }` while the archive fields were
+ * perfectly valid. The same trap applied to cancelling such an event.
+ *
+ * The archive state is therefore written as a scoped update of the two fields
+ * it owns. Nothing else about the event is rewritten, and an unrelated legacy
+ * data gap can never block the administrator from archiving or restoring.
+ */
+export async function archiveEvent(event, archivedBy) {
+  if (event.archivedAt) throw new ValidationError({ event: 'This event is already archived.' });
+  const archivedAt = new Date();
+  const archivedById = archivedBy && archivedBy._id ? String(archivedBy._id) : null;
+  await Event.updateOne({ _id: event._id }, { $set: { archivedAt, archivedBy: archivedById } });
+  event.archivedAt = archivedAt;
+  event.archivedBy = archivedById;
+  return event;
+}
+
+/**
+ * Restore an archived event back to the student/faculty listings.
+ *
+ * The mirror of `archiveEvent`, and scoped the same way for the same reason.
+ */
+export async function restoreEvent(event) {
+  if (!event.archivedAt) throw new ValidationError({ event: 'This event is not archived.' });
+  await Event.updateOne({ _id: event._id }, { $set: { archivedAt: null, archivedBy: null } });
+  event.archivedAt = null;
+  event.archivedBy = null;
+  return event;
 }

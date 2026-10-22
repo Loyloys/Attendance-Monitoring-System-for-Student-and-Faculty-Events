@@ -66,6 +66,10 @@ test('exposes the public Google configuration and no secret', async () => {
   const response = await request().get('/api/auth/google/config/');
   assert.equal(response.status, 200);
   assert.equal(response.body.enabled, true);
+  assert.equal(response.body.configurationAvailable, true);
+  assert.equal(response.body.clientIdPresent, true);
+  assert.equal(response.body.settingAvailable, true);
+  assert.equal(response.body.settingEnabled, true);
   assert.equal(response.body.clientId, CLIENT_ID);
   assert.equal(JSON.stringify(response.body).toLowerCase().includes('secret'), false);
   // This workspace runs the private test policy, and the endpoint must say so
@@ -76,6 +80,72 @@ test('exposes the public Google configuration and no secret', async () => {
   assert.equal(response.body.schoolApproved, false);
   // The allowlist is a server-side secret of configuration: it is never returned.
   assert.equal(JSON.stringify(response.body).toLowerCase().includes('gmail.com'), false);
+
+  const client = agent();
+  const session = await send(client, 'post', '/api/auth/google/session/', {});
+  assert.equal(session.status, 200);
+  for (const key of ['enabled', 'configurationAvailable', 'clientIdPresent', 'settingAvailable', 'settingEnabled', 'mode']) {
+    assert.equal(session.body[key], response.body[key], `${key} must match the public config endpoint`);
+  }
+  assert.equal(typeof session.body.nonce, 'string');
+});
+
+test('a missing Admin OAuth setting defaults to disabled, distinct from missing backend configuration', async () => {
+  await getModels().SystemSetting.deleteOne({ _id: 'google_oauth_enabled' });
+
+  const response = await request().get('/api/auth/google/config/');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.enabled, false);
+  assert.equal(response.body.settingAvailable, true);
+  assert.equal(response.body.settingEnabled, false);
+  assert.equal(response.body.configurationAvailable, true);
+  assert.equal(response.body.clientIdPresent, true);
+});
+
+test('Google OAuth follows the administrator setting while manual sign-in stays available', async () => {
+  await createUser({ username: 'STU020', role: 'student' });
+  const signupClient = agent();
+  const signupStart = await googleSignIn(signupClient, {
+    email: 'tester@example.com',
+    sub: 'google-sub-disabled-signup',
+  });
+  assert.equal(signupStart.body.status, 'profile_incomplete');
+
+  await getModels().SystemSetting.findByIdAndUpdate(
+    'google_oauth_enabled',
+    { $set: { value: false } },
+    { upsert: true },
+  );
+
+  const config = await request().get('/api/auth/google/config/');
+  assert.equal(config.status, 200);
+  assert.equal(config.body.enabled, false);
+  assert.equal(config.body.mode, 'unavailable');
+  assert.equal(config.body.configurationAvailable, true);
+  assert.equal(config.body.clientIdPresent, true);
+  assert.equal(config.body.settingAvailable, true);
+  assert.equal(config.body.settingEnabled, false);
+
+  const client = agent();
+  const googleSession = await send(client, 'post', '/api/auth/google/session/', {});
+  assert.equal(googleSession.status, 200);
+  assert.equal(googleSession.body.enabled, false);
+  assert.equal(googleSession.body.nonce, null);
+  assert.equal(googleSession.body.configurationAvailable, config.body.configurationAvailable);
+  assert.equal(googleSession.body.settingEnabled, config.body.settingEnabled);
+  const refusedGoogleLogin = await send(client, 'post', '/api/auth/google/', { credential: 'fake-credential' });
+  assert.equal(refusedGoogleLogin.status, 503);
+  assert.match(refusedGoogleLogin.body.detail, /disabled by an administrator/);
+  assert.equal((await client.get('/api/auth/me/')).status, 401);
+
+  const refusedSignup = await send(signupClient, 'post', '/api/auth/google/complete-profile/', {});
+  assert.equal(refusedSignup.status, 503);
+  assert.match(refusedSignup.body.detail, /Google signup is disabled/);
+  assert.equal(await getModels().SignupRequest.countDocuments({ googleSub: 'google-sub-disabled-signup' }), 0);
+  assert.equal((await signupClient.get('/api/auth/me/')).status, 401);
+
+  const manual = await login('STU020');
+  assert.equal(manual.user.role, 'student');
 });
 
 test('password login still works and CSRF guards the Google routes', async () => {
@@ -164,6 +234,36 @@ test('a deactivated account stays blocked through Google', async () => {
   assert.equal(response.status, 403);
   assert.match(response.body.detail, /deactivated/);
   assert.equal((await client.get('/api/auth/me/')).status, 401);
+});
+
+test('pending, rejected, and archived linked Google accounts receive no session', async () => {
+  const blockedAccounts = [
+    { username: 'STU015', googleSub: 'google-pending', approvalStatus: 'pending' },
+    { username: 'STU016', googleSub: 'google-rejected', approvalStatus: 'rejected' },
+    { username: 'STU017', googleSub: 'google-archived', archivedAt: new Date() },
+  ];
+  for (const { username, googleSub, ...changes } of blockedAccounts) {
+    const { user } = await createUser({ username, role: 'student' });
+    await getModels().User.updateOne({ _id: user._id }, {
+      $set: {
+        googleSub,
+        googleEmail: `${username.toLowerCase()}@cot.edu`,
+        googleEmailNormalized: `${username.toLowerCase()}@cot.edu`,
+        ...changes,
+      },
+      $addToSet: { authProviders: 'google' },
+    });
+  }
+
+  for (const { googleSub, username } of blockedAccounts) {
+    const client = agent();
+    const response = await googleSignIn(client, {
+      sub: googleSub,
+      email: `${username.toLowerCase()}@cot.edu`,
+    });
+    assert.equal(response.status, 403, JSON.stringify(response.body));
+    assert.equal((await client.get('/api/auth/me/')).status, 401);
+  }
 });
 
 test('rejects malformed, wrong-audience, wrong-issuer, expired and unverified credentials', async () => {
@@ -337,7 +437,7 @@ test('a missing client id leaves the server in a clear unavailable state', () =>
   const script = [
     "import { googlePublicConfig, verifyGoogleCredential } from './src/services/googleAuthService.js';",
     'const config = googlePublicConfig();',
-    'console.log(JSON.stringify({ enabled: config.enabled, clientId: config.clientId }));',
+    'console.log(JSON.stringify({ enabled: config.enabled, clientIdPresent: Boolean(config.clientId) }));',
     'try { await verifyGoogleCredential("anything"); console.log("NO_ERROR"); }',
     'catch (error) { console.log(String(error.status)); }',
   ].join('\n');
@@ -347,7 +447,7 @@ test('a missing client id leaves the server in a clear unavailable state', () =>
     encoding: 'utf8',
   });
   const [configLine, statusLine] = output.trim().split('\n');
-  assert.deepEqual(JSON.parse(configLine), { enabled: false, clientId: null });
+  assert.deepEqual(JSON.parse(configLine), { enabled: false, clientIdPresent: false });
   assert.equal(statusLine, '503');
 });
 
@@ -360,7 +460,7 @@ test('a Google-only account cannot be signed into with a password', async () => 
   const fresh = agent();
   const response = await send(fresh, 'post', '/api/auth/login/', { identifier: 'STU703', password: 'anything' });
   assert.equal(response.status, 400);
-  assert.equal(response.body.detail, 'The ID/username or password is incorrect.');
+  assert.equal(response.body.detail, 'The account identifier or password is incorrect.');
 });
 
 test('the approved Workspace domain list is enforced against the verified hd claim', () => {
@@ -665,48 +765,54 @@ test('an admin-approved signup creates the User with the assigned role', async (
   assert.equal((await client.get('/api/auth/me/')).status, 401);
 });
 
-test('an administrator can block and restore an account', async () => {
+test('a legacy pending account stays blocked and administrators cannot change its approval state', async () => {
   const { user } = await createUser({ username: 'STU600', role: 'student' });
   await getModels().User.updateOne({ _id: user._id }, { $set: { approvalStatus: 'pending' } });
   await createUser({ username: 'ADM001', role: 'admin' });
   const { agent: adminClient } = await login('ADM001');
 
-  // A legacy pending record is still refused.
-  const { agent: pendingClient } = await login('STU600');
-  assert.equal((await pendingClient.get('/api/attendance/me/')).status, 403);
+  // A legacy pending record cannot establish an account session.
+  const pendingClient = agent();
+  const loginAttempt = await send(pendingClient, 'post', '/api/auth/login/', {
+    identifier: 'STU600',
+    password: 'test-pass-123',
+  });
+  assert.equal(loginAttempt.status, 400);
+  assert.equal((await pendingClient.get('/api/auth/me/')).status, 401);
 
-  // Only an administrator can restore it, and doing so grants no role change.
+  // An unauthenticated user cannot change the approval state.
   const asStudent = await send(pendingClient, 'patch', '/api/admin/users/STU600/', { approvalStatus: 'approved' });
-  assert.equal(asStudent.status, 403, 'a student must never be able to restore anyone');
+  assert.equal(asStudent.status, 401, 'an unauthenticated user must never be able to restore anyone');
 
-  const approved = await send(adminClient, 'patch', '/api/admin/users/STU600/', { approvalStatus: 'approved' });
-  assert.equal(approved.status, 200, JSON.stringify(approved.body));
-  assert.equal(approved.body.approvalStatus, 'approved');
-
-  // The very same session now works, with no re-login.
-  assert.equal((await pendingClient.get('/api/attendance/me/')).status, 200);
+  const attemptedApproval = await send(adminClient, 'patch', '/api/admin/users/STU600/', { approvalStatus: 'approved' });
+  assert.equal(attemptedApproval.status, 400, JSON.stringify(attemptedApproval.body));
+  assert.equal((await getModels().User.findById(user._id).lean()).approvalStatus, 'pending');
+  const stillBlocked = await send(pendingClient, 'post', '/api/auth/login/', {
+    identifier: 'STU600',
+    password: 'test-pass-123',
+  });
+  assert.equal(stillBlocked.status, 400);
+  assert.equal((await pendingClient.get('/api/auth/me/')).status, 401);
   assert.equal((await getModels().UserProfile.findOne({ userId: user._id }).lean()).role, 'student');
 });
 
-test('deactivating an account blocks it without touching the approval field', async () => {
-  await createUser({ username: 'STU650', role: 'student' });
+test('a legacy inactive account remains blocked while status mutations are unavailable', async () => {
+  const { user } = await createUser({ username: 'STU650', role: 'student' });
   await createUser({ username: 'ADM003', role: 'admin' });
   const { agent: adminClient } = await login('ADM003');
   const { agent: client } = await login('STU650');
   assert.equal((await client.get('/api/attendance/me/')).status, 200);
 
-  await send(adminClient, 'patch', '/api/admin/users/STU650/', { status: 'Inactive' });
-  // The existing session is refused outright once the account is switched off.
+  await getModels().User.updateOne({ _id: user._id }, { $set: { isActive: false } });
+  // The existing session is refused outright for a legacy inactive record.
   assert.equal((await client.get('/api/attendance/me/')).status, 401);
+  const attemptedReactivation = await send(adminClient, 'patch', '/api/admin/users/STU650/', { status: 'Active' });
+  assert.equal(attemptedReactivation.status, 400, JSON.stringify(attemptedReactivation.body));
+  assert.equal((await getModels().User.findById(user._id).lean()).isActive, false);
   // And it cannot sign back in.
   const blockedClient = agent();
   const again = await send(blockedClient, 'post', '/api/auth/login/', { identifier: 'STU650', password: 'test-pass-123' });
   assert.equal(again.status, 400, JSON.stringify(again.body));
-
-  // Restoring re-enables it.
-  await send(adminClient, 'patch', '/api/admin/users/STU650/', { status: 'Active' });
-  const { agent: restored } = await login('STU650');
-  assert.equal((await restored.get('/api/attendance/me/')).status, 200);
 });
 
 test('a rejected account is refused even though it was signed in', async () => {
@@ -716,13 +822,23 @@ test('a rejected account is refused even though it was signed in', async () => {
 
   await createUser({ username: 'ADM002', role: 'admin' });
   const { agent: adminClient } = await login('ADM002');
-  const rejected = await send(adminClient, 'patch', '/api/admin/users/STU700/', { approvalStatus: 'rejected' });
-  assert.equal(rejected.status, 200);
-  assert.equal(rejected.body.approvalStatus, 'rejected');
+  await getModels().User.updateOne({ username: 'STU700' }, { $set: { approvalStatus: 'rejected' } });
+  const rejected = await send(adminClient, 'patch', '/api/admin/users/STU700/', { approvalStatus: 'approved' });
+  assert.equal(rejected.status, 400);
+  assert.equal((await getModels().User.findOne({ username: 'STU700' }).lean()).approvalStatus, 'rejected');
 
   const blocked = await client.get('/api/attendance/me/');
   assert.equal(blocked.status, 403, JSON.stringify(blocked.body));
   assert.equal(blocked.body.code, 'account_rejected');
+
+  const freshClient = agent();
+  const refused = await send(freshClient, 'post', '/api/auth/login/', {
+    identifier: 'STU700',
+    password: 'test-pass-123',
+  });
+  assert.equal(refused.status, 400, JSON.stringify(refused.body));
+  assert.equal(refused.body.detail, 'The account identifier or password is incorrect.');
+  assert.equal((await freshClient.get('/api/auth/me/')).status, 401);
 });
 
 test('an unauthenticated request cannot approve an account or grant a privileged role', async () => {

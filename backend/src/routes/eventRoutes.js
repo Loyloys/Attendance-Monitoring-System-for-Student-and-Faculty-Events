@@ -10,6 +10,7 @@ router.get('/events/managed/', requireRole('faculty'), asyncRoute(controller.man
 router.get('/events/', asyncRoute(controller.listEvents));
 router.get('/events/:eventId/', asyncRoute(controller.eventDetail));
 router.post('/events/:eventId/registrations/', requireRole('student'), asyncRoute(controller.register));
+router.post('/attendance/scan/preview/', requireRole('student', 'faculty'), asyncRoute(controller.previewAttendance));
 // GST006: Faculty reach their assigned event's QR here. The route is open to
 // admin as well so an Administrator can manage any event's code; the SERVICE
 // then refuses any event the caller is not entitled to.

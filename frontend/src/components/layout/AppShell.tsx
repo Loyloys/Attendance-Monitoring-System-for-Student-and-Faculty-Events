@@ -10,6 +10,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  Megaphone,
   QrCode,
   UserCheck,
   Users,
@@ -34,6 +35,7 @@ const navByRole: Record<UserRole, AppNavItem[]> = {
     { label: 'Available events', path: '/portal?view=events', icon: CalendarDays },
     { label: 'Scan event attendance', path: '/portal?view=attendance', icon: QrCode },
     { label: 'My event attendance', path: '/portal?view=history', icon: ClipboardCheck },
+    { label: 'Announcements', path: '/portal?view=announcements', icon: Megaphone },
     { label: 'Event feedback', path: '/portal?view=feedback', icon: MessageSquare },
     { label: 'My profile', path: '/portal?view=profile', icon: Users },
   ],
@@ -42,6 +44,7 @@ const navByRole: Record<UserRole, AppNavItem[]> = {
     { label: 'Available events', path: '/portal?view=events', icon: CalendarDays },
     { label: 'Scan event attendance', path: '/portal?view=attendance', icon: QrCode },
     { label: 'My event attendance', path: '/portal?view=history', icon: BarChart3 },
+    { label: 'Announcements', path: '/portal?view=announcements', icon: Megaphone },
     { label: 'Monitor assigned events', path: '/portal?view=monitor', icon: ClipboardCheck },
     { label: 'Event feedback', path: '/portal?view=feedback', icon: MessageSquare },
     { label: 'My profile', path: '/portal?view=profile', icon: Users },
@@ -54,6 +57,8 @@ const navByRole: Record<UserRole, AppNavItem[]> = {
     { label: 'Event attendance', path: '/admin/attendance', icon: ClipboardCheck },
     { label: 'Event reports', path: '/admin/reports', icon: FileText },
     { label: 'Feedback & evaluations', path: '/admin/feedback', icon: MessageSquare },
+    { label: 'Announcements', path: '/admin/announcements', icon: Megaphone },
+    { label: 'Settings', path: '/admin/settings', icon: Users },
   ],
 };
 

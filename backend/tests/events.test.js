@@ -25,6 +25,7 @@ test('keeps events audience-filtered and supports administrator event CRUD', asy
     start: '09:00', end: '10:00', cutoff: '09:15', venue: 'Test Hall',
     audience: 'student', method: 'qr', status: 'published', requiredForAttendance: true,
   });
+
   assert.equal(createdEvent.status, 201, JSON.stringify(createdEvent.body));
   const patched = await send(admin, 'patch', `/api/admin/events/${createdEvent.body.id}/`, { venue: 'Updated Hall', audience: 'faculty' });
   assert.equal(patched.status, 200);
@@ -39,6 +40,29 @@ test('keeps events audience-filtered and supports administrator event CRUD', asy
   });
   assert.equal(missingCutoff.status, 400);
   assert.equal(missingCutoff.body.cutoff, 'This field is required.');
+});
+
+/**
+ * This was previously registered as a NESTED `test()` inside the event CRUD
+ * test above. A nested test still gets the file-level `beforeEach(reset)`, and
+ * `reset()` DROPS THE DATABASE. It therefore wiped the database in the middle
+ * of the parent test, destroying the parent's session and its records, and the
+ * parent's next request answered 403 (CSRF) or 500 instead of 200. The failure
+ * looked like an intermittent CSRF or session-store bug; it was the nested test.
+ *
+ * It is a top-level test now, which is what it was always meant to be.
+ */
+test('department audiences remain visible only to matching students', async () => {
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  const student = await createUser({ username: 'STU001', role: 'student' });
+  await createUser({ username: 'STU002', role: 'student' });
+  await getModels().UserProfile.updateOne({ userId: student.user._id }, { $set: { department: 'IT' } });
+  await createEvent(faculty.user, { audience: 'it', name: 'IT only' });
+
+  const { agent: matching } = await login('STU001');
+  const { agent: other } = await login('STU002');
+  assert.ok((await matching.get('/api/events/')).body.some((event) => event.name === 'IT only'));
+  assert.ok(!(await other.get('/api/events/')).body.some((event) => event.name === 'IT only'));
 });
 
 test('registration is idempotent and only open for upcoming registration-required events', async () => {
@@ -74,6 +98,87 @@ test('QR attendance records once under simultaneous duplicate scans', async () =
   const responses = await Promise.all([scan(), scan()]);
   assert.deepEqual(responses.map((response) => response.status).sort(), [201, 409]);
   assert.equal(await getModels().EventAttendance.countDocuments({ eventId: event._id, attendeeId: student.user._id }), 1);
+});
+
+test('QR attendance preview is read-only and reflects eligibility before check-in', async () => {
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  const student = await createUser({ username: 'STU001', role: 'student' });
+  const event = await createEvent(faculty.user);
+  const { agent: facultyAgent } = await login('FAC001');
+  const code = await send(facultyAgent, 'post', `/api/events/${event._id}/check-in-code/`);
+  const { agent: studentAgent } = await login('STU001');
+
+  const preview = await send(studentAgent, 'post', '/api/attendance/scan/preview/', { token: code.body.token });
+  assert.equal(preview.status, 200, JSON.stringify(preview.body));
+  assert.equal(preview.body.eventId, event._id);
+  assert.equal(preview.body.eligible, true);
+  assert.equal(preview.body.locationRequired, true);
+  assert.equal(await getModels().EventAttendance.countDocuments({ eventId: event._id }), 0);
+
+  const checkIn = await send(studentAgent, 'post', '/api/attendance/scan/', {
+    token: code.body.token,
+    method: 'qr',
+    location: atVenue(),
+  });
+  assert.equal(checkIn.status, 201, JSON.stringify(checkIn.body));
+  const duplicatePreview = await send(studentAgent, 'post', '/api/attendance/scan/preview/', { token: code.body.token });
+  assert.equal(duplicatePreview.status, 200);
+  assert.equal(duplicatePreview.body.eligible, false);
+  assert.match(duplicatePreview.body.reason, /already been recorded/i);
+  assert.equal(await getModels().EventAttendance.countDocuments({ eventId: event._id, attendeeId: student.user._id }), 1);
+});
+
+test('QR attendance preview refuses closed, unregistered, and expired check-ins without recording attendance', async () => {
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  await createUser({ username: 'STU001', role: 'student' });
+  const closedEvent = await createEvent(faculty.user, {
+    checkInOpensAt: new Date(Date.now() - 2 * 60 * 60_000),
+    checkInClosesAt: new Date(Date.now() - 60 * 60_000),
+  });
+  const registrationEvent = await createEvent(faculty.user, { registrationRequired: true });
+  const expiredEvent = await createEvent(faculty.user);
+  const { agent: facultyAgent } = await login('FAC001');
+  const closedCode = await send(facultyAgent, 'post', `/api/events/${closedEvent._id}/check-in-code/`);
+  const registrationCode = await send(facultyAgent, 'post', `/api/events/${registrationEvent._id}/check-in-code/`);
+  const expiredCode = await send(facultyAgent, 'post', `/api/events/${expiredEvent._id}/check-in-code/`);
+  await getModels().AttendanceCode.updateOne(
+    { eventId: expiredEvent._id },
+    { $set: { expiresAt: new Date(Date.now() - 1_000) } },
+  );
+  const { agent: studentAgent } = await login('STU001');
+
+  const closed = await send(studentAgent, 'post', '/api/attendance/scan/preview/', { token: closedCode.body.token });
+  const unregistered = await send(studentAgent, 'post', '/api/attendance/scan/preview/', { token: registrationCode.body.token });
+  const expired = await send(studentAgent, 'post', '/api/attendance/scan/preview/', { token: expiredCode.body.token });
+  assert.equal(closed.status, 200);
+  assert.equal(closed.body.eligible, false);
+  assert.match(closed.body.reason, /window.*closed/i);
+  assert.equal(unregistered.status, 200);
+  assert.equal(unregistered.body.eligible, false);
+  assert.match(unregistered.body.reason, /register for this event/i);
+  assert.equal(expired.status, 200);
+  assert.equal(expired.body.eligible, false);
+  assert.match(expired.body.reason, /code has expired/i);
+  assert.equal(await getModels().EventAttendance.countDocuments({}), 0);
+});
+
+test('a duration-required scan confirms check-in as pending, not Present', async () => {
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  await createUser({ username: 'STU001', role: 'student' });
+  const event = await createEvent(faculty.user, { requiredAttendanceMinutes: 10 });
+  const { agent: facultyAgent } = await login('FAC001');
+  const code = await send(facultyAgent, 'post', `/api/events/${event._id}/check-in-code/`);
+  const { agent: studentAgent } = await login('STU001');
+
+  const scan = await send(studentAgent, 'post', '/api/attendance/scan/', {
+    token: code.body.token,
+    method: 'qr',
+    location: atVenue(),
+  });
+  assert.equal(scan.status, 201, JSON.stringify(scan.body));
+  assert.equal(scan.body.status, 'pending');
+  assert.equal(scan.body.qualification, 'pending');
+  assert.equal(scan.body.requiredAttendanceMinutes, 10);
 });
 
 test('rejects expired QR codes and another user identifier', async () => {

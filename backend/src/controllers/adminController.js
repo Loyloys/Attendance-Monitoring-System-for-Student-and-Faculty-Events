@@ -1,6 +1,7 @@
 import {
   addAttendance,
   adminState,
+  archiveAdminUser,
   approveSignupRequest,
   correctAttendance,
   createAdminUser,
@@ -10,6 +11,8 @@ import {
   listAuditLog,
   listSignupRequests,
   rejectSignupRequest,
+  resendUserPasswordSetup as resendUserPasswordSetupService,
+  restoreArchivedAdminUser,
   saveForm,
   updateAdminUser,
 } from '../services/adminService.js';
@@ -19,6 +22,12 @@ import {
 } from '../services/adminService.js';
 
 import { archiveLegacyBrowserState } from '../services/legacyBrowserImportService.js';
+import { googleOAuthStatus, setGoogleOAuthStatus } from '../services/systemSettingsService.js';
+import { createAnnouncement, listAnnouncements } from '../services/announcementService.js';
+import { resendPasswordSetup } from '../services/emailSignupService.js';
+import { User } from '../models/index.js';
+import { NotFoundError } from '../utils/errors.js';
+import { SignupRequest } from '../models/index.js';
 
 export async function state(request, response) {
   response.json(await adminState());
@@ -50,6 +59,45 @@ export async function rejectSignup(request, response) {
   response.json(await rejectSignupRequest(request.params.requestId, request.user));
 }
 
+export async function googleOAuthSettings(request, response) {
+  const status = await googleOAuthStatus();
+  if (!status.available) {
+    response.status(503).json({ detail: 'The persistent Google OAuth setting is unavailable; Google sign-in remains disabled.' });
+    return;
+  }
+  response.json(status);
+}
+
+export async function updateGoogleOAuthSettings(request, response) {
+  response.json(await setGoogleOAuthStatus(request.body.enabled, request.user));
+}
+
+export async function adminAnnouncements(request, response) {
+  response.json(await listAnnouncements('admin'));
+}
+
+export async function createAdminAnnouncement(request, response) {
+  response.status(201).json(await createAnnouncement(request.body, request.user));
+}
+
+export async function userAnnouncements(request, response) {
+  response.json(await listAnnouncements(request.user.profile?.role));
+}
+
+export async function resendSignupPasswordSetup(request, response) {
+  const signup = await SignupRequest.findById(request.params.requestId).lean();
+  if (!signup || signup.status !== 'approved') throw new NotFoundError('Approved signup request not found.');
+  const user = await User.findOne({ emailNormalized: signup.googleEmailNormalized }).select('+passwordHash');
+  if (!user) throw new NotFoundError('Approved signup account not found.');
+  response.json(await resendPasswordSetup(user, signup._id));
+}
+
+// Authorized Admin resend for any approved account that never completed setup
+// (for example it missed the approval email). Reuses the same eligibility rule.
+export async function resendUserPasswordSetupLink(request, response) {
+  response.json(await resendUserPasswordSetupService(request.params.accountId, request.user));
+}
+
 // Per-user event registrations. Kept separate from the user list so an
 // administrator can inspect one person's registrations, and their attendance for
 // those events, as two independent facts. Administrator-only, via adminRoutes.
@@ -64,6 +112,14 @@ export async function updateUser(request, response) {
 export async function deleteUser(request, response) {
   await deleteAdminUser(request.params.accountId, request.user);
   response.status(204).end();
+}
+
+export async function archiveUser(request, response) {
+  response.json(await archiveAdminUser(request.params.accountId, request.user));
+}
+
+export async function restoreUser(request, response) {
+  response.json(await restoreArchivedAdminUser(request.params.accountId, request.user));
 }
 
 export async function createAttendance(request, response) {

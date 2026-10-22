@@ -23,46 +23,6 @@ export function validateEventQr(value: string): { valid: boolean; reason?: strin
 }
 
 /**
- * A location fix captured by the browser and sent with an attendance scan.
- * The server re-validates all of it; the browser is never trusted to decide
- * whether someone is on campus.
- */
-/**
- * Does this scanned code belong to the event the scanner is scoped to?
- *
- * A scoped scanner ("Scan attendance for this event") must not become a way to
- * record attendance for the WRONG event. The token itself carries the event id
- * (`COT-EVENT:<eventId>:<token>`), so a QR belonging to another event is
- * detected here and refused, rather than being sent on and silently applied.
- *
- * Two rules, deliberately different:
- *
- *  - An unscoped scanner (no preselected event, the general path) accepts any
- *    event's QR, because the QR identifies the event and the server checks the
- *    token against THAT event. Its behaviour is unchanged.
- *  - A scoped scanner additionally requires the QR's event id to be the
- *    preselected one. Without this, presenting any valid QR would record against
- *    whichever event happened to be preselected - the opposite of what a
- *    card-level button promises.
- *
- * Only well-formed QR payloads are matched here. A non-QR value (a card or ID
- * for RFID/barcode events) is unaffected, and an UNPARSEABLE value returns
- * "no mismatch", because the server - not this helper - decides whether a token
- * is a valid credential. This guard only refuses a QR that positively belongs to
- * a different event; it never authorises anything on its own.
- */
-export function scanMatchesEvent(rawValue: string, selectedEventId?: string): { ok: boolean; reason?: string } {
-  if (!selectedEventId) return { ok: true };
-  const details = parseEventQr(rawValue);
-  if (!details) return { ok: true };
-  if (details.eventId === selectedEventId) return { ok: true };
-  return {
-    ok: false,
-    reason: 'That QR code belongs to a different event. Scan the code shown for this event.',
-  };
-}
-
-/**
  * Is device geolocation available at all on this origin?
  *
  * A browser only exposes a usable `navigator.geolocation` in a SECURE CONTEXT
@@ -72,13 +32,94 @@ export function scanMatchesEvent(rawValue: string, selectedEventId?: string): { 
  * insecure-origin problem.
  */
 export function geolocationUnavailableReason(): string | null {
-  if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    return 'This browser cannot report a location. Try a current version of Chrome, Edge, or Safari.';
-  }
   if (typeof window !== 'undefined' && window.isSecureContext === false) {
     return 'This page is not on a secure (HTTPS) connection, so the browser blocks location access. Open the app over HTTPS, then try again.';
   }
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return 'This browser cannot report a location. Try a current version of Chrome, Edge, or Safari.';
+  }
   return null;
+}
+
+export function geolocationErrorMessage(code: number): string {
+  if (code === 1) {
+    return "Location permission is blocked. Open your browser's site settings, allow location for this site, then try again.";
+  }
+  if (code === 2) {
+    return 'Your location is unavailable. Turn on your device location services, then try again.';
+  }
+  return 'Taking a location reading took too long. Move to an open area and try again.';
+}
+
+export function cameraFailureKind(error: unknown): 'permission-denied' | 'unavailable' {
+  const name = typeof DOMException !== 'undefined' && error instanceof DOMException
+    ? error.name
+    : error && typeof error === 'object' && 'name' in error
+      ? String(error.name)
+      : '';
+  return ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(name)
+    ? 'permission-denied'
+    : 'unavailable';
+}
+
+export function cameraFailureMessage(kind: 'permission-denied' | 'unavailable'): string {
+  return kind === 'permission-denied'
+    ? "Camera permission was denied. Allow camera access in your browser's site settings, then resume scanning. You can also use manual fallback."
+    : 'Camera is unavailable or another app is using it. Close that app, check this device, or use manual fallback.';
+}
+
+export function scannerPauseLabel(reason: 'location' | 'processing' | 'manual'): string {
+  if (reason === 'location') return 'Location required before scanning';
+  if (reason === 'processing') return 'QR detected · verifying with server';
+  return 'Scanner paused';
+}
+
+export function scanRequiresLocation({
+  isQrInput,
+  qrEventKnown,
+  qrEventRequiresLocation,
+  qrEventRequiresDuration,
+  selectedEventKnown,
+  selectedEventRequiresLocation,
+  selectedEventRequiresDuration,
+}: {
+  isQrInput: boolean;
+  qrEventKnown: boolean;
+  qrEventRequiresLocation?: boolean;
+  qrEventRequiresDuration?: number | null;
+  selectedEventKnown?: boolean;
+  selectedEventRequiresLocation?: boolean;
+  selectedEventRequiresDuration?: number | null;
+}): boolean {
+  if (isQrInput) {
+    return qrEventKnown && (qrEventRequiresLocation !== false || (qrEventRequiresDuration ?? 0) > 0);
+  }
+  return Boolean(selectedEventKnown)
+    && (selectedEventRequiresLocation !== false || (selectedEventRequiresDuration ?? 0) > 0);
+}
+
+export async function runWithValidatedLocation<T>({
+  requiresLocation,
+  requestLocation,
+  action,
+  policy,
+}: {
+  requiresLocation: boolean;
+  requestLocation: () => Promise<LocationFix>;
+  action: (fix: LocationFix | null) => T | Promise<T>;
+  policy?: LocationQualityPolicy;
+}): Promise<T> {
+  if (!requiresLocation) {
+    return action(null);
+  }
+
+  const fix = await requestLocation();
+  const quality = evaluateFixQuality(fix, policy);
+  if (!quality.acceptable) {
+    throw new Error(quality.reason ?? 'Your location could not be verified.');
+  }
+
+  return action(fix);
 }
 
 /**
@@ -126,19 +167,29 @@ export function evaluateFixQuality(
   if (!Number.isFinite(fix.accuracy)) {
     return { acceptable: false, reason: 'Your device did not report how accurate that reading is, so it cannot be used safely. Try again.' };
   }
+  if (fix.accuracy < 0) {
+    return { acceptable: false, reason: 'Your device reported invalid location accuracy. Try again.' };
+  }
   if (fix.accuracy > policy.maxAccuracyMeters) {
     return {
       acceptable: false,
       reason: `That reading is only accurate to about ${Math.round(fix.accuracy)} m, and this system requires ${policy.maxAccuracyMeters} m or better. `
-        + 'Move somewhere with a clearer view of the sky, or turn on high-accuracy location, then try again. You can still type the coordinates in by hand.',
+        + 'Move somewhere with a clearer view of the sky or turn on high-accuracy location, then try again.',
     };
   }
-  const ageSeconds = (Date.now() - Date.parse(fix.capturedAt)) / 1000;
-  if (Number.isFinite(ageSeconds) && ageSeconds > policy.maxAgeSeconds) {
+  const capturedAt = Date.parse(fix.capturedAt);
+  if (!Number.isFinite(capturedAt)) {
+    return { acceptable: false, reason: 'That location reading has an invalid timestamp. Try again.' };
+  }
+  const ageSeconds = (Date.now() - capturedAt) / 1000;
+  if (ageSeconds > policy.maxAgeSeconds) {
     return {
       acceptable: false,
       reason: `That reading is about ${Math.round(ageSeconds)} seconds old, and this system only accepts readings under ${policy.maxAgeSeconds} seconds. Try again.`,
     };
+  }
+  if (ageSeconds < -policy.maxAgeSeconds) {
+    return { acceptable: false, reason: 'That location reading has an invalid timestamp. Try again.' };
   }
   return { acceptable: true };
 }
@@ -162,8 +213,9 @@ export interface LocationFix {
  */
 export function captureLocation(options: { timeoutMs?: number } = {}): Promise<LocationFix> {
   return new Promise((resolve, reject) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      reject(new Error('This browser cannot report your location, so attendance cannot be verified. Try a current version of Chrome, Edge, or Safari.'));
+    const unavailable = geolocationUnavailableReason();
+    if (unavailable) {
+      reject(new Error(unavailable));
       return;
     }
 
@@ -177,15 +229,7 @@ export function captureLocation(options: { timeoutMs?: number } = {}): Promise<L
         });
       },
       (error) => {
-        if (error.code === error.PERMISSION_DENIED) {
-          reject(new Error("Location permission is blocked. Open your browser's site settings, allow location for this site, then try again."));
-          return;
-        }
-        if (error.code === error.POSITION_UNAVAILABLE) {
-          reject(new Error('Your location is unavailable. Turn on your device location services, then try again.'));
-          return;
-        }
-        reject(new Error('Taking a location reading took too long. Move to an open area and try again.'));
+        reject(new Error(geolocationErrorMessage(error.code)));
       },
       { enableHighAccuracy: true, timeout: options.timeoutMs ?? 15_000, maximumAge: 0 },
     );

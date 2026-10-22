@@ -3,6 +3,7 @@ import {
   availableEventsForUser,
   getManagedEvent,
   managedEventsForUser,
+  previewEventAttendance,
   recordEventAttendance,
   registerForEvent,
   serializeAdminEvents,
@@ -91,7 +92,12 @@ export async function scan(request, response) {
     eventName: event.name,
     eventDate: new Date(event.startsAt).toISOString(),
     eventTime: `${new Date(event.startsAt).toISOString().slice(11, 16)} - ${new Date(event.endsAt).toISOString().slice(11, 16)}`,
-    status: record.status,
+    // For duration-required events the check-in is not yet a qualification.
+    // Return the server's qualification as the visible status rather than
+    // exposing the arrival-time status as an immediate Present result.
+    status: record.qualification ?? record.status,
+    qualification: record.qualification ?? null,
+    requiredAttendanceMinutes: record.requiredAttendanceMinutes ?? null,
     method: record.method,
     recordedAt: new Date(record.recordedAt).toISOString(),
     // GST004: echo the verified fix so the person can see the check happened,
@@ -102,6 +108,10 @@ export async function scan(request, response) {
     locationDistanceMeters: record.locationDistanceMeters ?? null,
     message: 'Your event attendance was recorded successfully.',
   });
+}
+
+export async function previewAttendance(request, response) {
+  return response.json(await previewEventAttendance(request.user, request.body?.token));
 }
 
 export async function register(request, response) {

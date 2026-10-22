@@ -25,7 +25,10 @@ export function errorHandler(error, request, response, next) {
   } else if (error.type === 'entity.parse.failed') {
     status = 400;
     payload = { detail: 'Request body contains invalid JSON.' };
-  } else if (error instanceof AppError && error.details) {
+  } else if (error instanceof AppError) {
+    // Deliberate operational errors (e.g. "email delivery is unconfigured")
+    // must reach the caller accurately, even at 503. Only unexpected
+    // non-AppError crashes stay masked as a generic server error.
     payload = { detail: error.message, ...error.details };
   }
 

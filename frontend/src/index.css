@@ -4,9 +4,6 @@
 
 @layer base {
   :root {
-    /* Light theme is the only appearance, so the light values live on :root
-       rather than behind a class. `color-scheme: light` also makes native
-       controls, scrollbars and the autofill dropdown follow the page. */
     color-scheme: light;
     --app-bg: #f5f4ec;
     --app-surface: #ffffff;
@@ -19,6 +16,21 @@
     --app-accent-strong: #c2410c;
     --app-accent-soft: #fff1e6;
     --app-focus: #ea580c;
+  }
+
+  html.dark {
+    color-scheme: dark;
+    --app-bg: #020617;
+    --app-surface: #0f172a;
+    --app-surface-2: #1e293b;
+    --app-border: #334155;
+    --app-heading: #f1f5f9;
+    --app-body: #e2e8f0;
+    --app-muted: #cbd5e1;
+    --app-accent: #fb923c;
+    --app-accent-strong: #f97316;
+    --app-accent-soft: #431407;
+    --app-focus: #fdba74;
   }
 
   html {
@@ -89,22 +101,16 @@
   .app-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,.44); }
   .glass-card { @apply border border-[#E2E3DF] bg-white/90 shadow-[0_18px_40px_-24px_rgba(16,32,59,0.35)] backdrop-blur-xl; }
 
-  /* -----------------------------------------------------------------------
-     Light workspace normalisation.
-
-     Page components are authored with ordinary light Tailwind utilities
-     (`bg-white`, `text-slate-900`, `border-slate-200`, `bg-orange-500`). The
-     dark theme used to invert all of those from here with `!important`; with a
-     light shell they need no rewriting at all, so this layer now only covers
-     what a utility class cannot express: native form-control colours, which
-     follow the operating system rather than the page.
-     --------------------------------------------------------------------- */
+  /* Workspace form controls follow the selected app appearance. */
   .app-workspace input,
   .app-workspace select,
-  .app-workspace textarea { color: #10203b; }
-  .app-workspace option { background: #ffffff; color: #10203b; }
+  .app-workspace textarea { color: var(--app-heading); color-scheme: light; }
+  .dark .app-workspace input,
+  .dark .app-workspace select,
+  .dark .app-workspace textarea { color-scheme: dark; }
+  .app-workspace option { background: var(--app-surface); color: var(--app-heading); }
 
-  /* Keep the sign-in surface independent from the workspace overrides. */
+  /* Legacy sign-in surface, with dark-mode values supplied below. */
   .auth-screen {
     background-color: #f5f4ec;
     background-image:
@@ -140,10 +146,8 @@
   }
 
   /* ---------------------------------------------------------------------
-     The two-step sign-in journey. This is a light, self-contained surface that
-     sits outside `.app-workspace`, so none of the dark compatibility overrides
-     above touch it. Orange is the application's existing accent, so it is used
-     consistently for buttons, links, selected states and focus rings.
+     The two-step sign-in journey. Its light appearance is defined here and
+     receives matching dark-mode overrides below.
      --------------------------------------------------------------------- */
   .auth-light {
     color-scheme: light;
@@ -203,6 +207,406 @@
     /* The inset shadow paints over the autofill background in WebKit/Blink. */
     box-shadow: 0 0 0 1000px #ffffff inset;
   }
+}
+
+html.dark body {
+  background-color: #020617;
+  background-image:
+    radial-gradient(circle at 10% -12%, rgba(99, 102, 241, 0.08), transparent 32%),
+    radial-gradient(circle at 92% 108%, rgba(56, 118, 200, 0.08), transparent 34%),
+    radial-gradient(circle at 60% 40%, rgba(196, 181, 253, 0.05), transparent 45%);
+  color: #e2e8f0;
+}
+
+html.dark .app-workspace {
+  background-color: #020617;
+  color: #e2e8f0;
+}
+
+html.dark .app-workspace .dashboard-welcome {
+  border-color: #334155;
+  background: linear-gradient(135deg, #0f172a, #172033 62%, #1e293b);
+}
+
+html.dark .app-workspace .dashboard-welcome h1 {
+  color: #f1f5f9;
+}
+
+html.dark .app-workspace .dashboard-welcome p:not([class~="text-[#C2410C]"]) {
+  color: #cbd5e1;
+}
+
+html.dark .app-card,
+html.dark .auth-card,
+html.dark .auth-light-card,
+html.dark .glass-card {
+  border-color: #334155;
+  background-color: #0f172a;
+  color: #e2e8f0;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.75), 0 2px 6px -3px rgba(0, 0, 0, 0.45);
+}
+
+html.dark .app-page-title,
+html.dark .app-section-title,
+html.dark .app-label,
+html.dark .app-page-subtitle,
+html.dark .app-input,
+html.dark .app-button-secondary {
+  color: #e2e8f0;
+}
+
+html.dark .app-input,
+html.dark .app-button-secondary {
+  border-color: #475569;
+  background-color: #0f172a;
+}
+
+html.dark .app-input::placeholder {
+  color: #94a3b8;
+}
+
+html.dark .app-button-secondary:hover {
+  border-color: #fb923c;
+  background-color: #431407;
+  color: #ffedd5;
+}
+
+html.dark .app-table thead {
+  border-color: #334155;
+  background-color: #1e293b;
+  color: #cbd5e1;
+}
+
+html.dark .app-table td {
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+html.dark .app-table tbody tr:hover {
+  background-color: #1e293b;
+}
+
+html.dark .app-grid {
+  background-image: linear-gradient(rgba(226, 232, 240, .055) 1px, transparent 1px), linear-gradient(90deg, rgba(226, 232, 240, .055) 1px, transparent 1px);
+}
+
+html.dark .auth-screen {
+  background-color: #020617;
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(249, 115, 22, .12), transparent 34%),
+    radial-gradient(circle at 90% 100%, rgba(99, 102, 241, .12), transparent 32%);
+  color: #e2e8f0;
+}
+
+html.dark .auth-light {
+  color-scheme: dark;
+  background-color: #020617;
+  background-image:
+    radial-gradient(ellipse 60% 50% at 12% 18%, rgba(249, 115, 22, .12), transparent 60%),
+    radial-gradient(ellipse 55% 45% at 88% 82%, rgba(249, 115, 22, .09), transparent 62%),
+    radial-gradient(ellipse 70% 60% at 50% 0%, rgba(148, 163, 184, .08), transparent 65%);
+}
+
+html.dark .auth-light-title,
+html.dark .auth-light-label,
+html.dark .auth-light-subtitle {
+  color: #e2e8f0;
+}
+
+html.dark .auth-light-input,
+html.dark .auth-screen input,
+html.dark .auth-light input {
+  border-color: #475569;
+  background-color: #0f172a;
+  color: #f1f5f9;
+  color-scheme: dark;
+}
+
+html.dark .auth-light-input::placeholder,
+html.dark .auth-light input::placeholder,
+html.dark .auth-screen input::placeholder {
+  color: #94a3b8;
+}
+
+html.dark .auth-light-card,
+html.dark .auth-card {
+  color: #e2e8f0;
+}
+
+html.dark .auth-light [class~="bg-white"],
+html.dark .auth-light [class~="bg-slate-50"],
+html.dark .auth-light [class~="bg-slate-100"],
+html.dark .auth-light [class~="bg-slate-200"] {
+  background-color: #0f172a;
+}
+
+html.dark .auth-light [class~="text-slate-950"],
+html.dark .auth-light [class~="text-slate-900"],
+html.dark .auth-light [class~="text-slate-800"],
+html.dark .auth-light [class~="text-slate-700"],
+html.dark .auth-light [class~="text-slate-600"],
+html.dark .auth-light [class~="text-slate-500"],
+html.dark .auth-light [class~="text-gray-900"],
+html.dark .auth-light [class~="text-gray-800"],
+html.dark .auth-light [class~="text-gray-700"],
+html.dark .auth-light [class~="text-gray-600"],
+html.dark .auth-light [class~="text-gray-500"] {
+  color: #e2e8f0;
+}
+
+html.dark .auth-light [class~="text-slate-400"],
+html.dark .auth-light [class~="text-gray-400"] {
+  color: #cbd5e1;
+}
+
+html.dark .auth-light [class~="border-slate-100"],
+html.dark .auth-light [class~="border-slate-200"],
+html.dark .auth-light [class~="border-slate-300"],
+html.dark .auth-light [class~="border-gray-100"],
+html.dark .auth-light [class~="border-gray-200"],
+html.dark .auth-light [class~="border-gray-300"] {
+  border-color: #334155;
+}
+
+html.dark .auth-light [class~="bg-orange-50"],
+html.dark .auth-light [class~="bg-orange-100"] {
+  background-color: #431407;
+}
+
+html.dark .auth-light [class~="text-orange-700"],
+html.dark .auth-light [class~="text-orange-800"] {
+  color: #fdba74;
+}
+
+html.dark .auth-light [class~="text-rose-700"],
+html.dark .auth-light [class~="text-red-700"] {
+  color: #fecdd3;
+}
+
+html.dark .auth-light [class~="bg-rose-50"],
+html.dark .auth-light [class~="bg-red-50"] {
+  background-color: #4c0519;
+}
+
+html.dark .auth-choice {
+  border-color: #334155;
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+html.dark .auth-choice:hover {
+  border-color: #c2410c;
+  background-color: #431407;
+}
+
+html.dark .app-workspace [class~="bg-white"],
+html.dark .app-workspace [class~="bg-white/90"],
+html.dark .app-workspace [class~="bg-white/80"],
+html.dark .app-workspace [class~="bg-white/70"],
+html.dark .app-workspace [class~="bg-white/50"],
+html.dark .app-workspace [class~="bg-white/40"],
+html.dark .app-workspace [class~="bg-[#F5F4EC]"],
+html.dark .app-workspace [class~="bg-[#F8FAFC]"],
+html.dark .app-workspace [class~="bg-[#FAF9F5]"],
+html.dark .app-workspace [class~="bg-[#E2E3DF]"],
+html.dark .app-workspace [class~="bg-[#ECEDEA]"],
+html.dark .app-workspace [class~="bg-[#FFF7ED]"],
+html.dark .app-workspace [class~="bg-[#FFF1E6]"],
+html.dark .app-workspace [class~="bg-slate-50"],
+html.dark .app-workspace [class~="bg-slate-100"],
+html.dark .app-workspace [class~="bg-slate-200"],
+html.dark .app-workspace [class~="bg-gray-50"],
+html.dark .app-workspace [class~="bg-gray-100"],
+html.dark .app-workspace [class~="bg-amber-50"],
+html.dark .app-workspace [class~="bg-amber-100"],
+html.dark .app-workspace [class~="bg-blue-50"],
+html.dark .app-workspace [class~="bg-sky-50"],
+html.dark .app-workspace [class~="bg-emerald-50"],
+html.dark .app-workspace [class~="bg-emerald-100"],
+html.dark .app-workspace [class~="bg-green-50"],
+html.dark .app-workspace [class~="bg-orange-50"],
+html.dark .app-workspace [class~="bg-orange-100"],
+html.dark .app-workspace [class~="bg-orange-200"],
+html.dark .app-workspace [class~="bg-red-50"],
+html.dark .app-workspace [class~="bg-rose-50"] {
+  background-color: #0f172a;
+}
+
+html.dark .app-workspace [class~="text-[#10203B]"],
+html.dark .app-workspace [class~="text-[#334155]"],
+html.dark .app-workspace [class~="text-[#475569]"],
+html.dark .app-workspace [class~="text-[#64748B]"],
+html.dark .app-workspace [class~="text-[#94A3B8]"],
+html.dark .app-workspace [class~="text-slate-950"],
+html.dark .app-workspace [class~="text-slate-900"],
+html.dark .app-workspace [class~="text-slate-800"],
+html.dark .app-workspace [class~="text-slate-700"],
+html.dark .app-workspace [class~="text-slate-600"],
+html.dark .app-workspace [class~="text-gray-900"],
+html.dark .app-workspace [class~="text-gray-800"],
+html.dark .app-workspace [class~="text-gray-700"],
+html.dark .app-workspace [class~="text-gray-600"],
+html.dark .app-workspace [class~="text-amber-700"],
+html.dark .app-workspace [class~="text-amber-800"],
+html.dark .app-workspace [class~="text-amber-900"],
+html.dark .app-workspace [class~="text-amber-950"],
+html.dark .app-workspace [class~="text-blue-700"],
+html.dark .app-workspace [class~="text-blue-800"],
+html.dark .app-workspace [class~="text-emerald-700"],
+html.dark .app-workspace [class~="text-emerald-800"],
+html.dark .app-workspace [class~="text-emerald-900"],
+html.dark .app-workspace [class~="text-green-700"],
+html.dark .app-workspace [class~="text-green-800"],
+html.dark .app-workspace [class~="text-red-700"],
+html.dark .app-workspace [class~="text-red-800"],
+html.dark .app-workspace [class~="text-rose-700"],
+html.dark .app-workspace [class~="text-rose-800"],
+html.dark .app-workspace [class~="text-rose-900"],
+html.dark .app-workspace [class~="text-sky-700"],
+html.dark .app-workspace [class~="text-sky-800"],
+html.dark .app-workspace [class~="text-violet-600"] {
+  color: #e2e8f0;
+}
+
+html.dark .app-workspace [class~="text-[#9A3412]"],
+html.dark .app-workspace [class~="text-[#C2410C]"],
+html.dark .app-workspace [class~="text-orange-500"],
+html.dark .app-workspace [class~="text-orange-600"],
+html.dark .app-workspace [class~="text-orange-700"],
+html.dark .app-workspace [class~="text-orange-800"] {
+  color: #fdba74;
+}
+
+html.dark .app-workspace [class~="text-slate-500"],
+html.dark .app-workspace [class~="text-slate-400"],
+html.dark .app-workspace [class~="text-gray-500"],
+html.dark .app-workspace [class~="text-gray-400"],
+html.dark .app-workspace [class~="text-amber-500"],
+html.dark .app-workspace [class~="text-amber-600"],
+html.dark .app-workspace [class~="text-amber-100"],
+html.dark .app-workspace [class~="text-amber-200"],
+html.dark .app-workspace [class~="text-emerald-100"],
+html.dark .app-workspace [class~="text-emerald-200"],
+html.dark .app-workspace [class~="text-emerald-600"],
+html.dark .app-workspace [class~="text-rose-100"],
+html.dark .app-workspace [class~="text-rose-200"],
+html.dark .app-workspace [class~="text-rose-600"],
+html.dark .app-workspace [class~="text-red-500"],
+html.dark .app-workspace [class~="text-blue-300"],
+html.dark .app-workspace [class~="text-sky-600"] {
+  color: #cbd5e1;
+}
+
+html.dark .app-workspace [class~="border-[#E2E3DF]"],
+html.dark .app-workspace [class~="border-[#D8DAD5]"],
+html.dark .app-workspace [class~="border-[#ECEDEA]"],
+html.dark .app-workspace [class~="border-[#F0DAC2]"],
+html.dark .app-workspace [class~="border-slate-100"],
+html.dark .app-workspace [class~="border-slate-200"],
+html.dark .app-workspace [class~="border-slate-300"],
+html.dark .app-workspace [class~="border-gray-100"],
+html.dark .app-workspace [class~="border-gray-200"],
+html.dark .app-workspace [class~="border-gray-300"],
+html.dark .app-workspace [class~="border-amber-200"],
+html.dark .app-workspace [class~="border-amber-300"],
+html.dark .app-workspace [class~="border-blue-200"],
+html.dark .app-workspace [class~="border-sky-200"],
+html.dark .app-workspace [class~="border-emerald-200"],
+html.dark .app-workspace [class~="border-emerald-300"],
+html.dark .app-workspace [class~="border-green-200"],
+html.dark .app-workspace [class~="border-red-100"],
+html.dark .app-workspace [class~="border-red-200"],
+html.dark .app-workspace [class~="border-rose-200"],
+html.dark .app-workspace [class~="border-rose-300"] {
+  border-color: #334155;
+}
+
+html.dark .app-workspace [class~="hover:bg-[#FAF9F5]"]:hover,
+html.dark .app-workspace [class~="hover:bg-[#FFF7ED]"]:hover,
+html.dark .app-workspace [class~="hover:bg-slate-50"]:hover,
+html.dark .app-workspace [class~="hover:bg-slate-100"]:hover,
+html.dark .app-workspace [class~="hover:bg-gray-50"]:hover,
+html.dark .app-workspace [class~="hover:bg-gray-100"]:hover {
+  background-color: #1e293b;
+}
+
+html.dark .auth-light [class~="bg-emerald-50"],
+html.dark .auth-light [class~="bg-green-50"] {
+  background-color: #052e16;
+}
+
+html.dark .auth-light [class~="text-emerald-800"],
+html.dark .auth-light [class~="text-green-800"] {
+  color: #bbf7d0;
+}
+
+html.dark .app-workspace [class~="bg-sky-50"],
+html.dark .app-workspace [class~="bg-blue-50"] {
+  background-color: #082f49;
+}
+
+html.dark .app-workspace [class~="text-sky-700"],
+html.dark .app-workspace [class~="text-sky-800"],
+html.dark .app-workspace [class~="text-blue-700"],
+html.dark .app-workspace [class~="text-blue-800"] {
+  color: #bae6fd;
+}
+
+html.dark .app-workspace [class~="border-sky-200"],
+html.dark .app-workspace [class~="border-blue-200"] {
+  border-color: #075985;
+}
+
+html.dark .app-workspace [class~="bg-amber-50"] {
+  background-color: #451a03;
+}
+
+html.dark .app-workspace [class~="text-amber-900"],
+html.dark .app-workspace [class~="text-amber-800"] {
+  color: #fde68a;
+}
+
+html.dark .app-workspace [class~="border-amber-200"] {
+  border-color: #92400e;
+}
+
+html.dark .app-workspace [class~="bg-emerald-50"],
+html.dark .app-workspace [class~="bg-green-50"] {
+  background-color: #052e16;
+}
+
+html.dark .app-workspace [class~="text-emerald-700"],
+html.dark .app-workspace [class~="text-emerald-800"],
+html.dark .app-workspace [class~="text-green-700"],
+html.dark .app-workspace [class~="text-green-800"] {
+  color: #bbf7d0;
+}
+
+html.dark .app-workspace [class~="border-emerald-200"],
+html.dark .app-workspace [class~="border-green-200"] {
+  border-color: #166534;
+}
+
+html.dark .app-workspace [class~="bg-rose-50"],
+html.dark .app-workspace [class~="bg-red-50"] {
+  background-color: #4c0519;
+}
+
+html.dark .app-workspace [class~="text-rose-700"],
+html.dark .app-workspace [class~="text-rose-800"],
+html.dark .app-workspace [class~="text-red-700"],
+html.dark .app-workspace [class~="text-red-800"] {
+  color: #fecdd3;
+}
+
+html.dark .app-workspace [class~="border-rose-200"],
+html.dark .app-workspace [class~="border-red-200"] {
+  border-color: #9f1239;
+}
+
+html.dark .app-workspace [class~="focus-visible:ring-offset-2"],
+html.dark .app-workspace [class~="focus:ring-offset-2"] {
+  --tw-ring-offset-color: #020617;
 }
 
 @media (prefers-reduced-motion: reduce) {

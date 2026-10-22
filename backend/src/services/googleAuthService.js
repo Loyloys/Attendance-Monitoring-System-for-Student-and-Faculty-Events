@@ -12,6 +12,8 @@ import {
 } from '../utils/errors.js';
 import { stableCaseInsensitive } from '../utils/identifiers.js';
 import { regenerateSession } from '../utils/session.js';
+import { googleOAuthStatus } from './systemSettingsService.js';
+import { isApproved } from '../middleware/authentication.js';
 
 // Google-only accounts may never be given a fabricated password.
 export const GOOGLE_SIGNED_IN = 'signed_in';
@@ -21,6 +23,13 @@ export const GOOGLE_SIGNUP_PENDING = 'signup_pending';
 
 function googleNotConfigured() {
   return new AppError(503, 'Google sign-in is not available on this server yet.');
+}
+
+async function assertGoogleOAuthEnabled() {
+  const setting = await googleOAuthStatus();
+  if (!setting.available || !setting.enabled) {
+    throw new AppError(503, 'Google sign-in is disabled by an administrator. Use your ID and password instead.');
+  }
 }
 
 async function verifyWithGoogleLibrary(idToken) {
@@ -103,6 +112,21 @@ export function googlePublicConfig() {
     // approval. Only an explicit GOOGLE_SCHOOL_APPROVED=true, set after the
     // school actually confirms permission, may set this.
     schoolApproved: env.googleSchoolApproved,
+  };
+}
+
+export async function googleOAuthAvailability() {
+  const config = googlePublicConfig();
+  const setting = await googleOAuthStatus();
+  const enabled = config.enabled && setting.available && setting.enabled;
+  return {
+    ...config,
+    configurationAvailable: config.enabled,
+    clientIdPresent: Boolean(config.clientId),
+    settingAvailable: setting.available,
+    settingEnabled: setting.enabled,
+    enabled,
+    mode: enabled ? config.mode : GOOGLE_MODE_UNAVAILABLE,
   };
 }
 
@@ -286,8 +310,8 @@ function assertApprovedGoogleAccount(hostedDomain, email) {
  * Mints the single-use nonce that ties a popup credential to this session.
  * The client id is public configuration; this flow uses no client secret.
  */
-export function startGoogleSession(request) {
-  const config = googlePublicConfig();
+export async function startGoogleSession(request) {
+  const config = await googleOAuthAvailability();
   if (!config.enabled) return { ...config, nonce: null };
   const nonce = crypto.randomBytes(24).toString('base64url');
   request.session.googleNonce = nonce;
@@ -300,6 +324,9 @@ async function loadLinkedUser(sub) {
   if (!user) return null;
   if (!user.isActive) {
     throw new PermissionError('This account has been deactivated. Contact an administrator.');
+  }
+  if (user.archivedAt || !isApproved(user)) {
+    throw new PermissionError('This account is not currently eligible to sign in. Contact an administrator.');
   }
   const profile = await UserProfile.findOne({ userId: user._id });
   if (!profile) throw new AuthenticationError('This account is missing its profile record.');
@@ -316,10 +343,9 @@ async function signInDocument(request, document) {
 }
 
 /**
- * The account type chosen on the first screen is presentation only. It never
+ * A legacy selectedRole value is only an optional presentation hint. It never
  * grants, changes or implies a role: the stored profile role is the single
- * source of truth, and this function only reports a mismatch so the person is
- * sent to the screen that matches the account they actually hold.
+ * source of truth, and this function only reports a mismatch for older callers.
  */
 const LOGIN_PATHS = Object.freeze({
   [ROLES.STUDENT]: '/login/student',
@@ -355,6 +381,7 @@ export async function authenticateWithGoogle(request, body) {
   const sessionNonce = request.session.googleNonce;
   delete request.session.googleNonce;
 
+  await assertGoogleOAuthEnabled();
   const identity = await verifyGoogleCredential(body?.credential, { nonce: sessionNonce });
   // Read for the mismatch message only. It is validated against the known role
   // list, so an invented value is simply ignored.
@@ -393,6 +420,11 @@ export async function authenticateWithGoogle(request, body) {
  * Repeat submissions update the same pending request (safe handling of repeats).
  */
 export async function completeGoogleProfile(request, body) {
+  const oauthSetting = await googleOAuthStatus();
+  if (!oauthSetting.available || !oauthSetting.enabled) {
+    delete request.session.pendingGoogleIdentity;
+    throw new AppError(503, 'Google signup is disabled by an administrator. Use email verification instead.');
+  }
   const identity = request.session.pendingGoogleIdentity;
   if (!identity) {
     throw new ValidationError({ profile: 'Start Google sign-in again before completing your profile.' });
@@ -464,6 +496,7 @@ export async function linkGoogleIdentity(request, body) {
 
   const sessionNonce = request.session.googleNonce;
   delete request.session.googleNonce;
+  await assertGoogleOAuthEnabled();
   const identity = await verifyGoogleCredential(body?.credential, { nonce: sessionNonce });
 
   const owner = await User.findOne({ googleSub: identity.sub }).lean();

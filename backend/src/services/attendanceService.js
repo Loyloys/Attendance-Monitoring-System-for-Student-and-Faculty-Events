@@ -5,6 +5,10 @@ import { eventAllows } from '../utils/events.js';
 import { summarizeAttendance } from './attendanceSummary.js';
 import { getManagedEvent } from './eventService.js';
 
+export function personalRecordStatus(record) {
+  return record.qualification ?? record.status;
+}
+
 export async function personalAttendance(user) {
   const records = await EventAttendance.find({ attendeeId: user._id }).lean();
   const events = await Event.find({ _id: { $in: records.map((record) => record.eventId) } }).lean();
@@ -27,7 +31,7 @@ export async function personalAttendance(user) {
         eventId: record.eventId,
         eventName: event.name,
         eventDate: new Date(event.startsAt).toISOString(),
-        status: record.status,
+        status: personalRecordStatus(record),
         method: record.method,
         recordedAt: new Date(record.recordedAt).toISOString(),
         // GST009: verified duration, requirement, and qualification for the UI.

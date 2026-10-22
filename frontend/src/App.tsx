@@ -3,7 +3,8 @@ import { BrowserRouter } from 'react-router-dom';
 import { FlaskConical, Moon, Sun } from 'lucide-react';
 import AppRoutes from './routes';
 import { AuthProvider } from './context/AuthContext';
-import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { useTheme } from './context/useTheme';
 import { Toaster } from 'react-hot-toast';
 import { loadEnvironment, type EnvironmentInfo } from './data/eventApi';
 
@@ -49,28 +50,38 @@ const ThemeToggle: React.FC = () => {
   );
 };
 
+const ThemedToaster: React.FC = () => {
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
+  return (
+    <Toaster
+      position="top-right"
+      toastOptions={{
+        duration: 3500,
+        style: {
+          background: dark ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.96)',
+          color: dark ? '#e2e8f0' : '#334155',
+          border: `1px solid ${dark ? '#334155' : '#E2E3DF'}`,
+          borderRadius: '14px',
+          boxShadow: dark
+            ? '0 18px 40px -20px rgba(0, 0, 0, 0.75)'
+            : '0 18px 40px -20px rgba(16, 32, 59, 0.32)',
+          fontSize: '14px',
+          backdropFilter: 'blur(16px)',
+        },
+        success: { iconTheme: { primary: '#16a34a', secondary: dark ? '#0f172a' : '#ffffff' } },
+        error: { iconTheme: { primary: '#e11d48', secondary: dark ? '#0f172a' : '#ffffff' } },
+      }}
+    />
+  );
+};
+
 const App: React.FC = () => (
   <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <ThemeProvider>
     <AuthProvider>
       <div className="min-h-screen bg-[#F5F4EC] font-sans text-[#334155] selection:bg-orange-200 selection:text-[#10203B] dark:bg-slate-950 dark:text-slate-200">
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 3500,
-            style: {
-              background: 'rgba(255, 255, 255, 0.96)',
-              color: '#334155',
-              border: '1px solid #E2E3DF',
-              borderRadius: '14px',
-              boxShadow: '0 18px 40px -20px rgba(16, 32, 59, 0.32)',
-              fontSize: '14px',
-              backdropFilter: 'blur(16px)',
-            },
-            success: { iconTheme: { primary: '#16a34a', secondary: '#ffffff' } },
-            error: { iconTheme: { primary: '#e11d48', secondary: '#ffffff' } },
-          }}
-        />
+        <ThemedToaster />
         <EnvironmentBanner />
         <AppRoutes />
         <ThemeToggle />

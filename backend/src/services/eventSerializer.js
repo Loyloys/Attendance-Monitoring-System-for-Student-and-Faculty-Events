@@ -194,7 +194,13 @@ export function serializeAdminEvent(event, organizerProfile) {
     venue: event.venue,
     organizer: organizerProfile?.displayName || 'Unknown user',
     origin: organizerProfile?.role === 'faculty' ? 'Faculty' : 'Admin',
-    audience: { all: 'All', student: 'Student', faculty: 'Faculty' }[event.audience],
+    audience: event.audience === 'all'
+      ? 'All'
+      : event.audience === 'student'
+        ? 'Student'
+        : event.audience === 'faculty'
+          ? 'Faculty'
+          : event.audience.toUpperCase(),
     department: organizerProfile?.department || '',
     method: { qr: 'QR Code', barcode: 'Barcode', rfid: 'ID range' }[event.attendanceMethod],
     identifierRange: event.audience === 'all' ? 'All active attendees' : `${event.audience[0].toUpperCase()}${event.audience.slice(1)} audience`,
@@ -214,8 +220,13 @@ export function serializeAdminEvent(event, organizerProfile) {
     venueLatitude: event.venueLatitude ?? undefined,
     venueLongitude: event.venueLongitude ?? undefined,
     venueRadiusMeters: event.venueRadiusMeters ?? undefined,
+    geofenceType: event.geofenceType || 'circle',
+    geofencePolygon: Array.isArray(event.geofencePolygon)
+      ? event.geofencePolygon.map((point) => ({ latitude: point.latitude, longitude: point.longitude }))
+      : [],
     locationVerificationRequired: event.locationVerificationRequired !== false,
     createdAt: iso(event.createdAt),
     organizerId: event.organizerId ? String(event.organizerId) : undefined,
+    archivedAt: iso(event.archivedAt),
   };
 }

@@ -9,10 +9,10 @@ import { AuthenticationError } from '../utils/errors.js';
  * of the read path rather than something the database guarantees. Pre-existing
  * accounts therefore keep working exactly as before, with no migration.
  *
- * Registration now activates a new Student account immediately, so `approved` is
- * the normal value. `pending` only survives on records created under the old
- * manual-approval policy and `rejected` is set by an administrator: both stay
- * blocked, and neither is ever cleared automatically.
+ * Registration now approves a new Student account immediately, so `approved`
+ * is the normal value. `pending` and `rejected` survive on records created under
+ * the old administrator-managed access policy. Both stay blocked and neither
+ * is ever cleared automatically.
  */
 export function approvalStatusOf(user) {
   const status = user?.approvalStatus;
@@ -27,7 +27,7 @@ export async function loadAuthentication(request, response, next) {
   request.user = null;
   if (request.session?.userId) {
     const user = await User.findById(request.session.userId).lean();
-    if (user?.isActive) {
+    if (user?.isActive && !user.archivedAt) {
       const profile = await UserProfile.findOne({ userId: user._id }).lean();
       if (profile) request.user = { ...user, profile };
       else request.session.destroy(() => {});
@@ -52,17 +52,17 @@ export const requireRole = (...roles) => (request, response, next) => {
 };
 
 /**
- * Blocks accounts an administrator has blocked from every protected route.
+ * Blocks legacy accounts with an unapproved state from every protected route.
  *
- * A person whose account is `rejected`, or who is still `pending` from the
+ * A person whose legacy account is `rejected`, or who is still `pending` from
  * previous manual-approval policy, stays signed in only so the interface can
  * explain the situation, but they reach no attendance feature at all: no events,
  * no scanning, no history, no reports, no administrator API. New Student
  * registrations are activated automatically and pass straight through.
  *
- * Deactivation is enforced separately and independently: `loadAuthentication`
- * refuses a session whose `isActive` is false, so an administrator can switch an
- * account off here without touching this field.
+ * Legacy inactive accounts remain enforced separately and independently:
+ * `loadAuthentication` refuses a session whose `isActive` is false. Archiving
+ * also sets this field while preserving its original value for restoration.
  *
  * Unauthenticated requests pass through untouched, because
  * `requireAuthentication` produces the correct 401 for them.

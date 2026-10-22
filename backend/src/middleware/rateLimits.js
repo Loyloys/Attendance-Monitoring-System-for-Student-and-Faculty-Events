@@ -28,3 +28,13 @@ export const googleAuthLimiter = rateLimit({
   legacyHeaders: false,
   message: { detail: 'Too many sign-in attempts. Try again shortly.' },
 });
+
+export const emailActionLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  // Same env-override pattern as loginLimiter: the product default stays strict
+  // (5/min in production), while the test suite can raise its own budget.
+  limit: Number(process.env.EMAIL_ACTION_RATE_LIMIT) || (env.isProduction ? 5 : 10),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { detail: 'Too many email verification or password setup attempts. Try again later.' },
+});

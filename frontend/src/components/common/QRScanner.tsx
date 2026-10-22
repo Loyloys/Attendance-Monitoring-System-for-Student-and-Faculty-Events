@@ -1,17 +1,28 @@
 import { useRef, useEffect, useState } from 'react';
 import QrScanner from 'qr-scanner';
 import { CameraOff, Focus, ShieldAlert, Camera, Smartphone } from 'lucide-react';
+import { cameraFailureKind, cameraFailureMessage, scannerPauseLabel } from '../../utils/eventQr';
 
 interface QRScannerProps {
   onScan: (result: string) => void;
   onError?: (error: string) => void;
   isActive: boolean;
+  pauseReason: 'location' | 'processing' | 'manual';
+  canResume: boolean;
+  onPause: () => void;
+  onResume: () => void;
 }
 
-export default function QRScanner({ onScan, onError, isActive }: QRScannerProps) {
+type CameraState = 'checking' | 'available' | 'permission-denied' | 'unavailable';
+
+export default function QRScanner({ onScan, onError, isActive, pauseReason, canResume, onPause, onResume }: QRScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [scanner, setScanner] = useState<QrScanner | null>(null);
-  const [hasCamera, setHasCamera] = useState<boolean>(true);
+  const callbacks = useRef({ onScan, onError });
+  callbacks.current = { onScan, onError };
+  const [cameraState, setCameraState] = useState<CameraState>('checking');
+  const [cameraMessage, setCameraMessage] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
   const [camera, setCamera] = useState<'environment' | 'user'>('environment');
   const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 
@@ -21,14 +32,14 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
     const qrScanner = new QrScanner(
       videoRef.current,
       (result) => {
-        onScan(result.data);
+        callbacks.current.onScan(result.data);
       },
       {
         onDecodeError: (error) => {
           const errorMessage = error instanceof Error ? error.message : String(error);
           if (!errorMessage.includes('No QR code found')) {
             console.error('QR Scanner error:', error);
-            onError?.(errorMessage);
+            callbacks.current.onError?.(errorMessage);
           }
         },
         preferredCamera: 'environment',
@@ -38,52 +49,76 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
     );
 
     setScanner(qrScanner);
-    QrScanner.hasCamera().then(setHasCamera);
+    QrScanner.hasCamera()
+      .then((hasCamera) => {
+        setCameraState(hasCamera ? 'available' : 'unavailable');
+        if (!hasCamera) setCameraMessage(cameraFailureMessage('unavailable'));
+      })
+      .catch((error: unknown) => {
+        const kind = cameraFailureKind(error);
+        setCameraState(kind);
+        setCameraMessage(cameraFailureMessage(kind));
+      });
 
     return () => {
       qrScanner.destroy();
     };
-  }, [onScan, onError]);
+  }, []);
 
   useEffect(() => {
     if (!scanner) return;
 
     if (isActive) {
-      scanner.start().catch((error) => {
+      scanner.start().then(() => {
+        setCameraState('available');
+        setCameraMessage('');
+      }).catch((error: unknown) => {
         console.error('Failed to start scanner:', error);
-        onError?.('Failed to access camera. Please check permissions.');
-        setHasCamera(false);
+        const kind = cameraFailureKind(error);
+        setCameraState(kind);
+        setCameraMessage(cameraFailureMessage(kind));
       });
     } else {
       scanner.stop();
     }
-  }, [scanner, isActive, onError]);
+  }, [scanner, isActive, retryCount]);
+
+  const retryCamera = () => {
+    if (!canResume) return;
+    setCameraState('checking');
+    setCameraMessage('');
+    if (isActive) setRetryCount(count => count + 1);
+    onResume();
+  };
 
   const switchCamera = async (nextCamera: 'environment' | 'user') => {
-    if (!scanner || nextCamera === camera) return;
+    if (!scanner || !isActive || nextCamera === camera) return;
 
     setIsSwitchingCamera(true);
     try {
       await scanner.setCamera(nextCamera);
       setCamera(nextCamera);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to switch camera:', error);
-      onError?.('That camera is unavailable. Please choose another camera or check browser permissions.');
+      const kind = cameraFailureKind(error);
+      setCameraState(kind);
+      setCameraMessage(cameraFailureMessage(kind));
     } finally {
       setIsSwitchingCamera(false);
     }
   };
 
-  if (!hasCamera) {
+  if (cameraState === 'permission-denied' || cameraState === 'unavailable') {
     return (
       <div className="py-12 px-6 text-center bg-white/40 backdrop-blur-xl rounded-[32px] border border-red-100 animate-in fade-in zoom-in-95">
         <div className="flex items-center justify-center w-16 h-16 mx-auto mb-6 text-red-500 shadow-inner bg-red-50 rounded-2xl">
           <ShieldAlert size={32} />
         </div>
-        <h3 className="text-lg font-bold tracking-tight text-slate-900">Camera Unavailable</h3>
-        <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">
-          Camera access is unavailable. Allow camera permission on this site, use HTTPS, or use the manual scan option below.
-        </p>
+        <h3 className="text-lg font-bold tracking-tight text-slate-900">
+          {cameraState === 'permission-denied' ? 'Camera Permission Denied' : 'Camera Unavailable'}
+        </h3>
+        <p role="status" className="mt-2 text-sm font-medium leading-relaxed text-slate-500">{cameraMessage}</p>
+        <button type="button" onClick={retryCamera} disabled={!canResume} className="app-button-secondary mt-4 disabled:opacity-50">Try camera again</button>
       </div>
     );
   }
@@ -99,7 +134,7 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
           <button
             type="button"
             onClick={() => switchCamera('environment')}
-            disabled={isSwitchingCamera}
+            disabled={!isActive || isSwitchingCamera}
             className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${camera === 'environment' ? 'bg-[#F97316] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
           >
             <Camera size={15} /> Back camera
@@ -107,12 +142,15 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
           <button
             type="button"
             onClick={() => switchCamera('user')}
-            disabled={isSwitchingCamera}
+            disabled={!isActive || isSwitchingCamera}
             className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${camera === 'user' ? 'bg-[#F97316] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
           >
             <Camera size={15} /> Front camera
           </button>
         </div>
+        {isActive
+          ? <button type="button" onClick={onPause} className="app-button-secondary text-xs">Pause scanning</button>
+          : <span className="text-xs font-semibold text-slate-500">{scannerPauseLabel(pauseReason)}</span>}
       </div>
 
       <div className="relative group overflow-hidden rounded-[28px] bg-slate-950 aspect-square sm:aspect-video flex items-center justify-center shadow-2xl">
@@ -160,7 +198,10 @@ export default function QRScanner({ onScan, onError, isActive }: QRScannerProps)
           <div className="flex items-center justify-center mb-3 rounded-full w-14 h-14 bg-white/10 text-white/50">
             <CameraOff size={28} />
           </div>
-          <p className="text-sm font-bold tracking-widest uppercase text-white/70">Scanner Paused</p>
+          <p role="status" className="text-sm font-bold tracking-widest text-center uppercase text-white/70">{scannerPauseLabel(pauseReason)}</p>
+          {pauseReason === 'manual' && (
+            <button type="button" onClick={onResume} disabled={!canResume} className="app-button-primary mt-4 disabled:opacity-50">Resume scanning</button>
+          )}
         </div>
       )}
 

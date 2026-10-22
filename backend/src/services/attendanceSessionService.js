@@ -2,6 +2,7 @@ import { AttendanceSession, Event, EventAttendance, EventRegistration, UserProfi
 import { ConflictError, NotFoundError, PermissionError, ValidationError } from '../utils/errors.js';
 import { LOCATION_POLICY, QUALIFICATION_REASONS, geofenceFor } from '../utils/domain.js';
 import { distanceMeters, eventAllows } from '../utils/events.js';
+import { distanceToPolygonMeters, pointInPolygon } from '../utils/geofence.js';
 import { nextNumericId } from '../utils/ids.js';
 import {
   LOCATION_STATE,
@@ -87,15 +88,20 @@ export function classifyObservation(event, submitted, now = new Date()) {
       location: `That location reading is ${Math.round(ageSeconds)} seconds old. Attendance tracking needs a reading taken within the last ${trackingMaxAge} seconds, so it cannot be used. Allow the app to take a fresh reading and try again.`,
     });
   }
-  const distance = distanceMeters(latitude, longitude, fence.latitude, fence.longitude);
-  const limit = fence.radiusMeters + LOCATION_POLICY.slackMeters;
+  const isPolygon = fence.type === 'polygon';
+  const distance = isPolygon
+    ? distanceToPolygonMeters(latitude, longitude, fence.polygon)
+    : distanceMeters(latitude, longitude, fence.latitude, fence.longitude);
+  const inside = isPolygon
+    ? pointInPolygon(latitude, longitude, fence.polygon) || distance <= LOCATION_POLICY.slackMeters
+    : distance <= fence.radiusMeters + LOCATION_POLICY.slackMeters;
   return {
     latitude,
     longitude,
     accuracy,
     capturedAt: new Date(capturedMs),
     distanceMeters: Math.round(distance * 10) / 10,
-    locationState: distance <= limit ? LOCATION_STATE.INSIDE : LOCATION_STATE.OUTSIDE,
+    locationState: inside ? LOCATION_STATE.INSIDE : LOCATION_STATE.OUTSIDE,
   };
 }
 
@@ -334,12 +340,35 @@ export function __setTrackingIndexVerified(value) {
 
 export async function startTrackingSession(user, body, now = new Date()) {
   await assertTrackingEnabledAsync();
-  const event = await resolveScannedEvent(body?.token, body?.eventId, user);
-  // Tracking inherits the QR credential rule: a live session credits attendance
-  // time, so it must be exactly as hard to start as the one-shot scan that it
-  // mirrors. Keyed on the event's own method, so it cannot be dodged by asking
-  // for a different one.
-  if (event.attendanceMethod === 'qr' && !body?.token) {
+  let event;
+  if (body?.attendanceId !== undefined) {
+    const attendanceId = Number(body.attendanceId);
+    if (!Number.isSafeInteger(attendanceId) || attendanceId <= 0) {
+      throw new ValidationError({ attendanceId: 'A valid recorded attendance check-in is required to start tracking.' });
+    }
+    // A successful, authenticated check-in is the proof for starting or
+    // resuming tracking. This avoids replaying the one-time QR credential after
+    // the scan endpoint has already recorded attendance.
+    const attendance = await EventAttendance.findOne({
+      _id: attendanceId,
+      attendeeId: user._id,
+      source: 'Scan',
+    }).lean();
+    if (!attendance) {
+      throw new PermissionError('A server-confirmed attendance check-in is required to start tracking.');
+    }
+    event = await Event.findById(attendance.eventId).lean();
+    if (!event) throw new NotFoundError('Event not found.');
+    if (attendance.method !== event.attendanceMethod) {
+      throw new ValidationError({ method: 'The recorded check-in method does not match this event.' });
+    }
+  } else {
+    event = await resolveScannedEvent(body?.token, body?.eventId, user);
+  }
+  // QR tracking may start from a freshly validated token or the authenticated
+  // user's server-recorded scan above. Keyed on the event's own method, so a
+  // caller cannot dodge the credential rule by asking for a different method.
+  if (event.attendanceMethod === 'qr' && !body?.token && body?.attendanceId === undefined) {
     throw new ValidationError(
       { scan: 'This event checks in with a QR code. Scan the event code, or paste it into the manual box.' },
       'A valid event QR code is required for this event.',

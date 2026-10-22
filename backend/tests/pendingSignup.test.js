@@ -116,6 +116,37 @@ test('AD003.3: a client-sent department field is rejected; nothing is stored', a
   assert.equal(await models.User.countDocuments({ googleSub: 'google-sub-dept-reject' }), 0);
 });
 
+test('public signup approval cannot create Admin accounts', async () => {
+  const completed = await googleSignupRequest(agent(), {
+    claims: {
+      sub: 'google-sub-no-public-admin',
+      email: 'person@gmail.com',
+      name: 'Public Applicant',
+    },
+  });
+  assert.equal(completed.status, 202, JSON.stringify(completed.body));
+  const models = getModels();
+  const signup = await models.SignupRequest.findOne({ googleSub: 'google-sub-no-public-admin' }).lean();
+  assert.ok(signup);
+
+  const admin = await adminAgent();
+  const result = await send(admin, 'post', `/api/admin/signup-requests/${signup._id}/approve/`, {
+    accountId: 'ADM-PUBLIC-1',
+    department: 'IT',
+    role: 'Admin',
+  });
+  assert.equal(result.status, 400, JSON.stringify(result.body));
+  assert.equal(await models.User.countDocuments({ accountId: 'ADM-PUBLIC-1' }), 0);
+  assert.equal((await models.SignupRequest.findById(signup._id).lean()).status, 'pending');
+
+  const separatelyCreated = await send(admin, 'post', '/api/admin/users/', {
+    id: 'ADM-MANAGED-1', username: 'admin-managed-1', name: 'Managed Admin',
+    email: 'admin-managed-1@cot.edu', contact: '09120000001', department: 'IT',
+    role: 'Admin', password: 'temporary-pass',
+  });
+  assert.equal(separatelyCreated.status, 201, JSON.stringify(separatelyCreated.body));
+});
+
 test('GST001.3: profile PATCH rejects approval/active/role fields explicitly', async () => {
   await createUser({ username: 'STU001', role: 'student' });
   const { agent: client } = await login('STU001');
@@ -169,6 +200,7 @@ test('GST009: personal history exposes verified duration and percentage inputs',
   assert.equal(history.status, 200);
   assert.equal(history.body.records[0].verifiedSeconds, 300);
   assert.equal(history.body.records[0].requiredAttendanceMinutes, 10);
+  assert.equal(history.body.records[0].status, 'pending', 'a check-in is not Present before duration qualification');
 });
 
 test('AD003.3: an admin lists pending signup requests', async () => {
@@ -177,9 +209,98 @@ test('AD003.3: an admin lists pending signup requests', async () => {
   const listed = await send(client, 'get', '/api/admin/signup-requests/?status=pending');
   assert.equal(listed.status, 200, JSON.stringify(listed.body));
   assert.ok(Array.isArray(listed.body));
-  assert.ok(listed.body.some((row) => row.googleEmail === 'person@gmail.com' && row.status === 'pending' && row.pendingRole === ''));
+  assert.ok(listed.body.some((row) => row.googleEmail === 'person@gmail.com' && row.emailVerified && row.status === 'pending' && row.pendingRole === ''));
   // Nothing typed by the applicant, so accountId and department are empty until review.
   assert.ok(listed.body.every((row) => row.accountId === '' && row.department === ''));
+});
+
+test('signup request IDs and inferred roles come only from verified supported institutional email', async () => {
+  const models = getModels();
+  const verifiedAt = new Date();
+  await models.SignupRequest.create([
+    {
+      _id: 'REQ-VERIFIED-GOOGLE',
+      provider: 'google',
+      googleSub: 'verified-google-sub',
+      googleEmail: '2401105160@student.buksu.edu.ph',
+      googleEmailNormalized: '2401105160@student.buksu.edu.ph',
+      pendingRole: 'faculty',
+      accountId: 'UNTRUSTED-REQUEST-ID',
+      status: 'pending',
+    },
+    {
+      _id: 'REQ-VERIFIED-EMAIL',
+      provider: 'email',
+      googleEmail: '2401105161@faculty.buksu.edu.ph',
+      googleEmailNormalized: '2401105161@faculty.buksu.edu.ph',
+      emailVerifiedAt: verifiedAt,
+      pendingRole: 'student',
+      accountId: 'UNTRUSTED-REQUEST-ID',
+      status: 'pending',
+    },
+    {
+      _id: 'REQ-UNVERIFIED',
+      provider: 'email',
+      googleEmail: '2401105162@student.buksu.edu.ph',
+      googleEmailNormalized: '2401105162@student.buksu.edu.ph',
+      pendingRole: 'student',
+      accountId: 'UNTRUSTED-REQUEST-ID',
+      status: 'pending',
+    },
+    {
+      _id: 'REQ-UNSUPPORTED-DOMAIN',
+      provider: 'email',
+      googleEmail: '2401105163@other.example',
+      googleEmailNormalized: '2401105163@other.example',
+      emailVerifiedAt: verifiedAt,
+      pendingRole: 'student',
+      status: 'pending',
+    },
+    {
+      _id: 'REQ-MALFORMED-LOCAL-PART',
+      provider: 'email',
+      googleEmail: 'id-2401105164@student.buksu.edu.ph',
+      googleEmailNormalized: 'id-2401105164@student.buksu.edu.ph',
+      emailVerifiedAt: verifiedAt,
+      pendingRole: 'faculty',
+      status: 'pending',
+    },
+  ]);
+
+  const admin = await adminAgent();
+  const response = await send(admin, 'get', '/api/admin/signup-requests/?status=pending');
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const byId = new Map(response.body.map((row) => [row.id, row]));
+  assert.equal(byId.get('REQ-VERIFIED-GOOGLE').accountId, '2401105160');
+  assert.equal(byId.get('REQ-VERIFIED-GOOGLE').emailVerified, true);
+  assert.equal(byId.get('REQ-VERIFIED-GOOGLE').pendingRole, 'student');
+  assert.equal(byId.get('REQ-VERIFIED-EMAIL').accountId, '2401105161');
+  assert.equal(byId.get('REQ-VERIFIED-EMAIL').pendingRole, 'faculty');
+  assert.equal(byId.get('REQ-UNVERIFIED').accountId, '');
+  assert.equal(byId.get('REQ-UNVERIFIED').emailVerified, false);
+  assert.equal(byId.get('REQ-UNVERIFIED').pendingRole, '');
+  assert.equal(byId.get('REQ-UNSUPPORTED-DOMAIN').accountId, '');
+  assert.equal(byId.get('REQ-UNSUPPORTED-DOMAIN').pendingRole, '');
+  assert.equal(byId.get('REQ-MALFORMED-LOCAL-PART').accountId, '');
+  assert.equal(byId.get('REQ-MALFORMED-LOCAL-PART').pendingRole, 'student');
+
+  const unverifiedApproval = await send(admin, 'post', '/api/admin/signup-requests/REQ-UNVERIFIED/approve/', {
+    accountId: 'STU-UNVERIFIED',
+    department: 'IT',
+    role: 'Student',
+  });
+  assert.equal(unverifiedApproval.status, 400, JSON.stringify(unverifiedApproval.body));
+  assert.equal(await models.User.exists({ accountId: 'STU-UNVERIFIED' }), null);
+
+  for (const id of ['REQ-UNSUPPORTED-DOMAIN', 'REQ-MALFORMED-LOCAL-PART']) {
+    const missingId = await send(admin, 'post', `/api/admin/signup-requests/${id}/approve/`, {
+      department: 'IT',
+      role: 'Student',
+    });
+    assert.equal(missingId.status, 400, JSON.stringify(missingId.body));
+    assert.ok(Object.hasOwn(missingId.body, 'accountId'));
+    assert.equal((await models.SignupRequest.findById(id).lean()).status, 'pending');
+  }
 });
 
 test('AD003.3: admin approval creates the User with the assigned accountId, department and role', async () => {
@@ -207,6 +328,26 @@ test('AD003.3: admin approval creates the User with the assigned accountId, depa
   assert.ok(reviewed.reviewedBy, 'reviewer recorded');
 });
 
+test('signup approval retains duplicate account ID protection', async () => {
+  await googleSignupRequest(agent(), { claims: { sub: 'google-sub-duplicate-id-1', email: 'first@gmail.com', name: 'First' } });
+  await googleSignupRequest(agent(), { claims: { sub: 'google-sub-duplicate-id-2', email: 'second@gmail.com', name: 'Second' } });
+  const models = getModels();
+  const first = await models.SignupRequest.findOne({ googleSub: 'google-sub-duplicate-id-1' }).lean();
+  const second = await models.SignupRequest.findOne({ googleSub: 'google-sub-duplicate-id-2' }).lean();
+  const admin = await adminAgent();
+
+  const approved = await send(admin, 'post', `/api/admin/signup-requests/${first._id}/approve/`, {
+    accountId: 'STU-DUPLICATE-1', department: 'IT', role: 'Student',
+  });
+  assert.equal(approved.status, 201, JSON.stringify(approved.body));
+  const duplicate = await send(admin, 'post', `/api/admin/signup-requests/${second._id}/approve/`, {
+    accountId: 'STU-DUPLICATE-1', department: 'BSEMC', role: 'Student',
+  });
+  assert.equal(duplicate.status, 409, JSON.stringify(duplicate.body));
+  assert.equal((await models.SignupRequest.findById(second._id).lean()).status, 'pending');
+  assert.equal(await models.User.countDocuments({ accountIdNormalized: 'stu-duplicate-1' }), 1);
+});
+
 test('AD003.3: admin refusal marks the request rejected and creates no User', async () => {
   await googleSignupRequest(agent(), { claims: { sub: 'google-sub-reject-1', email: 'person@gmail.com', name: 'Reject Me' } });
   const models = getModels();
@@ -230,6 +371,8 @@ test('AD003.3: approval refuses a missing accountId, department or role', async 
   const client = await adminAgent();
   const cases = [
     { label: 'no accountId', body: { department: 'IT', role: 'Student' }, field: 'accountId' },
+    { label: 'malformed accountId', body: { accountId: 'STU\u0000BAD', department: 'IT', role: 'Student' }, field: 'accountId' },
+    { label: 'accountId exceeds schema length', body: { accountId: 'x'.repeat(151), department: 'IT', role: 'Student' }, field: 'accountId' },
     { label: 'no department', body: { accountId: 'STU9002', role: 'Student' }, field: 'department' },
     { label: 'no role', body: { accountId: 'STU9003', department: 'IT' }, field: 'role' },
     { label: 'invented department', body: { accountId: 'STU9004', department: 'Bogus', role: 'Student' }, field: 'department' },
@@ -265,4 +408,3 @@ test('AD003.3: an already-reviewed request cannot be approved or rejected again'
   const final = await models.SignupRequest.findById(request._id).lean();
   assert.equal(final.status, 'approved');
 });
-

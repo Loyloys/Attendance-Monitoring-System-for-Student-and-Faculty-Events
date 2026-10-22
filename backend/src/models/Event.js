@@ -43,6 +43,11 @@ const eventSchema = new mongoose.Schema({
   venueLatitude: { type: Number, default: null, min: -90, max: 90 },
   venueLongitude: { type: Number, default: null, min: -180, max: 180 },
   venueRadiusMeters: { type: Number, default: null, min: 1, max: 100_000 },
+  geofenceType: { type: String, enum: ['circle', 'polygon'], default: 'circle' },
+  geofencePolygon: {
+    type: [{ latitude: { type: Number, min: -90, max: 90 }, longitude: { type: Number, min: -180, max: 180 } }],
+    default: undefined,
+  },
   // When true the browser must capture a location fix before the QR scan. Kept
   // separate from the geofence fields so an event can opt out explicitly.
   locationVerificationRequired: { type: Boolean, default: true },
@@ -51,6 +56,11 @@ const eventSchema = new mongoose.Schema({
   // administrator-set requirement, so tracking reports "needs configuration"
   // rather than inventing a duration. Only an administrator sets this.
   requiredAttendanceMinutes: { type: Number, default: null, min: 1, max: 24 * 60 },
+  // Administrator-controlled archive flag. Archiving removes the event from the
+  // student/faculty listings while keeping attendance, registration and report
+  // data intact for administrators. Set together with `archivedBy`.
+  archivedAt: { type: Date, default: null },
+  archivedBy: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
   dataSource: { type: String, enum: ['managed', 'migration', 'demo', 'legacy-browser'], default: 'managed', index: true },
 }, { versionKey: false });

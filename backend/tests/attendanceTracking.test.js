@@ -414,6 +414,60 @@ test('tracking starts only on a valid Inside observation and the server owns the
   assert.equal(started.durationOutcome, 'in_progress');
 });
 
+test('Student and Faculty tracking starts from each signed-in user’s recorded scan without replaying its QR token', async () => {
+  const { event, faculty, student, token } = await trackingEvent();
+  const user = asUser(student);
+  const scannedAt = new Date();
+  const attendance = await recordEventAttendance(user, {
+    token,
+    method: 'qr',
+    location: fix(scannedAt),
+  });
+  const trackingAt = new Date(scannedAt.getTime() + 1_000);
+
+  const session = await startTrackingSession(user, {
+    attendanceId: attendance._id,
+    method: 'qr',
+    location: fix(trackingAt),
+  }, trackingAt);
+  assert.equal(session.eventId, event._id);
+  assert.equal(session.state, 'tracking');
+  assert.equal(session.creditedSeconds, 0);
+  assert.equal(await EventAttendance.countDocuments({ eventId: event._id, attendeeId: student.user._id }), 1);
+  const resumed = await startTrackingSession(user, {
+    attendanceId: attendance._id,
+    method: 'qr',
+    location: fix(new Date(trackingAt.getTime() + 1_000)),
+  }, new Date(trackingAt.getTime() + 1_000));
+  assert.equal(resumed.id, session.id, 'retry resumes the existing session');
+  assert.equal(await EventAttendance.countDocuments({ eventId: event._id, attendeeId: student.user._id }), 1);
+
+  const facultyUser = asUser(faculty);
+  const facultyAttendance = await recordEventAttendance(facultyUser, {
+    token,
+    method: 'qr',
+    location: fix(scannedAt),
+  });
+  const facultySession = await startTrackingSession(facultyUser, {
+    attendanceId: facultyAttendance._id,
+    method: 'qr',
+    location: fix(trackingAt),
+  }, trackingAt);
+  assert.equal(facultySession.eventId, event._id);
+  assert.equal(facultySession.state, 'tracking');
+  assert.equal(await EventAttendance.countDocuments({ eventId: event._id, attendeeId: faculty.user._id }), 1);
+
+  const otherStudent = await createUser({ username: 'STU002', role: 'student' });
+  await assert.rejects(
+    startTrackingSession(asUser(otherStudent), {
+      attendanceId: attendance._id,
+      method: 'qr',
+      location: fix(trackingAt),
+    }, trackingAt),
+    detail(/server-confirmed attendance check-in/i),
+  );
+});
+
 test('a replayed observation cannot earn credit, however often it is resent', async () => {
   // FRESHNESS IS NOT SPACING. The crediting rule cares about the SPACING of
   // accepted observations (MAX_CREDIT_GAP_SECONDS, 30 s); the FRESHNESS rule is
@@ -1154,4 +1208,3 @@ test('an event with no duration requirement keeps its established behaviour', as
   // untouched, so established behaviour is preserved exactly.
   assert.equal(recorded.status, 'present');
 });
-

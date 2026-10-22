@@ -14,13 +14,14 @@ import {
   User,
   UserProfile,
 } from '../models/index.js';
-import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { approvalStatusOf } from '../middleware/authentication.js';
 import { nextNumericId } from '../utils/ids.js';
 import { stableCaseInsensitive } from '../utils/identifiers.js';
+import { sendPasswordSetupLink, resendPasswordSetup } from './emailSignupService.js';
 import { createDjangoPassword } from '../utils/passwords.js';
 import { effectiveEventStatus } from '../utils/events.js';
-import { DEPARTMENTS } from '../utils/domain.js';
+import { accountIdForVerifiedInstitutionalEmail, DEPARTMENTS, pendingRoleForEmail } from '../utils/domain.js';
 import { serializeAdminEvents } from './eventService.js';
 import { serializeAdminAttendance, serializeAdminUser, serializeEventFeedback } from './adminSerializer.js';
 import { finalizeExpiredSessions } from './attendanceSessionService.js';
@@ -30,7 +31,10 @@ const roleMap = { Student: 'student', Faculty: 'faculty', Admin: 'admin' };
 const adminRoleMap = { student: 'Student', faculty: 'Faculty', admin: 'Admin' };
 
 async function usersWithProfiles(query = {}) {
-  const users = await User.find(query).sort({ accountIdNormalized: 1 }).lean();
+  // +passwordHash is loaded only so serializeAdminUser can report the boolean
+  // `hasApplicationPassword` (needed by the Admin "resend setup link" action);
+  // the hash itself is never included in any API response.
+  const users = await User.find(query).select('+passwordHash').sort({ accountIdNormalized: 1 }).lean();
   const profiles = await UserProfile.find({ userId: { $in: users.map((user) => user._id) } }).lean();
   const byUser = new Map(profiles.map((profile) => [String(profile.userId), profile]));
   return users.map((user) => ({ ...user, profile: byUser.get(String(user._id)) })).filter((user) => user.profile);
@@ -118,7 +122,7 @@ export async function listUserEventRegistrations(accountId) {
       email: user.email || '',
       role: profile.role,
       department: profile.department || '',
-      status: user.isActive ? 'Active' : 'Inactive',
+      status: user.archivedAt ? 'Archived' : user.isActive ? 'Active' : 'Inactive',
       approvalStatus: approvalStatusOf(user),
       createdAt: new Date(user.dateJoined).toISOString(),
     },
@@ -164,6 +168,9 @@ export async function listAdminUsers() {
  */
 async function recordAudit(actor, action, target, detail) {
   if (!actor?._id) return;
+  // Rejections have no User yet, so there is no target id. Skip the audit row
+  // rather than failing the rejection on a required field.
+  if (!target?.userId) return;
   await AuditLog.create({
     actorId: actor._id,
     actorName: actor.profile?.displayName || actor.accountId || '',
@@ -175,6 +182,9 @@ async function recordAudit(actor, action, target, detail) {
 }
 
 export async function createAdminUser(data, actor) {
+  if (data.status !== undefined || data.approvalStatus !== undefined) {
+    throw new ValidationError({ status: 'Account blocking and deactivation are not available during account creation.' });
+  }
   const accountId = String(data.id || '').trim();
   const username = String(data.username || '').trim();
   const name = String(data.name || '').trim();
@@ -195,7 +205,7 @@ export async function createAdminUser(data, actor) {
     passwordHash: createDjangoPassword(password),
     email,
     emailNormalized: email,
-    isActive: data.status !== 'Inactive',
+    isActive: true,
     isStaff: role === 'admin',
     isSuperuser: false,
     dateJoined: new Date(),
@@ -215,22 +225,16 @@ export async function createAdminUser(data, actor) {
 
 export async function updateAdminUser(accountId, data, actor) {
   const { user, profile } = await findUserByAccountId(accountId);
-  const nextRole = data.role ? roleMap[data.role] : profile.role;
-  const nextActive = data.status ? data.status === 'Active' : user.isActive;
-  // Administrator approval is a separate decision from the role. A pending
-  // Google sign-up is approved or rejected here, and only here.
-  const requestedApproval = data.approvalStatus;
-  if (requestedApproval !== undefined && !['pending', 'approved', 'rejected'].includes(requestedApproval)) {
-    throw new ValidationError({ approvalStatus: 'Approval status must be pending, approved or rejected.' });
+  if (user.archivedAt) throw new ValidationError({ status: 'Restore this archived account before editing it.' });
+  if (data.status !== undefined || data.approvalStatus !== undefined) {
+    throw new ValidationError({ status: 'Account blocking and deactivation are not available. Use archive/restore to manage account availability.' });
   }
-  const previousApproval = approvalStatusOf(user);
-  const nextApproval = requestedApproval ?? previousApproval;
-  const approvalChanged = nextApproval !== previousApproval;
+  const nextRole = data.role === undefined ? profile.role : roleMap[data.role];
+  if (!nextRole) throw new ValidationError({ role: 'Choose Student, Faculty, or Admin.' });
   // Captured before any mutation so the audit entry can state the real before/after.
   const previousRole = profile.role;
   const roleChanged = nextRole !== previousRole;
-  const statusChanged = nextActive !== user.isActive;
-  if (profile.role === 'admin' && (nextRole !== 'admin' || !nextActive) && await activeAdminCount(user._id) === 0) {
+  if (profile.role === 'admin' && nextRole !== 'admin' && await activeAdminCount(user._id) === 0) {
     // The message is the SECOND argument. Passing the text as the field map made
     // the API answer with the generic "submitted data is invalid" instead of
     // telling the administrator why the change was refused.
@@ -247,6 +251,7 @@ export async function updateAdminUser(accountId, data, actor) {
   const nextDepartment = String(data.department || profile.department).trim();
   const password = data.passwordHash || data.password;
   if (!nextAccountId || !nextUsername || !nextName || !nextDepartment) throw new ValidationError('Account ID, username, name, and department are required.');
+  if (nextEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) throw new ValidationError({ email: 'Enter a valid email address.' });
   await assertUniqueIdentity({ accountId: nextAccountId, username: nextUsername, email: nextEmail, excludeId: user._id });
 
   const oldIdentifiers = [user.accountId, user.username, user.email].filter(Boolean);
@@ -265,12 +270,6 @@ export async function updateAdminUser(accountId, data, actor) {
   user.usernameNormalized = stableCaseInsensitive(nextUsername);
   user.email = nextEmail;
   user.emailNormalized = nextEmail;
-  user.isActive = nextActive;
-  user.approvalStatus = nextApproval;
-  if (approvalChanged) {
-    user.approvalReviewedAt = new Date();
-    user.approvalReviewedBy = actor?._id || null;
-  }
   user.isStaff = nextRole === 'admin';
   if (password) user.passwordHash = createDjangoPassword(String(password));
   await user.save();
@@ -282,14 +281,8 @@ export async function updateAdminUser(accountId, data, actor) {
 
   // AD003: record what actually changed, so a role change is traceable.
   const auditTarget = { userId: user._id, accountId: user.accountId };
-  if (approvalChanged) {
-    // Approval is its own auditable event: it is the moment a person gains (or
-    // loses) access to attendance features.
-    await recordAudit(actor, `account_${nextApproval === 'approved' ? 'approved' : nextApproval === 'rejected' ? 'rejected' : 'approval_reset'}`, auditTarget, `Approval changed from ${previousApproval} to ${nextApproval}`);
-  } else if (roleChanged) {
+  if (roleChanged) {
     await recordAudit(actor, 'role_changed', auditTarget, `Role changed from ${previousRole} to ${nextRole}`);
-  } else if (statusChanged) {
-    await recordAudit(actor, nextActive ? 'account_reactivated' : 'account_deactivated', auditTarget, nextActive ? 'Reactivated' : 'Deactivated');
   } else {
     await recordAudit(actor, 'account_updated', auditTarget, 'Account details updated');
   }
@@ -304,19 +297,37 @@ export async function updateAdminUser(accountId, data, actor) {
  * serializeAdminUser shape is NOT used here because there is no User/Profile;
  * a dedicated serializer keeps the pending-request surface explicit.
  */
+function signupEmailIsVerified(signup) {
+  if (signup.provider === 'email') {
+    return Boolean(signup.emailVerifiedAt && Number.isFinite(new Date(signup.emailVerifiedAt).getTime()));
+  }
+  return signup.provider === 'google' && typeof signup.googleSub === 'string' && signup.googleSub.length > 0;
+}
+
+function accountIdFromVerifiedInstitutionalEmail(signup) {
+  return accountIdForVerifiedInstitutionalEmail(
+    signup.googleEmailNormalized,
+    signupEmailIsVerified(signup),
+  );
+}
+
 export async function listSignupRequests(status = 'pending') {
   const query = ['pending', 'approved', 'rejected'].includes(status) ? { status } : {};
   const rows = await SignupRequest.find(query).sort({ createdAt: -1 }).lean();
   return rows.map((row) => ({
     id: String(row._id),
+    provider: row.provider || 'google',
+    emailVerified: signupEmailIsVerified(row),
     googleEmail: row.googleEmail || '',
-    accountId: row.accountId || '',
+    accountId: row.status === 'pending'
+      ? accountIdFromVerifiedInstitutionalEmail(row)
+      : row.accountId || accountIdFromVerifiedInstitutionalEmail(row),
     name: row.displayName || '',
     department: row.department || '',
     phone: row.phone || '',
-    // Role inferred from the verified email domain at submission, so the
-    // approval screen can preselect it. Empty when no domain matched.
-    pendingRole: row.pendingRole || '',
+    // Never use an inferred role unless the request carries its server-verified
+    // email proof. An unmatched domain is left for an administrator to assign.
+    pendingRole: signupEmailIsVerified(row) ? pendingRoleForEmail(row.googleEmailNormalized) : '',
     status: row.status,
     createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
     reviewedAt: row.reviewedAt ? new Date(row.reviewedAt).toISOString() : null,
@@ -331,12 +342,18 @@ export async function listSignupRequests(status = 'pending') {
 export async function approveSignupRequest(requestId, data, actor) {
   const signup = await SignupRequest.findById(String(requestId));
   if (!signup || signup.status !== 'pending') throw new NotFoundError('Signup request not found or already reviewed.');
+  if (!signupEmailIsVerified(signup)) {
+    throw new ValidationError({ email: 'Verify the signup email address before approval.' });
+  }
   // The pending role was inferred from the VERIFIED email domain at submission.
   // An administrator may assign a different one explicitly; a request with no
   // inferred role must be given one here. A browser-supplied value is validated
   // against the known role list, so an invented one is refused.
-  const role = (data.role ? roleMap[data.role] : signup.pendingRole) || null;
-  if (!role) throw new ValidationError({ role: 'Assign a role: Student, Faculty, or Admin.' });
+  const inferredRole = signupEmailIsVerified(signup) ? pendingRoleForEmail(signup.googleEmailNormalized) : '';
+  const role = (data.role ? roleMap[data.role] : inferredRole) || null;
+  if (!['student', 'faculty'].includes(role)) {
+    throw new ValidationError({ role: 'Confirm or assign a public signup as Student or Faculty. Admin accounts must be created through Admin account management.' });
+  }
   // Department/course is ONLY assigned here, by an administrator, from the fixed
   // list. It is never collected from the applicant, so a legacy or invented
   // value (including one stored on an old request) is refused rather than
@@ -345,8 +362,11 @@ export async function approveSignupRequest(requestId, data, actor) {
   if (!DEPARTMENTS.includes(department)) {
     throw new ValidationError({ department: `Select a department or course: ${DEPARTMENTS.join(', ')}.` });
   }
-  const accountId = String(data.accountId || signup.accountId || '').trim().toUpperCase();
-  if (!accountId) throw new ValidationError({ accountId: 'Account ID is required.' });
+  if (typeof data.accountId !== 'string') throw new ValidationError({ accountId: 'Account ID is required.' });
+  const accountId = data.accountId.trim().toUpperCase();
+  if (!accountId || accountId.length > 150 || /[\u0000-\u001f\u007f]/.test(accountId)) {
+    throw new ValidationError({ accountId: 'Enter a valid account ID (1-150 characters, without control characters).' });
+  }
   const normalized = stableCaseInsensitive(accountId);
   // An identifier retired by an earlier identity change may never be reused -
   // the check moved here from signup because the applicant no longer supplies
@@ -362,19 +382,20 @@ export async function approveSignupRequest(requestId, data, actor) {
     throw new ConflictError('Account ID, username, or email is already in use.');
   }
   const parts = String(signup.displayName || '').trim().split(/\s+/).filter(Boolean);
+  const googleSignup = signup.provider !== 'email' && Boolean(signup.googleSub);
   const user = await User.create({
     accountId,
     accountIdNormalized: normalized,
     username: accountId,
     usernameNormalized: normalized,
     passwordHash: null,
-    authProviders: ['google'],
-    googleSub: signup.googleSub,
-    googleEmail: signup.googleEmail,
-    googleEmailNormalized: signup.googleEmailNormalized,
-    googleHostedDomain: signup.googleHostedDomain || '',
-    googlePictureUrl: signup.googlePictureUrl || '',
-    googleLinkedAt: new Date(),
+    authProviders: googleSignup ? ['google'] : ['password'],
+    googleSub: googleSignup ? signup.googleSub : null,
+    googleEmail: googleSignup ? signup.googleEmail : '',
+    googleEmailNormalized: googleSignup ? signup.googleEmailNormalized : '',
+    googleHostedDomain: googleSignup ? signup.googleHostedDomain || '' : '',
+    googlePictureUrl: googleSignup ? signup.googlePictureUrl || '' : '',
+    googleLinkedAt: googleSignup ? new Date() : null,
     firstName: (parts[0] || '').slice(0, 150),
     lastName: parts.slice(1).join(' ').slice(0, 150),
     email: signup.googleEmail,
@@ -387,7 +408,7 @@ export async function approveSignupRequest(requestId, data, actor) {
     isSuperuser: false,
     profileCompleted: true,
     dateJoined: new Date(),
-    dataSource: 'google',
+    dataSource: googleSignup ? 'google' : 'managed',
   });
   const profile = await UserProfile.create({
     userId: user._id,
@@ -401,11 +422,33 @@ export async function approveSignupRequest(requestId, data, actor) {
     throw error;
   });
   signup.status = 'approved';
+  signup.accountId = accountId;
+  signup.accountIdNormalized = normalized;
   signup.reviewedAt = new Date();
   signup.reviewedBy = actor?._id || null;
   await signup.save();
-  await recordAudit(actor, 'account_approved', { userId: user._id, accountId }, `Signup request approved as ${role}`);
-  return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
+  // 'account_created' is the closest existing audit action for an approval that
+  // creates the account; the detail names the approval explicitly.
+  await recordAudit(actor, 'account_created', { userId: user._id, accountId }, `Signup request approved as ${role}`);
+  // Never claim delivery unless the provider accepted the message. A transport
+  // failure keeps the approval itself (the account is valid and Google sign-in
+  // works) and reports the failure honestly so an Admin can resend the link.
+  let passwordSetup = 'pending';
+  try {
+    await sendPasswordSetupLink(user, signup._id);
+    passwordSetup = 'sent';
+  } catch (error) {
+    if (error instanceof AppError && error.status === 503) {
+      passwordSetup = 'failed';
+    } else {
+      throw error;
+    }
+  }
+  return {
+    ...serializeAdminUser({ ...user.toObject(), profile: profile.toObject() }),
+    signupRequestId: String(signup._id),
+    passwordSetup,
+  };
 }
 
 /** AD003.3: reject a pending signup request. No User is ever created. */
@@ -416,8 +459,55 @@ export async function rejectSignupRequest(requestId, actor) {
   signup.reviewedAt = new Date();
   signup.reviewedBy = actor?._id || null;
   await signup.save();
-  await recordAudit(actor, 'account_rejected', { userId: null, accountId: signup.accountId || signup.googleEmail }, 'Signup request rejected');
+  // Reuses an existing audit action; the detail records that this was a signup refusal.
+  await recordAudit(actor, 'account_updated', { userId: null, accountId: signup.accountId || signup.googleEmail }, 'Signup request rejected');
   return { id: String(signup._id), status: signup.status };
+}
+
+/**
+ * Smallest resend addition for accounts that missed their setup email.
+ * Reuses the existing eligibility rule (approved/active/unarchived and no
+ * application password yet); there is deliberately no new password system.
+ */
+export async function resendUserPasswordSetup(accountId, actor) {
+  const { user } = await findUserByAccountId(accountId);
+  const result = await resendPasswordSetup(user, null);
+  // 'account_updated' is the closest existing audit action; the detail names the
+  // resend explicitly. No new audit action is introduced.
+  await recordAudit(actor, 'account_updated', { userId: user._id, accountId: user.accountId }, 'Application password setup link resent');
+  return result;
+}
+
+export async function archiveAdminUser(accountId, actor) {
+  const { user, profile } = await findUserByAccountId(accountId);
+  if (profile.role === 'admin' && user.isActive && await activeAdminCount(user._id) === 0) {
+    throw new ValidationError(
+      { role: 'At least one active Admin account is required.' },
+      'At least one active Admin account is required.',
+    );
+  }
+  if (user.archivedAt) return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
+  user.archivedWasActive = user.isActive;
+  user.isActive = false;
+  user.archivedAt = new Date();
+  user.archivedBy = actor?._id || null;
+  await user.save();
+  await recordAudit(actor, 'account_archived', { userId: user._id, accountId: user.accountId }, 'Archived without deleting account history');
+  return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
+}
+
+export async function restoreArchivedAdminUser(accountId, actor) {
+  const { user, profile } = await findUserByAccountId(accountId);
+  if (!user.archivedAt) throw new ValidationError({ status: 'This account is not archived.' });
+  if (profile.role === 'admin' && user.archivedWasActive && await activeAdminCount(user._id) === 0) {
+    throw new ValidationError({ role: 'At least one active Admin account is required.' });
+  }
+  user.isActive = user.archivedWasActive;
+  user.archivedAt = null;
+  user.archivedBy = null;
+  await user.save();
+  await recordAudit(actor, 'account_restored', { userId: user._id, accountId: user.accountId }, 'Restored from archive');
+  return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
 }
 
 export async function deleteAdminUser(accountId, actor) {
@@ -438,14 +528,13 @@ export async function deleteAdminUser(accountId, actor) {
     EventCertificate.countDocuments({ studentId: user._id }),
     EvaluationResponse.countDocuments({ attendeeId: user._id }),
   ]);
-  if (organized || issued || codes) throw new ConflictError('This account is referenced by event, certificate, or attendance-code records and cannot be deleted. Deactivate it instead.');
+  if (organized || issued || codes) throw new ConflictError('This account is referenced by event, certificate, or attendance-code records and cannot be deleted. Archive it instead.');
 
   // AD002.5: attendance, feedback and reporting history are NOT silently
   // cascade-deleted. Those rows are the institutional record of who attended
   // what, and a permanent delete would erase them with no trace. When any exist
   // the request is refused with the exact counts, so the administrator can make
-  // an informed choice. Deactivation is the reversible option that keeps the
-  // history intact and still removes the person's access.
+  // an informed choice. Archiving keeps the history intact.
   const history = [
     ['event registration', registrations],
     ['attendance record', attendances],
@@ -456,7 +545,7 @@ export async function deleteAdminUser(accountId, actor) {
   if (history.length) {
     const summary = history.map(([label, count]) => `${count} ${label}${count === 1 ? '' : 's'}`).join(', ');
     const conflict = new ConflictError(
-      `This account has attendance history (${summary}) that must be preserved for reporting, so it cannot be permanently deleted. Deactivate the account instead: that removes access immediately and keeps every record.`,
+      `This account has attendance history (${summary}) that must be preserved for reporting, so it cannot be permanently deleted. Archive the account instead to keep every record.`,
     );
     // Machine-readable detail, so the UI can show the conflict instead of guessing.
     conflict.relatedRecords = Object.fromEntries(history.map(([label, count]) => [label, count]));

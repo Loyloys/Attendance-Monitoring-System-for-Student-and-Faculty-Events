@@ -133,6 +133,13 @@ export const env = Object.freeze({
   // nothing about whether the school approved wider deployment. It stays false
   // until someone confirms that approval in writing.
   googleSchoolApproved: booleanValue(process.env.GOOGLE_SCHOOL_APPROVED, false),
+  smtpHost: (process.env.SMTP_HOST || '').trim(),
+  smtpPort: numberValue(process.env.SMTP_PORT, 0),
+  smtpSecure: booleanValue(process.env.SMTP_SECURE, false),
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: (process.env.SMTP_FROM || '').trim(),
+  publicAppUrl: (process.env.PUBLIC_APP_URL || '').trim(),
   demoPasswords: Object.freeze({
     student: process.env.DEMO_STUDENT_PASSWORD || 'student123',
     faculty: process.env.DEMO_FACULTY_PASSWORD || 'faculty123',

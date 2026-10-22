@@ -16,7 +16,7 @@ const auditLogSchema = new mongoose.Schema({
   actorName: { type: String, default: '', maxlength: 180 },
   action: {
     type: String,
-    enum: ['role_changed', 'account_created', 'account_updated', 'account_deactivated', 'account_reactivated', 'account_deleted'],
+    enum: ['role_changed', 'account_created', 'account_updated', 'account_deactivated', 'account_reactivated', 'account_approved', 'account_rejected', 'account_approval_reset', 'account_archived', 'account_restored', 'account_deleted'],
     required: true,
     index: true,
   },

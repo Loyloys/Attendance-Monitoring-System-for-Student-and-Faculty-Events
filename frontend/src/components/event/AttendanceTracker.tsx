@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LocateFixed, MapPin, PauseCircle, Radio, RefreshCcw } from 'lucide-react';
 import { eventApi } from '../../data/eventApi';
 import type { AttendanceSession } from '../../types/eventAttendance';
-import { captureLocation, type LocationFix } from '../../utils/eventQr';
+import { captureLocation, geolocationErrorMessage, type LocationFix } from '../../utils/eventQr';
 import { PAUSE_TEXT } from '../../utils/attendanceTracking';
 
 /** How often the browser reports while tracking. Mirrors the server policy. */
@@ -72,7 +72,7 @@ useEffect(() => {
           capturedAt: new Date(position.timestamp || Date.now()).toISOString(),
         };
       },
-      () => setError('Location updates stopped. Turn on location for this site and refresh to resume.'),
+      (locationError) => setError(`${geolocationErrorMessage(locationError.code)} Tracking is paused until a fresh location is available.`),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
     );
     // A fixed 10s reporting cadence, as the policy requires.

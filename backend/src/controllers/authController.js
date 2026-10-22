@@ -4,13 +4,19 @@ import { serializeAuthUser } from '../services/userSerializer.js';
 import {
   authenticateWithGoogle,
   completeGoogleProfile,
-  googlePublicConfig,
+  googleOAuthAvailability,
   linkGoogleIdentity,
   startGoogleSession,
 } from '../services/googleAuthService.js';
 import { issueCsrfToken, rotateCsrfToken } from '../middleware/csrf.js';
 import { ValidationError } from '../utils/errors.js';
 import { regenerateSession } from '../utils/session.js';
+import {
+  emailSignupStatus,
+  requestEmailSignup,
+  setApplicationPassword,
+  verifySignupEmail,
+} from '../services/emailSignupService.js';
 
 export function csrf(request, response) {
   response.json({ csrfToken: issueCsrfToken(request, response) });
@@ -25,12 +31,28 @@ export async function login(request, response) {
 }
 
 // Public so the sign-in card can show an unavailable state without a CSRF round trip.
-export function googleConfig(request, response) {
-  response.json(googlePublicConfig());
+export async function googleConfig(request, response) {
+  response.json(await googleOAuthAvailability());
 }
 
-export function googleSession(request, response) {
-  response.json(startGoogleSession(request));
+export async function googleSession(request, response) {
+  response.json(await startGoogleSession(request));
+}
+
+export function emailStatus(request, response) {
+  response.json(emailSignupStatus());
+}
+
+export async function emailSignup(request, response) {
+  response.status(202).json(await requestEmailSignup(request.body.email));
+}
+
+export async function emailVerify(request, response) {
+  response.json(await verifySignupEmail(request.body.token));
+}
+
+export async function passwordSetup(request, response) {
+  response.json(await setApplicationPassword(request.body.token, request.body.password));
 }
 
 export async function googleAuthenticate(request, response) {

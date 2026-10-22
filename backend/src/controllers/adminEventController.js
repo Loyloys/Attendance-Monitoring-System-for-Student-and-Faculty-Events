@@ -5,7 +5,7 @@ import {
   getOrIssueEventQr,
   rotateEventQr,
 } from '../services/eventQrService.js';
-import { cancelEvent, createEvent, serializeAdminEvents, updateEvent } from '../services/eventService.js';
+import { archiveEvent, cancelEvent, createEvent, restoreEvent, serializeAdminEvents, updateEvent } from '../services/eventService.js';
 import { NotFoundError } from '../utils/errors.js';
 
 export async function list(request, response) {
@@ -54,5 +54,19 @@ export async function cancel(request, response) {
   const event = await Event.findById(request.params.eventId);
   if (!event) throw new NotFoundError('Event not found.');
   await cancelEvent(event);
+  return response.json((await serializeAdminEvents([event.toObject()]))[0]);
+}
+
+export async function archive(request, response) {
+  const event = await Event.findById(request.params.eventId);
+  if (!event) throw new NotFoundError('Event not found.');
+  await archiveEvent(event, request.user);
+  return response.json((await serializeAdminEvents([event.toObject()]))[0]);
+}
+
+export async function restore(request, response) {
+  const event = await Event.findById(request.params.eventId);
+  if (!event) throw new NotFoundError('Event not found.');
+  await restoreEvent(event);
   return response.json((await serializeAdminEvents([event.toObject()]))[0]);
 }

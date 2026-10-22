@@ -1,6 +1,7 @@
 import type {
   AttendanceConfirmation,
   AttendanceMethod,
+  AttendanceQrPreview,
   AttendanceSession,
   AuthUser,
   EventRecord,
@@ -89,7 +90,7 @@ export type AdminEventRequest = {
   start: string;
   end: string;
   venue: string;
-  audience: 'all' | 'student' | 'faculty';
+  audience: 'all' | 'student' | 'faculty' | 'it' | 'bsemc' | 'bsft' | 'bsat' | 'bset';
   method: 'qr' | 'barcode' | 'rfid';
   cutoff: string;
   status: 'published' | 'cancelled';
@@ -109,6 +110,8 @@ export type AdminEventRequest = {
   venueLatitude?: number;
   venueLongitude?: number;
   venueRadiusMeters?: number;
+  geofenceType?: 'circle' | 'polygon';
+  geofencePolygon?: { latitude: number; longitude: number }[];
 };
 
 /**
@@ -163,6 +166,8 @@ export type GooglePrefill = { name: string; email: string; picture: string };
 /** A pending/approved/rejected signup request, as the admin review screen sees it. */
 export type AdminSignupRequest = {
   id: string;
+  provider: 'google' | 'email';
+  emailVerified: boolean;
   googleEmail: string;
   accountId: string;
   name: string;
@@ -237,6 +242,10 @@ export type GoogleSession = {
   enabled: boolean;
   clientId: string | null;
   nonce: string | null;
+  configurationAvailable: boolean;
+  clientIdPresent: boolean;
+  settingAvailable: boolean;
+  settingEnabled: boolean;
   mode?: GoogleSignInMode;
   policy?: string;
   domainRestricted?: boolean;
@@ -396,6 +405,18 @@ export const eventApi = {
   async googleSession() {
     return requestJson<GoogleSession>('/auth/google/session/', { method: 'POST', body: '{}' });
   },
+  emailDeliveryStatus() {
+    return requestJson<{ configured: boolean; missing: string[] }>('/auth/email/status/');
+  },
+  async requestEmailSignup(email: string) {
+    return requestJson<{ message: string }>('/auth/email/signup/', { method: 'POST', body: JSON.stringify({ email }) });
+  },
+  async verifyEmailSignup(token: string) {
+    return requestJson<{ status: string; message: string }>('/auth/email/verify/', { method: 'POST', body: JSON.stringify({ token }) });
+  },
+  async setApplicationPassword(token: string, password: string) {
+    return requestJson<{ status: string; message: string }>('/auth/password/setup/', { method: 'POST', body: JSON.stringify({ token, password }) });
+  },
   async googleAuthenticate(credential: string, selectedRole?: string) {
     return requestJson<GoogleAuthResult>('/auth/google/', {
       method: 'POST',
@@ -419,7 +440,7 @@ export const eventApi = {
     return requestJson<AdminSignupRequest[]>(`/admin/signup-requests/?status=${status}`);
   },
   async approveSignupRequest(id: string, values: { accountId: string; department: string; role?: string }) {
-    return requestJson<{ id: string }>(`/admin/signup-requests/${encodeURIComponent(id)}/approve/`, {
+    return requestJson<{ id: string; passwordSetup?: 'sent' | 'failed' | 'pending' }>(`/admin/signup-requests/${encodeURIComponent(id)}/approve/`, {
       method: 'POST',
       body: JSON.stringify(values),
     });
@@ -429,6 +450,37 @@ export const eventApi = {
       method: 'POST',
       body: '{}',
     });
+  },
+  async resendSignupPasswordSetup(id: string) {
+    return requestJson<{ status: string }>(`/admin/signup-requests/${encodeURIComponent(id)}/password-setup/`, {
+      method: 'POST',
+      body: '{}',
+    });
+  },
+  // Resend for any approved account (not only a signup request row).
+  async resendUserPasswordSetup(accountId: string) {
+    return requestJson<{ status: string }>(`/admin/users/${encodeURIComponent(accountId)}/password-setup/`, {
+      method: 'POST',
+      body: '{}',
+    });
+  },
+  googleOAuthSettings() {
+    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/google-oauth/');
+  },
+  async updateGoogleOAuthSettings(enabled: boolean) {
+    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/google-oauth/', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  adminAnnouncements() {
+    return requestJson<Announcement[]>('/admin/announcements/');
+  },
+  async createAdminAnnouncement(values: Pick<Announcement, 'title' | 'message' | 'audience'>) {
+    return requestJson<Announcement>('/admin/announcements/', { method: 'POST', body: JSON.stringify(values) });
+  },
+  announcements() {
+    return requestJson<Announcement[]>('/announcements/');
   },
   async linkGoogle(credential: string) {
     return requestJson<AuthUser>('/auth/google/link/', {
@@ -462,6 +514,16 @@ export const eventApi = {
   },
   async cancelAdminEvent(id: string) {
     return requestJson<AdminEvent>(`/admin/events/${id}/cancel/`, {
+      method: 'POST',
+    });
+  },
+  async archiveAdminEvent(id: string) {
+    return requestJson<AdminEvent>(`/admin/events/${encodeURIComponent(id)}/archive/`, {
+      method: 'POST',
+    });
+  },
+  async restoreAdminEvent(id: string) {
+    return requestJson<AdminEvent>(`/admin/events/${encodeURIComponent(id)}/restore/`, {
       method: 'POST',
     });
   },
@@ -500,13 +562,13 @@ export const eventApi = {
   adminState() {
     return requestJson<AdminState>('/admin/state/');
   },
-  async createAdminUser(values: Omit<AdminUserAccount, 'createdAt' | 'status' | 'approvalStatus' | 'signedUpViaGoogle'> & { status?: 'Active' | 'Inactive' }) {
+  async createAdminUser(values: Omit<AdminUserAccount, 'createdAt' | 'status' | 'approvalStatus' | 'signedUpViaGoogle'>) {
     return requestJson<AdminUserAccount>('/admin/users/', {
       method: 'POST',
       body: JSON.stringify({ ...values, password: values.passwordHash }),
     });
   },
-  async updateAdminUser(id: string, values: Partial<AdminUserAccount> & { password?: string }) {
+  async updateAdminUser(id: string, values: Partial<Omit<AdminUserAccount, 'status' | 'approvalStatus'>> & { password?: string }) {
     return requestJson<AdminUserAccount>(`/admin/users/${encodeURIComponent(id)}/`, {
       method: 'PATCH',
       body: JSON.stringify(values),
@@ -514,6 +576,12 @@ export const eventApi = {
   },
   async deleteAdminUser(id: string) {
     await requestJson<void>(`/admin/users/${encodeURIComponent(id)}/`, { method: 'DELETE' });
+  },
+  archiveAdminUser(id: string) {
+    return requestJson<AdminUserAccount>(`/admin/users/${encodeURIComponent(id)}/archive/`, { method: 'POST' });
+  },
+  restoreAdminUser(id: string) {
+    return requestJson<AdminUserAccount>(`/admin/users/${encodeURIComponent(id)}/restore/`, { method: 'POST' });
   },
   /** Per-user event registrations. Administrator-only on the server. */
   adminUserRegistrations(id: string) {
@@ -525,7 +593,7 @@ export const eventApi = {
   // comes back. It never accumulates time locally.
 
   /** Starts (or resumes) tracking after a verified scan. */
-  startAttendanceSession(values: { token?: string; eventId?: string; method?: string; location?: LocationFix }) {
+  startAttendanceSession(values: { attendanceId?: number; token?: string; eventId?: string; method?: string; location?: LocationFix }) {
     return requestJson<AttendanceSession>('/attendance/session/', { method: 'POST', body: JSON.stringify(values) });
   },
   /** Sends one location observation; the server decides what to credit. */
@@ -622,6 +690,12 @@ export const eventApi = {
       body: JSON.stringify(input),
     });
   },
+  previewAttendance(token: string) {
+    return requestJson<AttendanceQrPreview>('/attendance/scan/preview/', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  },
   myAttendance() {
     return requestJson<PersonalAttendanceData>('/attendance/me/');
   },
@@ -645,10 +719,17 @@ export const eventApi = {
   },
 };
 
+export type Announcement = {
+  id: string;
+  title: string;
+  message: string;
+  audience: 'all' | 'student' | 'faculty';
+  createdByName: string;
+  createdAt: string;
+};
+
 export const roleLabel: Record<UserRole, string> = {
   student: 'Student',
   faculty: 'Faculty',
   admin: 'Administrator',
 };
-
-

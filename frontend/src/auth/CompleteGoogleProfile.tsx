@@ -18,12 +18,8 @@ const CompleteGoogleProfile: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { refreshSession } = useAuth();
-  const locationState = (location.state as { prefill?: GooglePrefill; selectedRole?: string } | null) ?? {};
+  const locationState = (location.state as { prefill?: GooglePrefill } | null) ?? {};
   const prefill: GooglePrefill = locationState.prefill ?? { name: '', email: '', picture: '' };
-  // Remembered only so "Cancel" returns to the screen the person came from.
-  const selectedRole = ['student', 'faculty', 'admin'].includes(locationState.selectedRole ?? '')
-    ? locationState.selectedRole
-    : null;
 
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -50,7 +46,7 @@ const CompleteGoogleProfile: React.FC = () => {
 
   const abandon = () => {
     AuthService.logout().catch(() => undefined);
-    navigate(selectedRole ? `/login/${selectedRole}` : '/login', { replace: true });
+    navigate('/login', { replace: true });
   };
 
   return (

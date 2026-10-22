@@ -1,5 +1,4 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import AccountTypeSelection from './auth/AccountTypeSelection';
 import Login from './auth/Login';
 import CompleteGoogleProfile from './auth/CompleteGoogleProfile';
 import RegistrationComplete from './auth/RegistrationComplete';
@@ -8,18 +7,20 @@ import RequireAuth from './auth/RequireAuth';
 import Portal from './pages/Portal';
 import AdminWorkspace from './pages/admin/Workspace';
 import AdminPageWrapper from './components/layout/admin/PageWrapper';
+import Signup from './auth/Signup';
+import VerifyEmail from './auth/VerifyEmail';
+import SetPassword from './auth/SetPassword';
 
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* Two-step sign in. The first screen only routes to the second; it never
-          grants a role. Each account type renders the same card with its own
-          copy, and the stored profile role still decides what opens. */}
-      <Route path="/login" element={<AccountTypeSelection />} />
-      <Route path="/login/student" element={<Login />} />
-      <Route path="/login/faculty" element={<Login />} />
-      <Route path="/login/administrator" element={<Login />} />
+      <Route path="/login" element={<Login />} />
+      {/* Older role-specific sign-in bookmarks now use the shared sign-in form. */}
+      <Route path="/login/:legacyAccountType" element={<Navigate to="/login" replace />} />
       <Route path="/login/complete-profile" element={<CompleteGoogleProfile />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/set-password" element={<SetPassword />} />
       {/* AD003.3: pending state after a signup request. No account exists yet. */}
       <Route path="/login/pending" element={<SignupPending />} />
       {/* Shown for a moment after a new Student account is created, confirming the
@@ -69,6 +70,8 @@ export default function AppRoutes() {
       <Route path="/admin/attendance" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/reports" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/feedback" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      <Route path="/admin/announcements" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      <Route path="/admin/settings" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/super" element={<Navigate to="/admin/dashboard" replace />} />
 
       <Route path="/" element={<Navigate to="/login" replace />} />

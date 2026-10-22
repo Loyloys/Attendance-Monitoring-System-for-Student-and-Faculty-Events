@@ -10,5 +10,7 @@ router.route('/admin/events/:eventId/').get(asyncRoute(controller.detail)).patch
 router.route('/admin/events/:eventId/qr/').get(asyncRoute(controller.qr)).post(asyncRoute(controller.qr));
 router.get('/admin/events/:eventId/qr/status/', asyncRoute(controller.qrStatus));
 router.post('/admin/events/:eventId/cancel/', asyncRoute(controller.cancel));
+router.post('/admin/events/:eventId/archive/', asyncRoute(controller.archive));
+router.post('/admin/events/:eventId/restore/', asyncRoute(controller.restore));
 
 export default router;
