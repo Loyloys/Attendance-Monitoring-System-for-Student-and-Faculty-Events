@@ -15,7 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { eventApi } from '../data/eventApi';
 import type { AttendanceSession, EventRecord, MonitoredEventAttendance, MonitoredSession, PersonalAttendanceData } from '../types/eventAttendance';
 
-type View = 'dashboard' | 'events' | 'attendance' | 'history' | 'monitor' | 'feedback' | 'profile' | 'announcements';
+type View = 'dashboard' | 'events' | 'attended' | 'attendance' | 'history' | 'monitor' | 'feedback' | 'profile' | 'announcements';
 const emptyAttendance: PersonalAttendanceData = { summary: { present: 0, late: 0, absent: 0, attendancePercentage: 0 }, records: [] };
 
 export default function Portal() {
@@ -23,8 +23,9 @@ export default function Portal() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedView = searchParams.get('view');
-  const initialView: View = ['dashboard', 'events', 'attendance', 'history', 'monitor', 'feedback', 'profile', 'announcements'].includes(requestedView || '') ? requestedView as View : 'dashboard';
+  const initialView: View = ['dashboard', 'events', 'attended', 'attendance', 'history', 'monitor', 'feedback', 'profile', 'announcements'].includes(requestedView || '') ? requestedView as View : 'dashboard';
   const [events, setEvents] = useState<EventRecord[]>([]);
+  const [archivedEvents, setArchivedEvents] = useState<EventRecord[]>([]);
   const [attendance, setAttendance] = useState<PersonalAttendanceData>(emptyAttendance);
   const [managedEvents, setManagedEvents] = useState<EventRecord[]>([]);
   const [monitored, setMonitored] = useState<MonitoredEventAttendance | null>(null);
@@ -80,10 +81,10 @@ export default function Portal() {
     if (!options.silent) setLoading(true);
     setError('');
     try {
-      const [eventData, attendanceData, managedData] = await Promise.all([
-        eventApi.events(), eventApi.myAttendance(), isFaculty ? eventApi.managedEvents() : Promise.resolve([]),
+      const [eventData, attendanceData, managedData, archivedData] = await Promise.all([
+        eventApi.events(), eventApi.myAttendance(), isFaculty ? eventApi.managedEvents() : Promise.resolve([]), eventApi.myArchivedEvents(),
       ]);
-      setEvents(eventData); setAttendance(attendanceData); setManagedEvents(managedData);
+      setEvents(eventData); setAttendance(attendanceData); setManagedEvents(managedData); setArchivedEvents(archivedData);
       // Restore any in-progress tracking session from the server.
       await restoreSession(eventData);
       if (!monitoredId && managedData[0]) setMonitoredId(managedData[0].id);
@@ -147,6 +148,7 @@ export default function Portal() {
     if (error) return <div className="app-card p-8"><h1 className="app-page-title">Unable to load events</h1><p className="mt-2 text-sm text-rose-600">{error}</p><button type="button" onClick={() => void refresh()} className="app-button-primary mt-5">Try again</button></div>;
     if (view === 'dashboard') return <EventDashboard user={user} events={events} attendance={attendance} onNavigate={next => go(next as View)} onScan={openScanner} onCertificate={id => void handleDownload('certificate', id)} />;
     if (view === 'events') return <EventList events={events} onRegister={handleRegister} onScan={openScanner} />;
+    if (view === 'attended') return <EventList events={[]} archivedEvents={archivedEvents} archivedOnly onRegister={handleRegister} onScan={openScanner} />;
     if (view === 'attendance') {
       // GST007: the restored session lives OUTSIDE the scanner modal, so closing
       // it or refreshing the page does not lose earned time.

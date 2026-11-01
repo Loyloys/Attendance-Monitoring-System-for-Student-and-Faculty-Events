@@ -20,6 +20,20 @@ interface Props {
    * still rejected rather than silently recording against this one.
    */
   onScan: (eventId?: string) => void;
+  /**
+   * GST016: archived events the signed-in person registered for or attended.
+   * Rendered read-only: no registration or check-in actions, only the event's
+   * date, time, venue and the person's own registration/attendance status.
+   */
+  archivedEvents?: EventRecord[];
+  /**
+   * When true, this list renders ONLY the archived ("Events Attended")
+   * section: its own header, the read-only archived events, and an empty state
+   * when there are none. Available and completed sections are hidden. Used by
+   * the separate /portal?view=attended page so archived history is not mixed
+   * with the active event directory.
+   */
+  archivedOnly?: boolean;
 }
 
 const dateLabel = eventDateLabel;
@@ -28,9 +42,19 @@ const methodLabel = (method: string) => method === 'rfid' ? 'RFID / ID' : method
 
 const sectionTitle = (status: EventRecord['status']) => status === 'completed' ? 'Completed events' : 'Available events';
 
-export default function EventList({ events, onRegister, onScan }: Props) {
+export default function EventList({ events, onRegister, onScan, archivedEvents = [], archivedOnly = false }: Props) {
   const available = events.filter(event => event.status === 'upcoming' || event.status === 'ongoing');
   const completed = events.filter(event => event.status === 'completed');
+
+  // GST016: Events Attended page — render ONLY the archived section, read-only.
+  if (archivedOnly) {
+    return <div className="space-y-6">
+      <div className="space-y-4">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="app-label">Event history</p><h1 className="app-page-title">Events Attended</h1><p className="app-page-subtitle">Events you registered for or attended that have been archived by an administrator. These are read-only records.</p></div></div>
+        {archivedEvents.length === 0 ? <div className="app-card app-empty-state"><Clock3 size={32} className="text-[#CBD5E1]" /><p className="mt-4 font-semibold text-[#334155]">You have no archived events.</p><p className="mt-2 text-sm text-[#64748B]">Events you registered for or attended appear here after an administrator archives them.</p></div> : <div className="grid gap-5 xl:grid-cols-2">{archivedEvents.map(event => renderEventCard(event, async () => { }, async () => { }))}</div>}
+      </div>
+    </div>;
+  }
 
   return <div className="space-y-6">
     {/* Available events: upcoming and active events only. */}
@@ -44,6 +68,7 @@ export default function EventList({ events, onRegister, onScan }: Props) {
       <div><p className="app-label">Past events</p><h2 className="app-page-title">{sectionTitle('completed')}</h2><p className="app-page-subtitle">These events have ended and no longer accept check-ins.</p></div>
       <div className="grid gap-5 xl:grid-cols-2">{completed.map(event => renderEventCard(event, onRegister, onScan))}</div>
     </div>}
+
   </div>;
 }
 
@@ -93,4 +118,3 @@ function renderEventCard(event: EventRecord, onRegister: (event: EventRecord) =>
 function Info({ icon: Icon, label, value }: { icon: typeof CalendarDays; label: string; value: string }) {
   return <div className="flex items-start gap-2"><Icon size={16} className="mt-0.5 shrink-0 text-[#C2410C]" /><div><p className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8]">{label}</p><p className="mt-1 text-sm text-[#334155]">{value}</p></div></div>;
 }
-

@@ -29,14 +29,21 @@ function validateVenue(data, current = null) {
   const longitude = data.longitude !== undefined ? numberOrNull(data.longitude) : current?.longitude;
   const radiusMeters = data.radiusMeters !== undefined ? numberOrNull(data.radiusMeters) : current?.radiusMeters;
 
-  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
-    throw new ValidationError({ latitude: 'Latitude must be a number between -90 and 90.' });
+  const hasAny = latitude !== null || longitude !== null || radiusMeters !== null;
+  const hasAll = latitude !== null && longitude !== null && radiusMeters !== null;
+  if (hasAny && !hasAll) {
+    throw new ValidationError({ latitude: 'Provide all coordinates and radius, or none.' });
   }
-  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
-    throw new ValidationError({ longitude: 'Longitude must be a number between -180 and 180.' });
-  }
-  if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
-    throw new ValidationError({ radiusMeters: 'Enter a check-in radius greater than 0 metres.' });
+  if (hasAll) {
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+      throw new ValidationError({ latitude: 'Latitude must be a number between -90 and 90.' });
+    }
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      throw new ValidationError({ longitude: 'Longitude must be a number between -180 and 180.' });
+    }
+    if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
+      throw new ValidationError({ radiusMeters: 'Enter a check-in radius greater than 0 metres.' });
+    }
   }
 
   let defaultRequiredAttendanceMinutes = current?.defaultRequiredAttendanceMinutes ?? null;

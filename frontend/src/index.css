@@ -433,6 +433,15 @@ html.dark .app-workspace [class~="bg-rose-50"] {
 }
 
 html.dark .app-workspace [class~="text-[#10203B]"],
+html.dark .app-workspace [class~="text-[#10203B]/30"],
+html.dark .app-workspace [class~="text-[#10203B]/40"],
+html.dark .app-workspace [class~="text-[#10203B]/50"],
+html.dark .app-workspace [class~="text-[#10203B]/55"],
+html.dark .app-workspace [class~="text-[#10203B]/60"],
+html.dark .app-workspace [class~="text-[#10203B]/65"],
+html.dark .app-workspace [class~="text-[#10203B]/70"],
+html.dark .app-workspace [class~="text-[#10203B]/75"],
+html.dark .app-workspace [class~="text-[#10203B]/80"],
 html.dark .app-workspace [class~="text-[#334155]"],
 html.dark .app-workspace [class~="text-[#475569]"],
 html.dark .app-workspace [class~="text-[#64748B]"],

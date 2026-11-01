@@ -1,6 +1,7 @@
 import { useEffect, useState, type ElementType, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
+  Archive,
   BarChart3,
   CalendarDays,
   ChevronLeft,
@@ -33,6 +34,7 @@ const navByRole: Record<UserRole, AppNavItem[]> = {
   student: [
     { label: 'Dashboard', path: '/portal?view=dashboard', icon: LayoutDashboard },
     { label: 'Available events', path: '/portal?view=events', icon: CalendarDays },
+    { label: 'Events Attended', path: '/portal?view=attended', icon: ClipboardCheck },
     { label: 'Scan event attendance', path: '/portal?view=attendance', icon: QrCode },
     { label: 'My event attendance', path: '/portal?view=history', icon: ClipboardCheck },
     { label: 'Announcements', path: '/portal?view=announcements', icon: Megaphone },
@@ -42,6 +44,7 @@ const navByRole: Record<UserRole, AppNavItem[]> = {
   faculty: [
     { label: 'Dashboard', path: '/portal?view=dashboard', icon: LayoutDashboard },
     { label: 'Available events', path: '/portal?view=events', icon: CalendarDays },
+    { label: 'Events Attended', path: '/portal?view=attended', icon: ClipboardCheck },
     { label: 'Scan event attendance', path: '/portal?view=attendance', icon: QrCode },
     { label: 'My event attendance', path: '/portal?view=history', icon: BarChart3 },
     { label: 'Announcements', path: '/portal?view=announcements', icon: Megaphone },
@@ -54,10 +57,12 @@ const navByRole: Record<UserRole, AppNavItem[]> = {
     { label: 'Signup requests', path: '/admin/signup-requests', icon: UserCheck },
     { label: 'User management', path: '/admin/users', icon: Users },
     { label: 'Event management', path: '/admin/events', icon: CalendarDays },
+    { label: 'Archive', path: '/admin/archive', icon: Archive },
     { label: 'Event attendance', path: '/admin/attendance', icon: ClipboardCheck },
     { label: 'Event reports', path: '/admin/reports', icon: FileText },
     { label: 'Feedback & evaluations', path: '/admin/feedback', icon: MessageSquare },
     { label: 'Announcements', path: '/admin/announcements', icon: Megaphone },
+    { label: 'Activity Log', path: '/admin/activity-log', icon: FileText },
     { label: 'Settings', path: '/admin/settings', icon: Users },
   ],
 };

@@ -4,6 +4,7 @@ import { evaluateFixQuality, runWithValidatedLocation, type LocationFix, type Lo
 export interface AttendanceResultPresentation {
   title: string;
   message: string;
+  qualificationNotice: string | null;
   eventName: string;
   eventDate: string;
   eventTime: string;
@@ -71,6 +72,7 @@ export function attendanceResultPresentation(
   confirmation: AttendanceConfirmation,
 ): AttendanceResultPresentation {
   const status = confirmation.status.toUpperCase();
+  const isPending = confirmation.status === 'pending';
   const location = confirmation.locationVerified
     ? `Verified at venue${typeof confirmation.locationAccuracyMeters === 'number'
       ? ` (±${Math.round(confirmation.locationAccuracyMeters)} m)`
@@ -80,10 +82,11 @@ export function attendanceResultPresentation(
     : null;
 
   return {
-    title: confirmation.status === 'pending' ? 'Check-in recorded' : 'Attendance recorded',
-    message: confirmation.status === 'pending'
+    title: 'Attendance recorded',
+    message: 'Your event attendance was recorded successfully.',
+    qualificationNotice: isPending
       ? `Qualification is pending ${confirmation.requiredAttendanceMinutes ?? 'the required'} verified in-zone minutes; the server must confirm Present or Late.`
-      : confirmation.message,
+      : null,
     eventName: confirmation.eventName,
     eventDate: confirmation.eventDate,
     eventTime: confirmation.eventTime,

@@ -39,6 +39,7 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
   } | null>(null);
   /** True while a retry is in flight, so the button cannot be double-clicked. */
   const [retryingTracking, setRetryingTracking] = useState(false);
+  const trackingAttempt = useRef(0);
   const processingRef = useRef(false);
   /**
    * Guards state updates after this component has closed or unmounted.
@@ -69,7 +70,8 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
   const initialKnownEvent = events.find(event => event.id === initialEventId);
   const knownEvent = initialKnownEvent || selectedContext;
   const knownEventNeedsLocation = Boolean(knownEvent && (
-    knownEvent.location_verification_required || (knownEvent.required_attendance_minutes ?? 0) > 0
+    knownEvent.attendance_method !== 'qr'
+    && (knownEvent.location_verification_required || (knownEvent.required_attendance_minutes ?? 0) > 0)
   ));
   const [locationReadyForEventId, setLocationReadyForEventId] = useState<string | null>(null);
   const locationReadyForKnownEvent = !knownEventNeedsLocation || locationReadyForEventId === knownEvent?.id;
@@ -134,31 +136,33 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
     await requestLocation();
   }, [isGettingLocation, knownEvent, knownEventNeedsLocation, requestLocation]);
 
-  const completeCheckIn = useCallback(async (result: AttendanceConfirmation) => {
+  const completeCheckIn = useCallback((result: AttendanceConfirmation) => {
     setConfirmation(result);
     setIsScanning(false);
     setManualCode('');
     void Promise.resolve(onRecorded(result)).catch(() => undefined);
 
+    const attempt = ++trackingAttempt.current;
     const requiresTracking = (result.requiredAttendanceMinutes ?? 0) > 0;
     setPendingTracking(requiresTracking ? { attendanceId: result.attendanceId, method: result.method } : null);
     if (!requiresTracking) return;
 
-    try {
-      const session = await startTrackingFromRecordedAttendance(
+    void startTrackingFromRecordedAttendance(
         result,
         captureLocation,
         values => eventApi.startAttendanceSession(values),
-      );
+      ).then(session => {
+      if (!alive.current || trackingAttempt.current !== attempt) return;
       setTracking(session);
       setTrackingNotice('Live tracking is active. Eligible time and qualification remain server-confirmed.');
       onSessionStarted?.(session);
-    } catch (trackingError) {
+    }).catch(trackingError => {
+      if (!alive.current || trackingAttempt.current !== attempt) return;
       setTracking(null);
       setTrackingNotice(trackingError instanceof Error
         ? trackingError.message
         : 'A fresh valid location is required before attendance tracking can begin.');
-    }
+    });
   }, [onRecorded, onSessionStarted]);
 
   const handleScan = useCallback(async (rawValue: string, source: 'camera' | 'manual' = 'camera') => {
@@ -186,7 +190,7 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
           return;
         }
         const result = await eventApi.scan({ token: value, method: 'qr' });
-        await completeCheckIn(result);
+        completeCheckIn(result);
         return;
       }
       if (source === 'camera') {
@@ -238,7 +242,7 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
         method: selectedMethod,
         location: location ?? undefined,
       });
-      await completeCheckIn(result);
+      completeCheckIn(result);
     } catch (caught) {
       setError(attendanceScanFailureMessage(caught));
       setIsScanning(false);
@@ -274,7 +278,7 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
         },
       );
       setPendingQr(null);
-      await completeCheckIn(result);
+      completeCheckIn(result);
     } catch (caught) {
       if (submitting) {
         setPendingQr(null);
@@ -289,6 +293,11 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
       setIsProcessing(false);
     }
   }, [completeCheckIn, pendingQr]);
+
+  useEffect(() => {
+    if (!pendingQr || locationStatus !== 'not-checked' || processingRef.current) return;
+    void continueQrWithLocation();
+  }, [continueQrWithLocation, locationStatus, pendingQr]);
 
   /**
    * Retries TRACKING ONLY, after the attendance check-in already succeeded.
@@ -334,6 +343,7 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
   }, [alive, onSessionStarted, pendingTracking, retryingTracking]);
 
   const reset = () => {
+    trackingAttempt.current += 1;
     setConfirmation(null);
     setError('');
     setTracking(null);
@@ -418,6 +428,9 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
               <div>
                 <p className="font-bold">{resultPresentation.title}</p>
                 <p className="text-xs">{resultPresentation.message}</p>
+                {resultPresentation.qualificationNotice && (
+                  <p className="mt-1 text-xs">{resultPresentation.qualificationNotice}</p>
+                )}
               </div>
             </div>
             <dl className="mt-5 space-y-3 text-sm">

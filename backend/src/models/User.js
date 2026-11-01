@@ -21,6 +21,9 @@ const userSchema = new mongoose.Schema({
   googleHostedDomain: { type: String, default: '', maxlength: 254 },
   googlePictureUrl: { type: String, default: '', maxlength: 1000 },
   googleLinkedAt: { type: Date, default: null },
+  // Calendar refresh credentials are encrypted at rest and are never serialized.
+  googleCalendarRefreshTokenEncrypted: { type: String, default: null, select: false },
+  googleCalendarConnectedAt: { type: Date, default: null },
   profileCompleted: { type: Boolean, default: true },
   firstName: { type: String, default: '', maxlength: 150 },
   lastName: { type: String, default: '', maxlength: 150 },

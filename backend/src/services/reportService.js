@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import FPDF from 'node-fpdf';
 import { Event, EventAttendance, EventCertificate, EventRegistration, UserProfile } from '../models/index.js';
 import { NotFoundError, PermissionError } from '../utils/errors.js';
 import { getManagedEvent } from './eventService.js';
@@ -47,14 +48,42 @@ export async function personalAttendancePdf(user) {
   const attended = summary.present + summary.late;
   const denominator = attended + summary.absent;
   const percentage = denominator ? Math.round((attended * 100) / denominator) : 0;
-  const content = await renderPdf({
-    title: 'Personal Event Attendance Report',
-    subtitle: `${user.profile.displayName} (${user.username})`,
-    summary: `Attendance percentage: ${percentage}% | Records: ${records.length}`,
-    columns: [['Event', 170], ['Date and time', 120], ['Status', 70], ['Method', 110]],
-    rows: records.map((record) => [byId.get(record.eventId).name, formatDateTime(byId.get(record.eventId).startsAt), statusLabel(record.status), methodLabel(record.method)]),
-    footer: 'COT Event Attendance',
+
+  const pdf = new FPDF();
+  pdf.SetMargins(10, 10, 10);
+  pdf.AddPage();
+  pdf.SetFont('Arial', 'B', 18);
+  pdf.SetTextColor(23, 70, 162);
+  pdf.Text(10, 12, 'Personal Event Attendance Report');
+  pdf.SetFont('Arial', '', 10);
+  pdf.SetTextColor(63, 76, 97);
+  pdf.Text(10, 18, `${user.profile.displayName} (${user.username})`);
+  pdf.Text(10, 23, `Attendance percentage: ${percentage}% | Records: ${records.length}`);
+  pdf.SetFont('Arial', 'B', 9);
+  pdf.SetTextColor(20, 25, 35);
+  let y = 32;
+  const columns = [['Event', 70], ['Date and time', 45], ['Status', 25], ['Method', 40]];
+  let x = 10;
+  columns.forEach(([label, width]) => { pdf.Text(x, y, label); x += width; });
+  pdf.Line(10, y + 4, 190, y + 4);
+  y += 8;
+  pdf.SetFont('Arial', '', 9);
+  pdf.SetTextColor(51, 58, 70);
+  records.forEach((record) => {
+    if (y > 270) {
+      pdf.AddPage();
+      y = 12;
+    }
+    const event = byId.get(record.eventId);
+    const values = [event?.name || '', new Date(event?.startsAt).toISOString().slice(0, 16).replace('T', ' '), statusLabel(record.status), methodLabel(record.method)];
+    x = 10;
+    values.forEach((value, index) => { pdf.Text(x, y, String(value ?? '')); x += columns[index][1]; });
+    y += 6;
   });
+  pdf.SetFont('Arial', '', 8);
+  pdf.SetTextColor(112, 121, 134);
+  pdf.Text(10, 285, 'COT Event Attendance', { align: 'C' });
+  const content = Buffer.from(pdf.Output('S'), 'binary');
   return { content, filename: 'personal-event-attendance.pdf' };
 }
 
@@ -86,11 +115,13 @@ export async function certificatePdf(user, certificateId) {
   if (user.profile.role !== 'student') throw new PermissionError('This action is not available for your role.');
   const certificate = await EventCertificate.findOne({ _id: certificateId, studentId: user._id }).lean();
   if (!certificate) throw new NotFoundError('Certificate not found.');
-  // GST014: a student whose persisted attendance status is Absent must be
-  // refused by the backend download endpoint. No file or URL is exposed.
+  // GST014: a student can download a participation certificate only when their
+  // persisted attendance qualification is Present. Absent, pending, late, or
+  // any other non-Present status is refused by the backend. No file or URL is
+  // exposed for ineligible students.
   const attendance = await EventAttendance.findOne({ eventId: certificate.eventId, attendeeId: user._id }).lean();
-  if (!attendance || attendance.status === 'absent') {
-    throw new PermissionError('A certificate is available only when your attendance for this event is recorded as present or late.');
+  if (!attendance || attendance.status !== 'present') {
+    throw new PermissionError('A certificate is available only when your attendance for this event is recorded as present.');
   }
   const event = await Event.findById(certificate.eventId).lean();
   const organizer = await UserProfile.findOne({ userId: event.organizerId }).lean();

@@ -2,12 +2,11 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import {
   Activity, AlertCircle, Archive, ArrowRight, BarChart3, CalendarDays, CheckCircle2, Clock,
-  ClipboardCheck, Download, Edit3, FileText, KeyRound, MessageSquare,
-  Plus, Search, ShieldCheck, Trash2, UserCheck, Users, X,
+  ClipboardCheck, Download, Edit3, FileCheck, FileText, KeyRound, MessageSquare, Plus, Search, ShieldCheck, Trash2, UserCheck, Users, X,
 } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthService } from '../../data/authService';
-import { eventApi, type AdminEventCreated, type AdminEventRequest, type AdminSignupRequest, type SavedVenue } from '../../data/eventApi';
+import { eventApi, type AdminEventCreated, type AdminEventRequest, type AdminEventUpdated, type AdminSignupRequest, type SavedVenue } from '../../data/eventApi';
 import {
   addAttendance, addUser, correctAttendance,
   eventParticipationLabel, getAttendanceCounts, getAttendancePercentage, getFormResults, getLiveEvent,
@@ -15,20 +14,21 @@ import {
   removeAttendance, removeForm, refreshAdminState, removeUser, restoreUser, reportRows, saveForm,
   updateUser, useAdminState,
   type AdminAttendanceRecord, type AdminEvent, type AdminRole, type AdminState, type AdminUserAccount,
-  type AdminUserRegistrationDetail, type AttendanceStatus, type EvaluationForm, type EventAudience,
+  type AdminUserRegistrationDetail, type AdminEventRegistrant, type AttendanceStatus, type EvaluationForm, type EventAudience,
   type AccountStatus,
 } from '../../data/adminStore';
 import Button from '../../components/common/Button';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import EventQrPanel from '../../components/common/EventQRCode';
+import GoogleCalendarLink from '../../components/event/GoogleCalendarLink';
 
 import UseMyLocation from '../../components/admin/UseMyLocation';
-import GoogleMapsVenuePicker, { type Coordinate } from '../../components/admin/GoogleMapsVenuePicker';
+import MapVenuePicker, { type Coordinate } from '../../components/admin/MapVenuePicker';
 import AdminAnnouncementsSection from './AnnouncementsSection';
 import SettingsSection from './SettingsSection';
 import { DEPARTMENTS } from '../../utils/departments';
 
-export type AdminSection = 'dashboard' | 'signups' | 'users' | 'events' | 'attendance' | 'reports' | 'feedback' | 'announcements' | 'settings';
+export type AdminSection = 'dashboard' | 'signups' | 'users' | 'events' | 'archive' | 'attendance' | 'reports' | 'feedback' | 'announcements' | 'settings';
 
 type UserForm = {
   id?: string;
@@ -252,7 +252,7 @@ function VenuePicker({ venues, selectedId, onApply, onAdd, adding, error }: {
   venues: SavedVenue[];
   selectedId: string;
   onApply: (venue: SavedVenue | null) => void;
-  onAdd: () => void;
+  onAdd: (name?: string) => void;
   adding: boolean;
   error: string;
 }) {
@@ -262,8 +262,8 @@ function VenuePicker({ venues, selectedId, onApply, onAdd, adding, error }: {
   return <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-3 sm:col-span-2">
     <div className="flex flex-wrap items-end gap-3">
       <label className="min-w-[16rem] flex-1">
-        <span className={labelClass}>Search saved venues</span>
-        <input className={inputClass} type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by saved venue name" />
+        <span className={labelClass}>Search or enter venue name</span>
+        <input className={inputClass} type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by saved venue name or type a new name" />
       </label>
       <label className="min-w-[16rem] flex-1">
         <span className={labelClass}>Saved venue</span>
@@ -283,13 +283,13 @@ function VenuePicker({ venues, selectedId, onApply, onAdd, adding, error }: {
           {filteredVenues.map(venue => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
         </select>
       </label>
-      <Button type="button" variant="glass" onClick={onAdd} disabled={adding} data-testid="add-venue">
+      <Button type="button" variant="glass" onClick={() => onAdd(query)} disabled={adding} data-testid="add-venue">
         {adding ? 'Saving…' : 'Add venue'}
       </Button>
     </div>
     {venues.length === 0 && (
       <p className="mt-3 text-xs leading-5 text-[#64748B]" data-testid="saved-venue-empty">
-        No saved venues yet. Select a location with Google Maps and save it to make it reusable here.
+        No saved venues yet. Choose a location on the map and save it to make it reusable here.
       </p>
     )}
     {selected?.note && (
@@ -301,7 +301,7 @@ function VenuePicker({ venues, selectedId, onApply, onAdd, adding, error }: {
   </div>;
 }
 
-function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, venueSelectedId, setVenueSelectedId, setVenueError, venueError, addingVenue, saveCurrentAsVenue }: { form: EventForm; setForm: React.Dispatch<React.SetStateAction<EventForm>>; onSubmit: () => void; onClose: () => void; error: string; saving: boolean; venues: SavedVenue[]; venueSelectedId: string; setVenueSelectedId: (id: string) => void; setVenueError: (message: string) => void; venueError: string; addingVenue: boolean; saveCurrentAsVenue: () => void }) {
+function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, venueSelectedId, setVenueSelectedId, setVenueError, venueError, addingVenue, saveCurrentAsVenue, mapPickerEnabled }: { form: EventForm; setForm: React.Dispatch<React.SetStateAction<EventForm>>; onSubmit: () => void; onClose: () => void; error: string; saving: boolean; venues: SavedVenue[]; venueSelectedId: string; setVenueSelectedId: (id: string) => void; setVenueError: (message: string) => void; venueError: string; addingVenue: boolean; saveCurrentAsVenue: (name?: string) => void; mapPickerEnabled: boolean }) {
   const set = <K extends keyof EventForm>(key: K, value: EventForm[K]) => setForm({ ...form, [key]: value });
   /**
    * Applies a saved venue to the form fields.
@@ -313,15 +313,15 @@ function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, 
    */
   const applyVenue = (venue: SavedVenue | null) => {
     if (!venue) return;
+    const hasCoords = venue.latitude !== null && venue.longitude !== null && venue.radiusMeters !== null;
     setForm({
       ...form,
       venue: venue.name,
-      venueLatitude: venue.latitude,
-      venueLongitude: venue.longitude,
-      venueRadiusMeters: venue.radiusMeters,
-      geofenceType: 'circle',
-      geofencePolygon: [],
-      // A starting value only, and still editable right here in the form.
+      venueLatitude: hasCoords ? venue.latitude! : form.venueLatitude,
+      venueLongitude: hasCoords ? venue.longitude! : form.venueLongitude,
+      venueRadiusMeters: hasCoords ? venue.radiusMeters! : form.venueRadiusMeters,
+      geofenceType: hasCoords ? 'circle' : form.geofenceType,
+      geofencePolygon: hasCoords ? [] : form.geofencePolygon,
       requiredAttendanceMinutes: venue.default_required_attendance_minutes === null
         ? form.requiredAttendanceMinutes
         : String(venue.default_required_attendance_minutes),
@@ -331,22 +331,6 @@ function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, 
     <label className="sm:col-span-2"><span className={labelClass}>Event name</span><input className={inputClass} value={form.name} onChange={event => set('name', event.target.value)} required /></label>
     <label className="sm:col-span-2"><span className={labelClass}>Description</span><textarea className={inputClass} rows={2} value={form.description} onChange={event => set('description', event.target.value)} required /></label>
     <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={form.date} onChange={event => set('date', event.target.value)} required /></label>
-    <label className="sm:col-span-2">
-  <span className={labelClass}>Selected venue</span>
-  <select className={inputClass} value={form.venue} onChange={event => {
-    const value = event.target.value;
-    const saved = venues.find(v => v.name === value);
-    if (saved) {
-      onApply(saved);
-    } else {
-      set('venue', value);
-    }
-  }} required>
-    <option value="">Use custom coordinates (manual lat/lon below)</option>
-    {venues.map(venue => <option key={venue.id} value={venue.name}>{venue.name}</option>)}
-    {form.venue && !venues.some(v => v.name === form.venue) && <option value={form.venue}>{form.venue}</option>}
-  </select>
-</label>
     <label><span className={labelClass}>Start time</span><input type="time" className={inputClass} value={form.start} onChange={event => set('start', event.target.value)} required /></label>
     <label><span className={labelClass}>End time</span><input type="time" className={inputClass} value={form.end} onChange={event => set('end', event.target.value)} required /></label>
     <label><span className={labelClass}>Cut-off time</span><input type="time" className={inputClass} value={form.cutoff} onChange={event => set('cutoff', event.target.value)} required /></label>
@@ -364,7 +348,7 @@ function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, 
       and inventing one here would bypass approval rather than implement it.
     */}
     <label><span className={labelClass}>Event status</span><select className={inputClass} value={form.status} onChange={event => set('status', event.target.value as EventForm['status'])}><option>Approved</option><option>Ongoing</option><option>Completed</option><option>Cancelled</option></select></label>
-    <label><span className={labelClass}>Attendance method</span><select className={inputClass} value={form.method} onChange={event => set('method', event.target.value as EventForm['method'])}><option>QR Code</option><option>Barcode</option><option>ID range</option><option>Manual attendance</option></select></label>
+    <label><span className={labelClass}>Attendance method</span><select className={inputClass} value={form.method} onChange={event => set('method', event.target.value as EventForm['method'])}><option>QR Code</option></select></label>
     <label><span className={labelClass}>Audience</span><select className={inputClass} value={form.audience} onChange={event => set('audience', event.target.value as EventAudience)}><option>All</option><option>Student</option><option>Faculty</option>{DEPARTMENTS.map(department => <option key={department}>{department}</option>)}</select></label>
     <label><span className={labelClass}>Department / group</span><input className={inputClass} value={form.department} onChange={event => set('department', event.target.value)} required /></label>
     {/*
@@ -402,7 +386,6 @@ function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, 
     <label><span className={labelClass}>Required Attendance Duration (minutes)</span><input type="number" min="1" max="1440" step="1" className={inputClass} value={form.requiredAttendanceMinutes} onChange={event => set('requiredAttendanceMinutes', event.target.value)} placeholder="Leave blank to disable tracking" /></label>
     {/* GST004: geofence. All three fields must be supplied together, or the check-in zone stays off. */}
     <VenuePicker
-      key={venueSelectedId}
       venues={venues}
       selectedId={venueSelectedId}
       onApply={(venue) => { setVenueSelectedId(venue?.id ?? ''); applyVenue(venue); }}
@@ -410,16 +393,25 @@ function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, 
       adding={addingVenue}
       error={venueError}
     />
-    <GoogleMapsVenuePicker
-      venue={form.venueLatitude !== undefined && form.venueLongitude !== undefined ? { latitude: form.venueLatitude, longitude: form.venueLongitude } : undefined}
-      polygon={form.geofencePolygon}
-      onVenueSelected={selection => {
-        setForm(current => ({ ...current, venue: selection.name, venueLatitude: selection.latitude, venueLongitude: selection.longitude }));
-        setVenueSelectedId('');
-        setVenueError('');
-      }}
-      onPolygonChanged={points => set('geofencePolygon', points)}
-    />
+    {mapPickerEnabled && (
+      <MapVenuePicker
+        venue={form.venueLatitude !== undefined && form.venueLongitude !== undefined ? { latitude: form.venueLatitude, longitude: form.venueLongitude } : undefined}
+        polygon={form.geofencePolygon}
+        onVenueSelected={selection => {
+          setForm(current => ({
+            ...current,
+            // A map click supplies coordinates without a place name, so keep any
+            // venue name the organizer already typed instead of wiping it.
+            ...(selection.name ? { venue: selection.name } : {}),
+            venueLatitude: selection.latitude,
+            venueLongitude: selection.longitude,
+          }));
+          setVenueSelectedId('');
+          setVenueError('');
+        }}
+        onPolygonChanged={points => set('geofencePolygon', points)}
+      />
+    )}
 
     <div className="sm:col-span-2">
       <UseMyLocation
@@ -462,7 +454,7 @@ function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, 
 
     {form.geofenceType === 'circle' && <label><span className={labelClass}>Check-in radius (metres)</span><input className={inputClass} type="number" min="1" max="100000" value={form.venueRadiusMeters ?? ''} onChange={event => set('venueRadiusMeters', event.target.value === '' ? undefined : Number(event.target.value))} />{form.venueRadiusMeters === undefined && <span className="mt-1 block text-xs text-[#64748B]">A radius is required to enforce the circular fence.</span>}</label>}
     {form.geofenceType === 'polygon' && <p className="text-xs leading-5 text-[#64748B]">Use “Draw fence” on the map to add at least three vertices. The server validates the shape and determines attendance eligibility; venue selection remains separate.</p>}
-    {form.geofenceType === 'circle' && <p className="text-xs leading-5 text-[#64748B]">The selected venue coordinates are the circular fence center. Saved venues and Google Maps results provide verified center coordinates.</p>}
+    {form.geofenceType === 'circle' && <p className="text-xs leading-5 text-[#64748B]">The selected venue coordinates are the circular fence center. Saved venues and map selections provide verified center coordinates.</p>}
     {error && <p className="rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-sm text-rose-200 sm:col-span-2">{error}</p>}
     <div className="flex justify-end gap-3 sm:col-span-2"><Button variant="glass" onClick={onClose} disabled={saving}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Schedule event'}</Button></div>
   </form></Modal>;
@@ -769,6 +761,83 @@ function SignupRequestsSection() {
   );
 }
 
+/**
+ * Dedicated Archive section: read-only listing of archived events loaded from
+ * the existing `/admin/archive/` backend endpoint via `adminArchivedEvents()`.
+ * Archived events are not derived from the active-events response. Details are
+ * read-only (no edit/create/cancel/archive); the existing Restore action is
+ * preserved and does not alter archive timestamps of other records.
+ */
+function ArchiveSection() {
+  const [archivedEvents, setArchivedEvents] = useState<AdminEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    eventApi.adminArchivedEvents()
+      .then(data => { if (active) setArchivedEvents(data); })
+      .catch(caught => { if (active) setError(caught instanceof Error ? caught.message : 'Archived events could not be loaded.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const restore = async (event: AdminEvent) => {
+    if (!window.confirm(`Restore ${event.name}? It will become visible to students and faculty again.`)) return;
+    try {
+      const saved = await eventApi.restoreAdminEvent(event.id);
+      setArchivedEvents(current => current.filter(item => item.id !== saved.id));
+      await refreshAdminState();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to restore event.');
+    }
+  };
+
+  if (loading) return <div className="flex min-h-64 items-center justify-center text-sm text-[#64748B]">Loading archived events…</div>;
+  if (error) return <div role="alert" className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-5 text-sm text-rose-200">{error}</div>;
+
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#64748B]">Archived events</p>
+          <h1 className="mt-2 text-3xl font-black text-[#10203B]">Archive</h1>
+          <p className="mt-1 text-sm text-[#64748B]">Archived events are hidden from students and faculty. Attendance records, registrations, and reports remain intact. Restoring an event makes it visible again.</p>
+        </div>
+      </div>
+      {archivedEvents.length > 0 ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {archivedEvents.map(event => <article key={event.id} className="app-card flex flex-col p-5 border-[#ECEDEA]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#94A3B8]">{event.id}</span>
+                  <StatusBadge status="info">{event.status}</StatusBadge>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Archived</span>
+                </div>
+                <h2 className="mt-2 text-lg font-bold text-[#10203B]">{event.name}</h2>
+                <p className="mt-1 text-sm leading-6 text-[#10203B]/50">{event.description}</p>
+              </div>
+              <span className="rounded-xl bg-[#FAF9F5] p-2.5 text-[#94A3B8]"><Archive size={19} /></span>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-xs text-[#94A3B8]">Date & time</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.date} · {event.start}–{event.end}</p></div>
+              <div><p className="text-xs text-[#94A3B8]">Venue</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.venue}</p></div>
+              <div><p className="text-xs text-[#94A3B8]">Attendance</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.method} · {event.identifierRange}</p></div>
+              <div><p className="text-xs text-[#94A3B8]">Late cut-off</p><p className="mt-1 font-semibold text-amber-200">{event.cutoff}</p></div>
+            </div>
+            <div className="mt-auto flex flex-wrap justify-end gap-2 border-t border-[#E2E3DF] pt-4">
+              <Button className="px-4 py-2 text-sm font-semibold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300" onClick={() => restore(event)}><Archive size={15} /> Restore</Button>
+            </div>
+          </article>)}
+        </div>
+      ) : (
+        <div className="mt-10"><EmptyState message="No archived events." /></div>
+      )}
+    </section>
+  );
+}
+
 function EventsSection() {
   const [serverEvents, setServerEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -786,9 +855,16 @@ function EventsSection() {
   const [venueSelectedId, setVenueSelectedId] = useState('');
   const [venueError, setVenueError] = useState('');
   const [addingVenue, setAddingVenue] = useState(false);
+  const [mapPickerEnabled, setMapPickerEnabled] = useState(false);
   // Separate from `error`: the event itself saved fine, so this must not read as
   // a failed save.
   const [qrNotice, setQrNotice] = useState('');
+  const [calendarNotice, setCalendarNotice] = useState<{ reason: string; authorizationUrl?: string } | null>(null);
+  // AD024: per-event registrants modal state.
+  const [registrantsEvent, setRegistrantsEvent] = useState<AdminEvent | null>(null);
+  const [registrants, setRegistrants] = useState<AdminEventRegistrant[] | null>(null);
+  const [registrantsLoading, setRegistrantsLoading] = useState(false);
+  const [registrantsError, setRegistrantsError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -801,6 +877,9 @@ function EventsSection() {
     eventApi.savedVenues()
       .then(data => { if (active) setVenues(data); })
       .catch(caught => { if (active) setVenueError(caught instanceof Error ? caught.message : 'Saved venues could not be loaded.'); });
+    eventApi.mapPickerSettings()
+      .then(status => { if (active) setMapPickerEnabled(status.enabled); })
+      .catch(() => { if (active) setMapPickerEnabled(false); })
     return () => { active = false; };
   }, []);
 
@@ -809,11 +888,8 @@ function EventsSection() {
     .filter(event => filter === 'All' || event.origin === filter)
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const archivedVisible = (loading ? [] : serverEvents)
-    .filter(event => Boolean(event.archivedAt))
-    .filter(event => filter === 'All' || event.origin === filter)
-    .sort((a, b) => b.date.localeCompare(a.date));
-  const openCreate = () => { setEditing(null); setForm(emptyEventForm); setError(''); setVenueSelectedId(''); setVenueError(''); };
+
+  const openCreate = () => { setEditing(null); setForm(emptyEventForm); setError(''); setCalendarNotice(null); setVenueSelectedId(''); setVenueError(''); };
   const openEdit = (event: AdminEvent) => {
     setEditing(event);
     setVenueSelectedId('');
@@ -853,6 +929,7 @@ function EventsSection() {
       geofencePolygon: event.geofencePolygon || [],
     });
     setError('');
+    setCalendarNotice(null);
   };
   /**
    * "Add venue": saves the coordinates currently typed into the form as a
@@ -864,12 +941,17 @@ function EventsSection() {
    * geofence needs all three values, so an incomplete one is refused here with
    * the same rule the event write contract uses.
    */
-  const saveCurrentAsVenue = async () => {
+  const saveCurrentAsVenue = async (typedName?: string) => {
+    const name = (typedName ?? '').trim();
     const latitude = form.venueLatitude;
     const longitude = form.venueLongitude;
     const radius = form.venueRadiusMeters;
-    if (latitude === undefined || longitude === undefined || radius === undefined) {
-      setVenueError('Enter the venue latitude, longitude and check-in radius before saving this venue.');
+    if (!name) {
+      setVenueError('Enter a venue name before saving.');
+      return;
+    }
+    if (venues.some(venue => venue.name.toLowerCase() === name.toLowerCase())) {
+      setVenueError(`A saved venue named “${name}” already exists. Choose a different name.`);
       return;
     }
     setAddingVenue(true);
@@ -877,13 +959,13 @@ function EventsSection() {
     try {
       const minutes = form.requiredAttendanceMinutes.trim();
       const saved = await eventApi.createSavedVenue({
-        name: form.venue.trim() || 'Saved venue',
+        name,
         // Carried over so the "approximate coordinates" wording survives the
         // round trip instead of having to be retyped.
         note: '',
-        latitude,
-        longitude,
-        radiusMeters: radius,
+        latitude: latitude ?? null,
+        longitude: longitude ?? null,
+        radiusMeters: radius ?? null,
         defaultRequiredAttendanceMinutes: minutes === '' ? null : Number(minutes),
       });
       setVenues(current => [...current.filter(venue => venue.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name)));
@@ -902,7 +984,7 @@ function EventsSection() {
     end: value.end,
     venue: value.venue.trim(),
     audience: value.audience.toLowerCase() as AdminEventRequest['audience'],
-    method: value.method === 'Barcode' ? 'barcode' : value.method === 'ID range' ? 'rfid' : 'qr',
+    method: 'qr',
     cutoff: value.cutoff,
     /*
       Stage 1: only `cancelled` is stored as itself. Every other display status
@@ -935,6 +1017,7 @@ function EventsSection() {
     setSaving(true);
     setError('');
     setQrNotice('');
+    setCalendarNotice(null);
     try {
       const request = requestFromForm(form);
       const saved = editing
@@ -953,6 +1036,8 @@ function EventsSection() {
       if (issuance && issuance.ok === false) {
         setQrNotice(`The event was created, but its attendance code was not issued: ${issuance.reason} Open the event's code panel and select View to retry.`);
       }
+      const calendar = (saved as AdminEventCreated | AdminEventUpdated).calendar;
+      if (calendar && !calendar.ok) setCalendarNotice({ reason: calendar.reason, authorizationUrl: calendar.authorizationUrl });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to save event.');
     } finally {
@@ -978,67 +1063,88 @@ function EventsSection() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to archive event.');
     }
+
+
   };
-  const restore = async (event: AdminEvent) => {
-    if (!window.confirm(`Restore ${event.name}? It will become visible to students and faculty again.`)) return;
+
+  const openRegistrants = async (event: AdminEvent) => {
+    setRegistrantsEvent(event);
+    setRegistrants(null);
+    setRegistrantsError('');
+    setRegistrantsLoading(true);
     try {
-      const saved = await eventApi.restoreAdminEvent(event.id);
-      setServerEvents(current => current.map(item => item.id === saved.id ? saved : item));
-      await refreshAdminState();
+      setRegistrants(await eventApi.adminEventRegistrants(event.id));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Unable to restore event.');
+      setRegistrantsError(caught instanceof Error ? caught.message : 'Unable to load registrants.');
+    } finally {
+      setRegistrantsLoading(false);
     }
   };
+  const closeRegistrants = () => {
+    setRegistrantsEvent(null);
+    setRegistrants(null);
+    setRegistrantsError('');
+  };
+
   return <section className="space-y-5"><div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#C2410C]">Scheduling · Approval · Cancellation</p><h1 className="mt-2 text-3xl font-black text-[#10203B]">Event management</h1><p className="mt-1 text-sm text-[#64748B]">Create events, review Student and Faculty submissions, and keep attendance tracking visible.</p></div><Button onClick={openCreate}><Plus size={17} /> Create event</Button></div>
     {error && !editing && <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-sm text-rose-200">{error}</p>}
     {qrNotice && <p role="status" data-testid="qr-issuance-notice" className="rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-sm text-amber-100">{qrNotice}</p>}
+    {calendarNotice && <p role="alert" data-testid="calendar-sync-notice" className="rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-sm text-amber-100">{calendarNotice.reason}{calendarNotice.authorizationUrl && <> <a className="underline" href={calendarNotice.authorizationUrl}>Connect Google Calendar</a>.</>}</p>}
     <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setFilter('All')} className={`rounded-xl px-4 py-2 text-xs font-semibold ${filter === 'All' ? 'bg-[#FFF1E6] text-[#9A3412] ring-1 ring-inset ring-[#F97316]/25' : 'bg-[#FAF9F5] text-[#10203B]/50'}`}>All events</button><button type="button" onClick={() => setFilter('Student organization')} className={`rounded-xl px-4 py-2 text-xs font-semibold ${filter === 'Student organization' ? 'bg-[#FFF1E6] text-[#9A3412] ring-1 ring-inset ring-[#F97316]/25' : 'bg-[#FAF9F5] text-[#10203B]/50'}`}>Student submissions</button><button type="button" onClick={() => setFilter('Faculty')} className={`rounded-xl px-4 py-2 text-xs font-semibold ${filter === 'Faculty' ? 'bg-[#FFF1E6] text-[#9A3412] ring-1 ring-inset ring-[#F97316]/25' : 'bg-[#FAF9F5] text-[#10203B]/50'}`}>Faculty submissions</button></div>
-    <div className="grid gap-4 lg:grid-cols-2">{visible.map(event => <article key={event.id} className={panelClass + ' p-5'}><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#94A3B8]">{event.id}</span><StatusBadge status={statusTone(event.status)}>{event.status}</StatusBadge></div><h2 className="mt-2 text-lg font-bold text-[#10203B]">{event.name}</h2><p className="mt-1 text-sm leading-6 text-[#10203B]/50">{event.description}</p></div><span className="rounded-xl bg-[#FFF1E6] p-2.5 text-[#C2410C]"><CalendarDays size={19} /></span></div><div className="mt-5 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-[#94A3B8]">Date & time</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.date} · {event.start}–{event.end}</p></div><div><p className="text-xs text-[#94A3B8]">Venue</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.venue}</p></div><div><p className="text-xs text-[#94A3B8]">Attendance</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.method} · {event.identifierRange}</p></div><div><p className="text-xs text-[#94A3B8]">Late cut-off</p><p className="mt-1 font-semibold text-amber-200">{event.cutoff}</p></div></div><div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-[#E2E3DF] pt-4"><Button variant="glass" className="px-3 py-2 text-xs" onClick={() => openEdit(event)}><Edit3 size={14} /> Edit</Button>{event.status !== 'Cancelled' && event.status !== 'Completed' && <Button variant="glass" className="px-3 py-2 text-xs text-rose-200 hover:text-rose-100" onClick={() => cancel(event)}><X size={14} /> Cancel</Button>}
+    <div className="grid gap-4 lg:grid-cols-2">{visible.map(event => <article key={event.id} className={panelClass + ' p-5'}><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#94A3B8]">{event.id}</span><StatusBadge status={statusTone(event.status)}>{event.status}</StatusBadge></div><h2 className="mt-2 text-lg font-bold text-[#10203B]">{event.name}</h2><p className="mt-1 text-sm leading-6 text-[#10203B]/50">{event.description}</p></div><span className="rounded-xl bg-[#FFF1E6] p-2.5 text-[#C2410C]"><CalendarDays size={19} /></span></div><div className="mt-5 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-[#94A3B8]">Date & time</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.date} · {event.start}–{event.end}</p></div><div><p className="text-xs text-[#94A3B8]">Venue</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.venue}</p></div><div><p className="text-xs text-[#94A3B8]">Attendance</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.method} · {event.identifierRange}</p></div><div><p className="text-xs text-[#94A3B8]">Late cut-off</p><p className="mt-1 font-semibold text-amber-200">{event.cutoff}</p></div></div><div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-[#E2E3DF] pt-4"><Button variant="glass" className="px-3 py-2 text-xs" onClick={() => openEdit(event)}><Edit3 size={14} /> Edit</Button>{event.status !== 'Cancelled' && event.status !== 'Completed' && <Button variant="glass" className="px-3 py-2 text-xs text-rose-200 hover:text-rose-100" onClick={() => cancel(event)}><X size={14} /> Cancel</Button>}{event.status !== 'Cancelled' && <Button variant="glass" className="px-3 py-2 text-xs text-emerald-200 hover:text-emerald-100" onClick={async () => { try { await eventApi.issueEventCertificates(event.id); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to issue certificates.'); } }}><FileCheck size={14} /> Certificates</Button>}
+{event.status !== 'Cancelled' && <Button variant="glass" className="px-3 py-2 text-xs text-sky-200 hover:text-sky-100" onClick={() => openRegistrants(event)}><Users size={14} /> Registrants</Button>}
 {!event.archivedAt && event.status !== 'Cancelled' && <Button className="px-4 py-2 text-sm font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300" onClick={() => archive(event)}><Archive size={15} /> Archive</Button>}
-{event.archivedAt && <Button className="px-4 py-2 text-sm font-semibold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300" onClick={() => restore(event)}><Archive size={15} /> Restore</Button>}</div>{/* GST006: the QR panel is its own block so it never inherits the button row's flex layout. */}{event.method === 'QR Code' && <EventQrPanel eventId={event.id} eventName={event.name} admin />}</article>)}</div>
+</div>{/* GST006: the QR panel is its own block so it never inherits the button row's flex layout. */}{event.method === 'QR Code' && <EventQrPanel eventId={event.id} eventName={event.name} admin />}</article>)}</div>
     {visible.length === 0 && <EmptyState message="No events match this submission filter." />}
 
-    {/* Archived Events section - separated from active events */}
-    {archivedVisible.length > 0 ? (
-      <section className="mt-10 border-t border-[#E2E3DF] pt-6">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#64748B]">Archived events</p>
-            <h2 className="mt-1 text-2xl font-bold text-[#10203B]">Archived Events</h2>
-            <p className="mt-1 text-sm text-[#64748B]">Archived events are hidden from students and faculty. Attendance records, registrations, and reports remain accessible.</p>
+
+    {editing !== undefined && <EventEditor form={form} setForm={setForm} onSubmit={() => void save()} onClose={() => setEditing(undefined)} error={error} saving={saving} venues={venues} venueSelectedId={venueSelectedId} setVenueSelectedId={setVenueSelectedId} venueError={venueError} addingVenue={addingVenue} saveCurrentAsVenue={saveCurrentAsVenue} setVenueError={setVenueError} mapPickerEnabled={mapPickerEnabled} />}
+    {registrantsEvent && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-[#10203B]">Registrants for {registrantsEvent.name}</h2>
+              {registrants && <p className="text-xs text-[#64748B]">{registrants.length} registered</p>}
+            </div>
+            <button type="button" onClick={closeRegistrants} className="rounded-xl p-2 text-[#64748B] hover:bg-[#FAF9F5]"><X size={18} /></button>
           </div>
+          {registrantsLoading && <p className="text-sm text-[#64748B]">Loading registrants…</p>}
+          {registrantsError && <p role="alert" className="text-sm text-rose-600">{registrantsError}</p>}
+          {!registrantsLoading && !registrantsError && registrants && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#E2E3DF] text-left text-xs text-[#64748B]">
+                    <th className="pb-2 pr-4">Name</th>
+                    <th className="pb-2 pr-4">Role</th>
+                    <th className="pb-2 pr-4">Department</th>
+                    <th className="pb-2 pr-4">Registration</th>
+                    <th className="pb-2 pr-4">Confirmation</th>
+                    <th className="pb-2">Registered at</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E2E3DF]">
+                  {registrants.map((r) => (
+                    <tr key={r.attendee.id || r.attendee.accountId}>
+                      <td className="py-2 pr-4 font-semibold text-[#10203B]">{r.attendee.name || r.attendee.email}</td>
+                      <td className="py-2 pr-4 text-[#64748B]">{r.attendee.role}</td>
+                      <td className="py-2 pr-4 text-[#64748B]">{r.attendee.department || '-'}</td>
+                      <td className="py-2 pr-4"><StatusBadge status={r.registrationStatus === 'registered' ? 'success' : 'info'}>{r.registrationStatus}</StatusBadge></td>
+                      <td className="py-2 pr-4"><StatusBadge status={r.confirmationStatus ? (r.confirmationStatus === 'Present' ? 'success' : 'warning') : 'info'}>{r.confirmationStatus ?? 'Not yet'}</StatusBadge></td>
+                      <td className="py-2 text-xs text-[#64748B]">{r.registeredAt ? new Date(r.registeredAt).toLocaleString() : '-'}</td>
+                    </tr>
+                  ))}
+                  {registrants.length === 0 && (
+                    <tr><td colSpan={6} className="py-4 text-center text-[#64748B]">No registrants yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-        <div className="grid gap-4 lg:grid-cols-2">
-          {archivedVisible.map(event => <article key={event.id} className="app-card flex flex-col p-5 border-[#ECEDEA]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#94A3B8]">{event.id}</span>
-                  <StatusBadge status="info">{event.status}</StatusBadge>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Archived</span>
-                </div>
-                <h2 className="mt-2 text-lg font-bold text-[#10203B]">{event.name}</h2>
-                <p className="mt-1 text-sm leading-6 text-[#10203B]/50">{event.description}</p>
-              </div>
-              <span className="rounded-xl bg-[#FAF9F5] p-2.5 text-[#94A3B8]"><Archive size={19} /></span>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-              <div><p className="text-xs text-[#94A3B8]">Date & time</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.date} · {event.start}–{event.end}</p></div>
-              <div><p className="text-xs text-[#94A3B8]">Venue</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.venue}</p></div>
-              <div><p className="text-xs text-[#94A3B8]">Attendance</p><p className="mt-1 font-semibold text-[#10203B]/75">{event.method} · {event.identifierRange}</p></div>
-              <div><p className="text-xs text-[#94A3B8]">Late cut-off</p><p className="mt-1 font-semibold text-amber-200">{event.cutoff}</p></div>
-            </div>
-            <div className="mt-auto flex flex-wrap justify-end gap-2 border-t border-[#E2E3DF] pt-4">
-              <Button variant="glass" className="px-3 py-2 text-xs" onClick={() => openEdit(event)}><Edit3 size={14} /> Edit</Button>
-              <Button className="px-4 py-2 text-sm font-semibold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300" onClick={() => restore(event)}><Archive size={15} /> Restore</Button>
-            </div>
-          </article>)}
-        </div>
-      </section>
-    ) : (
-      <div className="mt-10"><EmptyState message="No archived events." /></div>
+      </div>
     )}
-    {editing !== undefined && <EventEditor form={form} setForm={setForm} onSubmit={() => void save()} onClose={() => setEditing(undefined)} error={error} saving={saving} venues={venues} venueSelectedId={venueSelectedId} setVenueSelectedId={setVenueSelectedId} venueError={venueError} addingVenue={addingVenue} saveCurrentAsVenue={() => void saveCurrentAsVenue()} setVenueError={setVenueError} />}
   </section>;
 }
 
@@ -1102,7 +1208,17 @@ function DashboardSection({ state, onNavigate }: { state: AdminState; onNavigate
   const live = getLiveEvent(state);
   const counts = live ? getAttendanceCounts(live.id, state) : { present: 0, late: 0, absent: 0, total: 0 };
   const upcoming = state.events.filter(event => event.status === 'Approved');
-  return <section className="space-y-6"><div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#C2410C]">Administrator workspace</p><h1 className="mt-2 text-3xl font-black text-[#10203B]">Attendance dashboard</h1><p className="mt-1 text-sm text-[#64748B]">Monitor live attendance, manage accounts, schedule events, and review reports.</p></div><div className="flex flex-wrap gap-2"><Button variant="glass" onClick={() => onNavigate('users')}><Users size={16} /> Users</Button><Button onClick={() => onNavigate('events')}><Plus size={16} /> Create event</Button></div></div>
+  const [calendarStatus, setCalendarStatus] = useState<{ configured: boolean; connected: boolean; enabled: boolean; settingAvailable: boolean; missing: string[] } | null>(null);
+  useEffect(() => {
+    let active = true;
+    eventApi.googleCalendarStatus()
+      .then(status => { if (active) setCalendarStatus(status); })
+      .catch(() => { if (active) setCalendarStatus({ configured: false, connected: false, enabled: false, settingAvailable: false, missing: [] }); });
+    return () => { active = false; };
+  }, []);
+  const calendarUrl = 'https://calendar.google.com/calendar/u/0/r';
+  const calendarEnabled = calendarStatus?.enabled !== false;
+  return <section className="space-y-6"><div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#C2410C]">Administrator workspace</p><h1 className="mt-2 text-3xl font-black text-[#10203B]">Attendance dashboard</h1><p className="mt-1 text-sm text-[#64748B]">Monitor live attendance, manage accounts, schedule events, and review reports.</p></div><div className="flex flex-wrap gap-2"><GoogleCalendarLink url={calendarEnabled && calendarStatus?.connected ? calendarUrl : null} reason={calendarEnabled ? 'permission_unavailable' : 'calendar_disabled'} authorizeUrl={calendarEnabled && calendarStatus?.configured && !calendarStatus.connected ? eventApi.googleCalendarAuthorizeUrl() : undefined} loading={!calendarStatus} /><Button variant="glass" onClick={() => onNavigate('users')}><Users size={16} /> Users</Button><Button onClick={() => onNavigate('events')}><Plus size={16} /> Create event</Button></div></div>
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Present" value={counts.present} tone="green" icon={CheckCircle2} /><Metric label="Late" value={counts.late} tone="amber" icon={Activity} /><Metric label="Absent" value={counts.absent} tone="rose" icon={AlertCircle} /><Metric label="Active events" value={state.events.filter(event => event.status === 'Ongoing' || event.status === 'Approved').length} tone="blue" icon={CalendarDays} /></div>
     <div className="grid gap-5 xl:grid-cols-[1.3fr_1fr]"><section className={panelClass + ' p-5'}><div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#94A3B8]">Live event</p><h2 className="mt-1 text-xl font-bold text-[#10203B]">{live?.name || 'No ongoing event'}</h2></div>{live && <StatusBadge status="warning">{live.status}</StatusBadge>}</div>{live ? <><div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4"><div><p className="text-xs text-[#94A3B8]">Venue</p><p className="mt-1 font-semibold text-[#10203B]/75">{live.venue}</p></div><div><p className="text-xs text-[#94A3B8]">Date</p><p className="mt-1 font-semibold text-[#10203B]/75">{live.date}</p></div><div><p className="text-xs text-[#94A3B8]">Cut-off</p><p className="mt-1 font-semibold text-amber-200">{live.cutoff}</p></div><div><p className="text-xs text-[#94A3B8]">Method</p><p className="mt-1 font-semibold text-[#10203B]/75">{live.method}</p></div></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-[#FAF9F5]"><div className="h-full rounded-full bg-[#C2410C]" style={{ width: `${counts.total ? Math.round(((counts.present + counts.late) / counts.total) * 100) : 0}%` }} /></div><p className="mt-2 text-xs text-[#64748B]">{counts.total} attendance records update as scans are recorded.</p><Button variant="glass" className="mt-5" onClick={() => onNavigate('attendance')}>Open attendance monitor <ArrowRight size={15} /></Button></> : <EmptyState message="Create or approve an event to begin live attendance monitoring." />}</section>
       {/*
@@ -1294,7 +1410,7 @@ export default function AdminWorkspace() {
   // `/admin/signup-requests` (AD003.3), so a direct depth link or refresh must
   // be normalised before comparison / routing.
   const section: AdminSection = requested === 'signup-requests' ? 'signups' :
-                                requested === 'users' || requested === 'events' || requested === 'attendance' || requested === 'reports' || requested === 'feedback' || requested === 'announcements' || requested === 'settings' || requested === 'signups' ? requested : 'dashboard';
+                                requested === 'users' || requested === 'events' || requested === 'archive' || requested === 'attendance' || requested === 'reports' || requested === 'feedback' || requested === 'announcements' || requested === 'settings' || requested === 'signups' ? requested : 'dashboard';
   const go = (next: AdminSection) => {
     // AD003.3 keeps the public URL as `/admin/signup-requests`, not `/admin/signups`.
     const path = next === 'dashboard' ? 'dashboard' : next === 'signups' ? 'signup-requests' : next;
@@ -1303,5 +1419,5 @@ export default function AdminWorkspace() {
   const user = AuthService.getCurrentUser();
   if (loadingState) return <div className="flex min-h-64 items-center justify-center text-sm text-[#64748B]">Loading administrator workspace…</div>;
   if (workspaceError) return <div role="alert" className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-5 text-sm text-rose-200">{workspaceError}</div>;
-  return <div className="min-h-full"><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#94A3B8]">Signed in as {user?.name || 'Administrator'}</p><p className="mt-1 text-sm text-[#64748B]">Required Admin functions · functional requirements workspace</p></div><div className="flex items-center gap-3"><p role="status" data-testid="admin-sync-status" className={`text-xs ${syncFailed ? 'font-semibold text-amber-600' : pollExhausted ? 'font-semibold text-amber-600' : 'text-[#94A3B8]'}`}>{syncFailed ? 'Showing the last loaded data \u2014 the latest refresh failed' : pollExhausted ? 'Live updates paused \u2014 refresh to resume' : lastSyncedAt ? `Live \u00b7 updated ${lastSyncedAt.toLocaleTimeString()}` : 'Loading\u2026'}</p><button type="button" onClick={() => void refreshNow()} data-testid="admin-refresh-now" className="shrink-0 rounded-lg border border-[#E2E3DF] px-2.5 py-1 text-[11px] font-semibold text-[#475569] transition hover:bg-[#FAF9F5] hover:text-[#10203B]">Refresh now</button></div><nav className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-[#E2E3DF] bg-[#FAF9F5] p-1">{([{ id: 'dashboard', label: 'Dashboard' }, { id: 'signups', label: 'Signups' }, { id: 'users', label: 'Users' }, { id: 'events', label: 'Events' }, { id: 'attendance', label: 'Attendance' }, { id: 'reports', label: 'Reports' }, { id: 'feedback', label: 'Feedback' }, { id: 'announcements', label: 'Announcements' }, { id: 'settings', label: 'Settings' }] as const).map(item => <button type="button" key={item.id} onClick={() => go(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${section === item.id ? 'bg-[#FFF1E6] text-[#C2410C]' : 'text-[#64748B] hover:bg-[#FAF9F5] hover:text-[#10203B]'}`}>{item.label}</button>)}</nav></div>{section === 'dashboard' && <DashboardSection state={state} onNavigate={go} />}{section === 'signups' && <SignupRequestsSection />}{section === 'users' && <UsersSection users={state.users} />}{section === 'events' && <EventsSection />}{section === 'attendance' && <AttendanceSection events={state.events} attendance={state.attendance} users={state.users} />}{section === 'reports' && <ReportsSection state={state} />}{section === 'feedback' && <FeedbackSection state={state} />}{section === 'announcements' && <AdminAnnouncementsSection />}{section === 'settings' && <SettingsSection />}</div>;
+  return <div className="min-h-full"><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#94A3B8]">Signed in as {user?.name || 'Administrator'}</p><p className="mt-1 text-sm text-[#64748B]">Required Admin functions · functional requirements workspace</p></div><div className="flex items-center gap-3"><p role="status" data-testid="admin-sync-status" className={`text-xs ${syncFailed ? 'font-semibold text-amber-600' : pollExhausted ? 'font-semibold text-amber-600' : 'text-[#94A3B8]'}`}>{syncFailed ? 'Showing the last loaded data \u2014 the latest refresh failed' : pollExhausted ? 'Live updates paused \u2014 refresh to resume' : lastSyncedAt ? `Live \u00b7 updated ${lastSyncedAt.toLocaleTimeString()}` : 'Loading\u2026'}</p><button type="button" onClick={() => void refreshNow()} data-testid="admin-refresh-now" className="shrink-0 rounded-lg border border-[#E2E3DF] px-2.5 py-1 text-[11px] font-semibold text-[#475569] transition hover:bg-[#FAF9F5] hover:text-[#10203B]">Refresh now</button></div><nav className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-[#E2E3DF] bg-[#FAF9F5] p-1">{([{ id: 'dashboard', label: 'Dashboard' }, { id: 'signups', label: 'Signups' }, { id: 'users', label: 'Users' }, { id: 'events', label: 'Events' }, { id: 'archive', label: 'Archive' }, { id: 'attendance', label: 'Attendance' }, { id: 'reports', label: 'Reports' }, { id: 'feedback', label: 'Feedback' }, { id: 'announcements', label: 'Announcements' }, { id: 'settings', label: 'Settings' }] as const).map(item => <button type="button" key={item.id} onClick={() => go(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${section === item.id ? 'bg-[#FFF1E6] text-[#C2410C]' : 'text-[#64748B] hover:bg-[#FAF9F5] hover:text-[#10203B]'}`}>{item.label}</button>)}</nav></div>{section === 'dashboard' && <DashboardSection state={state} onNavigate={go} />}{section === 'signups' && <SignupRequestsSection />}{section === 'users' && <UsersSection users={state.users} />}{section === 'events' && <EventsSection />}{section === 'archive' && <ArchiveSection />}{section === 'attendance' && <AttendanceSection events={state.events} attendance={state.attendance} users={state.users} />}{section === 'reports' && <ReportsSection state={state} />}{section === 'feedback' && <FeedbackSection state={state} />}{section === 'announcements' && <AdminAnnouncementsSection />}{section === 'settings' && <SettingsSection />}</div>;
 }

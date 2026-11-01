@@ -1,14 +1,16 @@
-import { RevokedIdentifier, User, UserProfile } from '../models/index.js';
+import { AuditLog, RevokedIdentifier, User, UserProfile } from '../models/index.js';
 import { verifyDjangoPassword } from '../utils/passwords.js';
 import { stableCaseInsensitive } from '../utils/identifiers.js';
-import { ValidationError } from '../utils/errors.js';
+import { AppError, ValidationError } from '../utils/errors.js';
 import { clearLoginFailures, loginIsLocked, recordLoginFailure } from './loginThrottle.js';
 import { serializeAuthUser } from './userSerializer.js';
 import { isApproved } from '../middleware/authentication.js';
+import { recaptchaStatus } from './systemSettingsService.js';
 
 export async function authenticate(request, body) {
   const identifier = typeof body.identifier === 'string' ? body.identifier.trim() : body.identifier;
   const password = body.password;
+  const recaptchaToken = typeof body.recaptchaToken === 'string' ? body.recaptchaToken : '';
   if (typeof identifier !== 'string' || typeof password !== 'string') {
     throw new ValidationError({
       ...(typeof identifier !== 'string' ? { identifier: 'A string value is required.' } : {}),
@@ -17,6 +19,19 @@ export async function authenticate(request, body) {
   }
   if (identifier.length < 3 || identifier.length > 150) throw new ValidationError({ identifier: 'Enter a valid ID or username.' });
   if (password.length > 1024) throw new ValidationError({ password: 'Password is too long.' });
+
+  // reCAPTCHA is enforced only when an Administrator has enabled it in Settings.
+  const captchaSetting = await recaptchaStatus();
+  if (!captchaSetting.available) {
+    throw new AppError(503, 'Could not confirm the reCAPTCHA setting. Please try again.');
+  }
+  if (captchaSetting.enabled) {
+    if (!recaptchaToken) {
+      throw new ValidationError({ detail: 'Please complete the reCAPTCHA before signing in.' });
+    }
+    await verifyRecaptchaToken(recaptchaToken);
+  }
+
   if (await loginIsLocked(request, identifier)) {
     const error = new Error('Too many failed attempts. Try again in 30 seconds.');
     error.status = 429;
@@ -112,11 +127,42 @@ export async function updateProfile(user, data) {
     updates.email = email;
   }
 
+  const changedFields = [];
+  if (Object.hasOwn(updates, 'email')) changedFields.push('email');
+  if (updates.profile?.displayName) changedFields.push('name');
+  if (Object.hasOwn(updates.profile || {}, 'phone')) changedFields.push('phone');
+
   if (Object.hasOwn(updates, 'email')) {
     await User.updateOne({ _id: user._id }, { $set: { email: updates.email, emailNormalized: updates.email } });
   }
   if (updates.profile) await UserProfile.updateOne({ userId: user._id }, { $set: updates.profile });
+  if (changedFields.length) {
+    await AuditLog.create({
+      actorId: user._id,
+      actorName: user.name || user.username || '',
+      action: 'account_updated',
+      targetUserId: user._id,
+      targetAccountId: user.accountId || user.username || '',
+      detail: `Updated profile information (${changedFields.join(', ')})`,
+    });
+  }
   const updatedUser = await User.findById(user._id).lean();
   const updatedProfile = await UserProfile.findOne({ userId: user._id }).lean();
   return { ...updatedUser, profile: updatedProfile };
+}
+
+async function verifyRecaptchaToken(token) {
+  const secretKey = process.env.RECAPTCHA_SECRET_KEY;
+  if (!secretKey) throw new ValidationError({ detail: 'reCAPTCHA is not configured on the server.' });
+
+  const response = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `secret=${encodeURIComponent(secretKey)}&response=${encodeURIComponent(token)}`,
+  });
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new ValidationError({ detail: 'reCAPTCHA verification failed. Please try again.' });
+  }
 }

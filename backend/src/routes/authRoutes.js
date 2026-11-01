@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as controller from '../controllers/authController.js';
-import { requireAuthentication } from '../middleware/authentication.js';
+import { requireAuthentication, requireRole } from '../middleware/authentication.js';
 import { requireObjectBody } from '../controllers/authController.js';
 import { loginLimiter, googleAuthLimiter, emailActionLimiter } from '../middleware/rateLimits.js';
 import { asyncRoute } from '../utils/errors.js';
@@ -24,5 +24,10 @@ router.post('/auth/google/session/', googleAuthLimiter, requireObjectBody, async
 router.post('/auth/google/', googleAuthLimiter, requireObjectBody, asyncRoute(controller.googleAuthenticate));
 router.post('/auth/google/complete-profile/', requireObjectBody, asyncRoute(controller.googleCompleteProfile));
 router.post('/auth/google/link/', requireAuthentication, requireObjectBody, asyncRoute(controller.googleLink));
+router.get('/auth/google/calendar/authorize/', requireAuthentication, requireRole('admin'), asyncRoute(controller.googleCalendarAuthorize));
+router.get('/auth/google/calendar/status/', requireAuthentication, asyncRoute(controller.googleCalendarStatus));
+// The callback uses the signed session state and does not need a second login
+// prompt; its authorization code is exchanged only on the backend.
+router.get('/auth/google/calendar/callback/', asyncRoute(controller.googleCalendarCallback));
 
 export default router;

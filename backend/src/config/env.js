@@ -98,6 +98,12 @@ export const env = Object.freeze({
   sqliteSource: path.resolve(sourceDir, process.env.SQLITE_SOURCE || '../legacy/django/db.sqlite3'),
   migrationBackupDir: path.resolve(sourceDir, process.env.MIGRATION_BACKUP_DIR || './backups'),
   googleClientId: (process.env.GOOGLE_CLIENT_ID || '').trim(),
+  googleClientSecret: (process.env.GOOGLE_CLIENT_SECRET || '').trim(),
+  googleCalendarRedirectUri: (
+    process.env.GOOGLE_CALENDAR_REDIRECT_URI
+    || (nodeEnvironment === 'production' ? '' : 'http://localhost:8000/api/auth/google/calendar/callback/')
+  ).trim(),
+  googleCalendarId: (process.env.GOOGLE_CALENDAR_ID || 'primary').trim(),
   googleAllowedIssuers: (process.env.GOOGLE_ALLOWED_ISSUERS || 'accounts.google.com,https://accounts.google.com')
     .split(',')
     .map((issuer) => issuer.trim())

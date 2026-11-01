@@ -14,11 +14,13 @@ const router = Router();
 // see their status), /auth/logout, and the Google flow itself. Everything
 // mounted after this line is an attendance feature and requires approval.
 router.use(authRoutes);
+// The read-only reCAPTCHA capability endpoint is needed by the anonymous login
+// page. Admin mutations remain protected inside adminRoutes.
+router.use(adminRoutes);
 router.use(requireApprovedAccount);
 router.use(adminEventRoutes);
 router.use(venueRoutes);
 router.use(eventRoutes);
 router.use(reportRoutes);
-router.use(adminRoutes);
 
 export default router;

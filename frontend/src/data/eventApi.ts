@@ -10,7 +10,7 @@ import type {
   PersonalAttendanceData,
   UserRole,
 } from '../types/eventAttendance';
-import type { AdminEvent, AdminState, AdminUserAccount, AdminUserRegistrationDetail, AdminAttendanceRecord, AttendanceStatus, EvaluationForm } from './adminStore';
+import type { AdminEvent, AdminEventRegistrant, AdminState, AdminUserAccount, AdminUserRegistrationDetail, AdminAttendanceRecord, AttendanceStatus, EvaluationForm } from './adminStore';
 import type { LocationFix } from '../utils/eventQr';
 
 /**
@@ -80,8 +80,24 @@ export type EventQrIssuance =
   | { ok: true; qr: EventQr }
   | { ok: false; reason: string };
 
+export interface AdminEventCertificateIssuance {
+  /** Number of certificates that were present in the database after this request. */
+  issued: number;
+  /** The certificates matched or created by this issuance request. */
+  certificates: Array<{
+    eventId: string;
+    studentId: string;
+    reference: string;
+    issuedAt: string;
+  }>;
+}
+
 /** The admin event-create response: the event fields, plus the issuance outcome. */
-export type AdminEventCreated = AdminEvent & { qr?: EventQrIssuance };
+export type CalendarSync =
+  | { ok: true }
+  | { ok: false; reason: string; authorizationUrl?: string };
+export type AdminEventCreated = AdminEvent & { qr?: EventQrIssuance; calendar?: CalendarSync };
+export type AdminEventUpdated = AdminEvent & { calendar?: CalendarSync };
 
 export type AdminEventRequest = {
   name: string;
@@ -128,9 +144,9 @@ export type SavedVenue = {
   name: string;
   /** Free text, shown next to the venue so approximate coordinates stay labelled as such. */
   note: string;
-  latitude: number;
-  longitude: number;
-  radiusMeters: number;
+  latitude: number | null;
+  longitude: number | null;
+  radiusMeters: number | null;
   default_required_attendance_minutes: number | null;
   isolated_test_record: boolean;
   created_at: string;
@@ -139,9 +155,9 @@ export type SavedVenue = {
 export type SavedVenueRequest = {
   name: string;
   note?: string;
-  latitude: number;
-  longitude: number;
-  radiusMeters: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  radiusMeters?: number | null;
   defaultRequiredAttendanceMinutes?: number | null;
   isolatedTestRecord?: boolean;
 };
@@ -380,10 +396,10 @@ async function download(path: string, filename: string) {
 }
 
 export const eventApi = {
-  async login(identifier: string, password: string) {
+  async login(identifier: string, password: string, recaptchaToken?: string) {
     return requestJson<AuthUser>('/auth/login/', {
       method: 'POST',
-      body: JSON.stringify({ identifier, password }),
+      body: JSON.stringify({ identifier, password, recaptchaToken }),
     });
   },
   session() {
@@ -473,6 +489,39 @@ export const eventApi = {
       body: JSON.stringify({ enabled }),
     });
   },
+  async recaptchaSettings() {
+    return requestJson<{ enabled: boolean; available: boolean; configured: boolean }>('/admin/settings/recaptcha/');
+  },
+  async updateRecaptchaSettings(enabled: boolean) {
+    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/recaptcha/', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  async mapPickerSettings() {
+    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/map-picker/');
+  },
+  async googleCalendarStatus() {
+    return requestJson<{ configured: boolean; connected: boolean; enabled: boolean; settingAvailable: boolean; missing: string[] }>('/auth/google/calendar/status/');
+  },
+  async googleCalendarSettings() {
+    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/google-calendar/');
+  },
+  async updateGoogleCalendarSettings(enabled: boolean) {
+    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/google-calendar/', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  googleCalendarAuthorizeUrl() {
+    return `${API_ROOT}/auth/google/calendar/authorize/`;
+  },
+  async updateMapPickerSettings(enabled: boolean) {
+    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/map-picker/', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
   adminAnnouncements() {
     return requestJson<Announcement[]>('/admin/announcements/');
   },
@@ -507,7 +556,7 @@ export const eventApi = {
     });
   },
   async updateAdminEvent(id: string, values: Partial<AdminEventRequest>) {
-    return requestJson<AdminEvent>(`/admin/events/${id}/`, {
+    return requestJson<AdminEventUpdated>(`/admin/events/${id}/`, {
       method: 'PATCH',
       body: JSON.stringify(values),
     });
@@ -526,6 +575,9 @@ export const eventApi = {
     return requestJson<AdminEvent>(`/admin/events/${encodeURIComponent(id)}/restore/`, {
       method: 'POST',
     });
+  },
+  async adminArchivedEvents() {
+    return requestJson<AdminEvent[]>(`/admin/archive/`);
   },
   /**
    * Saved venues are read for the create/edit event form only. Applying one is
@@ -639,6 +691,11 @@ export const eventApi = {
   managedEvents() {
     return requestJson<EventRecord[]>('/events/managed/');
   },
+  /** GST016: archived events the signed-in student/faculty member registered for or attended. Read-only. */
+  async myArchivedEvents() {
+    return requestJson<EventRecord[]>('/events/archived/');
+  },
+
   async register(eventId: string) {
     return requestJson<{ registered: boolean; created: boolean; message: string }>(
       `/events/${eventId}/registrations/`,
@@ -714,9 +771,27 @@ export const eventApi = {
   downloadEventAttendance(eventId: string) {
     return download(`/reports/events/${eventId}.pdf`, 'event-attendance-report.pdf');
   },
+  async issueEventCertificates(eventId: string) {
+    return requestJson<AdminEventCertificateIssuance>(
+      `/admin/events/${encodeURIComponent(eventId)}/certificates/`,
+      { method: 'POST' },
+    );
+  },
+  /**
+   * AD024: Registrants for an event, with registration and confirmation status.
+   * Administrator-only on the server.
+   */
+  adminAuditLog(limit = 50) {
+    return requestJson<any[]>(`/admin/audit-log/?limit=${limit}`);
+  },
+  adminEventRegistrants(eventId: string) {
+    return requestJson<AdminEventRegistrant[]>(`/admin/events/${encodeURIComponent(eventId)}/registrants/`);
+  },
+
   downloadCertificate(certificateId: string) {
     return download(`/certificates/${certificateId}/download/`, 'event-participation-certificate.pdf');
   },
+
 };
 
 export type Announcement = {

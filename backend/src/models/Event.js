@@ -11,6 +11,8 @@ const eventSchema = new mongoose.Schema({
   venue: { type: String, required: true, maxlength: 180 },
   audience: { type: String, enum: EVENT_AUDIENCES, default: 'all', required: true },
   organizerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  googleCalendarEventId: { type: String, default: null, maxlength: 512 },
+  googleCalendarHtmlLink: { type: String, default: null, maxlength: 2048 },
   supervisors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   status: { type: String, enum: EVENT_STATUSES, default: 'published', required: true, index: true },
   // Whether a Student must register BEFORE checking in. This gates the scan and

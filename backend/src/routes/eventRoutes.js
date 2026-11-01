@@ -8,6 +8,7 @@ router.use(requireAuthentication);
 
 router.get('/events/managed/', requireRole('faculty'), asyncRoute(controller.managedEvents));
 router.get('/events/', asyncRoute(controller.listEvents));
+router.get('/events/archived/', requireRole('student', 'faculty'), asyncRoute(controller.listMyArchived));
 router.get('/events/:eventId/', asyncRoute(controller.eventDetail));
 router.post('/events/:eventId/registrations/', requireRole('student'), asyncRoute(controller.register));
 router.post('/attendance/scan/preview/', requireRole('student', 'faculty'), asyncRoute(controller.previewAttendance));

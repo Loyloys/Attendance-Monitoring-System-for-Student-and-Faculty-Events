@@ -64,6 +64,18 @@ const CANCELLED = new Set(['popup_closed_by_user', 'popup_closed_user_cancels', 
 export default function GoogleSignInButton({ clientId, nonce, text, onCredential, onError }: GoogleButtonProps) {
   const container = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
+  );
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const update = () => setIsDark(root.classList.contains('dark'));
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +103,7 @@ export default function GoogleSignInButton({ clientId, nonce, text, onCredential
         container.current.innerHTML = '';
         google.accounts.id.renderButton(container.current, {
           type: 'standard',
-          theme: 'filled_black',
+          theme: isDark ? 'filled_black' : 'outline',
           size: 'large',
           shape: 'rectangular',
           width: Math.min(container.current.clientWidth || 400, 400),
@@ -103,7 +115,7 @@ export default function GoogleSignInButton({ clientId, nonce, text, onCredential
       .catch((error: Error) => onError(error.message));
 
     return () => { cancelled = true; };
-  }, [clientId, nonce, text, onCredential, onError]);
+  }, [clientId, nonce, text, onCredential, onError, isDark]);
 
   return <div ref={container} className={`flex min-h-[44px] justify-center ${ready ? '' : 'opacity-0'}`} aria-busy={!ready} />;
 }

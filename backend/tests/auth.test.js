@@ -50,6 +50,54 @@ test('logs in, restores the session, and logs out', async () => {
   assert.equal((await agent.get('/api/auth/me/')).status, 401);
 });
 
+test('does not require or send a reCAPTCHA token when the persisted setting is disabled', async () => {
+  await createUser({ username: 'CAPTCHA_OFF', role: 'student' });
+  await getModels().SystemSetting.create({ _id: 'recaptcha_enabled', value: false });
+
+  const response = await send(agent(), 'post', '/api/auth/login/', {
+    identifier: 'CAPTCHA_OFF',
+    password: 'test-pass-123',
+  });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+});
+
+test('exposes the reCAPTCHA enforcement setting to the anonymous login page', async () => {
+  await getModels().SystemSetting.create({ _id: 'recaptcha_enabled', value: false });
+  const response = await request().get('/api/admin/settings/recaptcha/');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.enabled, false);
+  assert.equal(response.body.available, true);
+  assert.equal(typeof response.body.configured, 'boolean');
+});
+
+test('requires and verifies a reCAPTCHA token when the persisted setting is enabled', async () => {
+  await createUser({ username: 'CAPTCHA_ON', role: 'student' });
+  await getModels().SystemSetting.create({ _id: 'recaptcha_enabled', value: true });
+  const previousSecret = process.env.RECAPTCHA_SECRET_KEY;
+  const previousFetch = globalThis.fetch;
+  process.env.RECAPTCHA_SECRET_KEY = 'test-recaptcha-secret';
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ success: true }) });
+  try {
+    const missing = await send(agent(), 'post', '/api/auth/login/', {
+      identifier: 'CAPTCHA_ON',
+      password: 'test-pass-123',
+    });
+    assert.equal(missing.status, 400);
+    assert.equal(missing.body.detail, 'Please complete the reCAPTCHA before signing in.');
+
+    const valid = await send(agent(), 'post', '/api/auth/login/', {
+      identifier: 'CAPTCHA_ON',
+      password: 'test-pass-123',
+      recaptchaToken: 'test-token',
+    });
+    assert.equal(valid.status, 200, JSON.stringify(valid.body));
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousSecret === undefined) delete process.env.RECAPTCHA_SECRET_KEY;
+    else process.env.RECAPTCHA_SECRET_KEY = previousSecret;
+  }
+});
+
 test('identifiers use the stored role and ignore a browser-supplied role', async () => {
   const student = await createUser({ username: 'STU010', role: 'student', email: 'student010@cot.edu' });
   await createUser({ username: 'FAC010', role: 'faculty', email: 'faculty010@cot.edu' });

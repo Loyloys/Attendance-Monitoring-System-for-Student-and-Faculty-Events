@@ -8,6 +8,13 @@ import {
   linkGoogleIdentity,
   startGoogleSession,
 } from '../services/googleAuthService.js';
+import {
+  calendarAuthorizationUrl,
+  calendarConnectionErrorUrl,
+  calendarConnectionStatus,
+  completeCalendarAuthorization,
+} from '../services/googleCalendarService.js';
+import { User } from '../models/index.js';
 import { issueCsrfToken, rotateCsrfToken } from '../middleware/csrf.js';
 import { ValidationError } from '../utils/errors.js';
 import { regenerateSession } from '../utils/session.js';
@@ -82,6 +89,33 @@ export async function googleCompleteProfile(request, response) {
 export async function googleLink(request, response) {
   const user = await linkGoogleIdentity(request, request.body);
   response.json(serializeAuthUser(user));
+}
+
+export function googleCalendarAuthorize(request, response) {
+  response.redirect(calendarAuthorizationUrl(request));
+}
+
+export async function googleCalendarStatus(request, response) {
+  const setting = await calendarConnectionStatus(null);
+  if (request.user?.profile?.role !== 'admin') {
+    response.json({ enabled: setting.enabled, settingAvailable: setting.settingAvailable });
+    return;
+  }
+  const user = await User.findById(request.user._id)
+    .select('+googleCalendarRefreshTokenEncrypted')
+    .lean();
+  response.json(await calendarConnectionStatus(user));
+}
+
+export async function googleCalendarCallback(request, response) {
+  try {
+    await completeCalendarAuthorization(request, request.query.code, request.query.state);
+    response.redirect(calendarConnectionErrorUrl('connected'));
+  } catch (error) {
+    // The callback must not expose provider errors, authorization codes, or
+    // encrypted credentials in the browser response.
+    response.redirect(calendarConnectionErrorUrl('error'));
+  }
 }
 
 export function logout(request, response) {

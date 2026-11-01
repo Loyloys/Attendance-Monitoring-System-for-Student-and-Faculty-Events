@@ -242,9 +242,10 @@ test('attendance result uses server-confirmed fields and does not promote pendin
     locationVerified: false,
     message: 'Your event attendance was recorded successfully.',
   });
-  assert.equal(pending.title, 'Check-in recorded');
+  assert.equal(pending.title, 'Attendance recorded');
   assert.equal(pending.status, 'PENDING');
-  assert.match(pending.message, /server must confirm Present or Late/i);
+  assert.equal(pending.message, 'Your event attendance was recorded successfully.');
+  assert.match(pending.qualificationNotice ?? '', /server must confirm Present or Late/i);
   assert.equal(pending.location, null);
 });
 
@@ -343,7 +344,9 @@ test('a server-rejected stale tracking fix leaves the recorded check-in result i
     },
   ), /70 seconds old/i);
   assert.equal(presentation.status, 'PENDING');
-  assert.equal(presentation.title, 'Check-in recorded');
+  assert.equal(presentation.title, 'Attendance recorded');
+  assert.equal(presentation.message, 'Your event attendance was recorded successfully.');
+  assert.match(presentation.qualificationNotice ?? '', /pending 10 verified in-zone minutes/i);
   assert.equal(presentation.location, 'Verified at venue');
 });
 

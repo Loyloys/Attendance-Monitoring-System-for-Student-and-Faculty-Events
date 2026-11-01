@@ -4,6 +4,7 @@ import { nextNumericId } from '../utils/ids.js';
 import { eventAllows } from '../utils/events.js';
 import { summarizeAttendance } from './attendanceSummary.js';
 import { getManagedEvent } from './eventService.js';
+import { calendarUrlForEvent } from './eventSerializer.js';
 
 export function personalRecordStatus(record) {
   return record.qualification ?? record.status;
@@ -62,7 +63,7 @@ export async function monitoredAttendance(user, eventId) {
     .sort((left, right) => (left.profile?.displayName || '').localeCompare(right.profile?.displayName || ''));
   const summary = summarizeAttendance(records, expected);
   return {
-    event: { id: event._id, name: event.name, venue: event.venue },
+    event: { id: event._id, name: event.name, venue: event.venue, calendar_url: calendarUrlForEvent(event) },
     summary: { ...summary, registered: expected },
     attendees: ordered.map(({ record, profile, user }) => ({
       id: user?.username || profile?.displayName || String(record.attendeeId),

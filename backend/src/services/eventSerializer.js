@@ -71,6 +71,28 @@ function localTime(value) {
   return isoValue ? manilaTime(new Date(isoValue)) : '';
 }
 
+export function calendarUrlForEvent(event) {
+  const htmlLink = typeof event.googleCalendarHtmlLink === 'string'
+    ? event.googleCalendarHtmlLink.trim()
+    : '';
+  if (htmlLink) {
+    try {
+      const url = new URL(htmlLink);
+      if (url.protocol === 'https:' && (url.hostname === 'calendar.google.com' || url.hostname === 'www.google.com')) {
+        return url.toString();
+      }
+    } catch { /* Invalid stored link; do not construct a replacement URL. */ }
+  }
+  return null;
+}
+
+export function calendarLinkReasonForEvent(event) {
+  if (calendarUrlForEvent(event)) return null;
+  return typeof event.googleCalendarEventId === 'string' && event.googleCalendarEventId.trim()
+    ? 'permission_unavailable'
+    : 'not_synced';
+}
+
 export function serializeEventContext(event, context) {
   const {
     registration = null,
@@ -177,6 +199,8 @@ export function serializeEventContext(event, context) {
     // and whether this event actually has a usable fence configured.
     location_verification_required: event.locationVerificationRequired !== false,
     venue_geofence_configured: Boolean(geofenceFor(event)),
+    calendar_url: calendarUrlForEvent(event),
+    calendar_link_reason: calendarLinkReasonForEvent(event),
   };
 }
 
@@ -227,6 +251,9 @@ export function serializeAdminEvent(event, organizerProfile) {
     locationVerificationRequired: event.locationVerificationRequired !== false,
     createdAt: iso(event.createdAt),
     organizerId: event.organizerId ? String(event.organizerId) : undefined,
+    supervisors: Array.isArray(event.supervisors) ? event.supervisors.map((id) => String(id)) : [],
     archivedAt: iso(event.archivedAt),
+    calendar_url: calendarUrlForEvent(event),
+    calendar_link_reason: calendarLinkReasonForEvent(event),
   };
 }

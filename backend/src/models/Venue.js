@@ -24,9 +24,9 @@ const venueSchema = new mongoose.Schema({
   // campus-area coordinate is approximate, so nobody mistakes it for a
   // surveyed gym or room position.
   note: { type: String, default: '', maxlength: 70_000 },
-  latitude: { type: Number, required: true, min: -90, max: 90 },
-  longitude: { type: Number, required: true, min: -180, max: 180 },
-  radiusMeters: { type: Number, required: true, min: 1, max: 100_000 },
+  latitude: { type: Number, min: -90, max: 90 },
+  longitude: { type: Number, min: -180, max: 180 },
+  radiusMeters: { type: Number, min: 1, max: 100_000 },
   // A per-venue suggestion, nullable exactly like an event's requirement: blank
   // means "no suggestion", and the event form then stays blank too.
   defaultRequiredAttendanceMinutes: { type: Number, default: null, min: 1, max: 24 * 60 },

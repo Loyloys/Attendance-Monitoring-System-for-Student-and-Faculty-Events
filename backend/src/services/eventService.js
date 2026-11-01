@@ -8,7 +8,7 @@ import {
   EventRegistration,
   UserProfile,
 } from '../models/index.js';
-import { ConflictError, PermissionError, ValidationError } from '../utils/errors.js';
+import { ConflictError, NotFoundError, PermissionError, ValidationError } from '../utils/errors.js';
 import { nextNumericId } from '../utils/ids.js';
 import { sha256, stableCaseInsensitive, toLegacyUuid } from '../utils/identifiers.js';
 import { EVENT_AUDIENCES, QR_PREFIX, QUALIFICATION_REASONS } from '../utils/domain.js';
@@ -54,6 +54,32 @@ export async function getManagedEvent(user, eventId) {
   }).lean();
   if (!event) throw new ValidationError({ event: 'Event not found or not assigned to you.' });
   return event;
+
+}
+
+/**
+ * GST016: archived events a student or faculty member is connected to
+ * through their own registration or attendance record. Read-only history:
+ * the caller only ever sees events they personally registered for or
+ * attended, and the serializer already publishes registration_status and
+ * attendance_status so the card can show their own status without any
+ * registration, check-in or editing actions.
+ */
+export async function archivedEventsForUser(user) {
+  if (!['student', 'faculty'].includes(user.profile.role)) {
+    throw new PermissionError('This action is not available for your role.');
+  }
+  const userId = user._id;
+  const [registeredEventIds, attendedEventIds] = await Promise.all([
+    EventRegistration.find({ attendeeId: userId }).distinct('eventId').lean(),
+    EventAttendance.find({ attendeeId: userId }).distinct('eventId').lean(),
+  ]);
+  const eventIds = [...new Set([...registeredEventIds, ...attendedEventIds])];
+  if (!eventIds.length) return [];
+  return Event.find({
+    _id: { $in: eventIds },
+    archivedAt: { $ne: null },
+  }).sort({ startsAt: -1, name: 1 }).lean();
 }
 
 export async function serializeEventsForUser(events, user, now = new Date()) {
@@ -119,6 +145,7 @@ export async function resolveScannedEvent(rawToken, eventId, user) {
     const event = await Event.findOne({
       _id: scannedId,
       status: 'published',
+      archivedAt: null,
       $or: [{ audience: 'all' }, { audience: user.profile.role }, { audience: String(user.profile.department || '').toLowerCase() }],
     }).lean();
     if (!event) throw new ValidationError({ scan: 'This event is not available to your account.' });
@@ -140,6 +167,7 @@ export async function resolveScannedEvent(rawToken, eventId, user) {
   const event = await Event.findOne({
     _id: normalizeEventId(eventId),
     status: 'published',
+    archivedAt: null,
     $or: [{ audience: 'all' }, { audience: user.profile.role }, { audience: String(user.profile.department || '').toLowerCase() }],
   }).lean();
   if (!event) throw new ValidationError({ event: 'Event not found or not available to your account.' });
@@ -309,6 +337,7 @@ export async function registerForEvent(user, eventId) {
   const event = await Event.findOne({
     _id: normalizeEventId(eventId),
     status: 'published',
+    archivedAt: null,
     $or: [{ audience: 'all' }, { audience: 'student' }, { audience: String(user.profile.department || '').toLowerCase() }],
   }).lean();
   if (!event) throw new ValidationError({ event: 'Event not found.' });
@@ -411,7 +440,19 @@ function validateWriteValues(data, current = null, partial = false) {
   if (!values.venue || values.venue.length > 180) throw new ValidationError({ venue: 'Venue is required and must not exceed 180 characters.' });
   if (!EVENT_AUDIENCES.includes(values.audience)) throw new ValidationError({ audience: 'Choose a valid audience.' });
   if (!['published', 'cancelled'].includes(values.status)) throw new ValidationError({ status: 'Choose a valid status.' });
-  if (!['qr', 'barcode', 'rfid'].includes(values.attendanceMethod)) throw new ValidationError({ method: 'Choose a valid attendance method.' });
+  // AD032: Faculty supervisor assignment (reuse existing `supervisors` field).
+  // Accept either a single `supervisorId` or an array `supervisors` of user ids.
+  // Empty/null clears the assignment. Omitted leaves existing untouched on edit.
+  if (data.supervisorId !== undefined || data.supervisors !== undefined) {
+    const raw = data.supervisors !== undefined ? data.supervisors : (data.supervisorId ? [data.supervisorId] : []);
+    const ids = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    const cleaned = ids.map((id) => String(id || '').trim()).filter(Boolean);
+    values.supervisors = cleaned;
+  } else if (!current) {
+    values.supervisors = [];
+  }
+
+  if (!['qr'].includes(values.attendanceMethod)) throw new ValidationError({ method: 'Choose a valid attendance method.' });
   // Each boolean is validated under its OWN name. This used to report a bad
   // `registrationRequired` as a problem with `requiredForAttendance`, which sent
   // an administrator to fix the wrong checkbox.
@@ -526,6 +567,7 @@ export async function updateEvent(eventId, data) {
   const id = normalizeEventId(eventId);
   const event = await Event.findById(id);
   if (!event) throw new ValidationError({ event: 'Event not found.' }, 'Event not found.');
+  if (event.archivedAt) throw new ValidationError({ event: 'An archived event cannot be edited.' });
   Object.assign(event, validateWriteValues(data, event, true));
   await event.save();
   return event;
@@ -587,4 +629,63 @@ export async function restoreEvent(event) {
   event.archivedAt = null;
   event.archivedBy = null;
   return event;
+}
+
+/**
+ * AD025: Automatically archive events whose end date/time has passed.
+ *
+ * Idempotent: events already archived are skipped; events not yet ended are
+ * left untouched. Runs on a schedule from server startup rather than as a
+ * duplicate timer. Only the two archive fields are written, so a legacy record
+ * missing an unrelated required field cannot block archiving.
+ */
+export async function archiveExpiredEvents(now = new Date()) {
+  const expired = await Event.find({
+    endsAt: { $lt: now },
+    archivedAt: null,
+  }).lean();
+  let archived = 0;
+  for (const event of expired) {
+    try {
+      await archiveEvent(event, null);
+      archived += 1;
+    } catch {
+      // A concurrent archive/restore or a permanent failure for one event must
+      // not prevent the others from being archived.
+    }
+  }
+  return { expired: expired.length, archived };
+}
+
+/** Issue participation certificates only for attendance rows whose status is present. The eventId + studentId unique index is the source of truth for duplication: every request for a student who is already issued is treated as an idempotent re-issue, so repeated admin clicks never create duplicate certificates. */
+export async function issueEventCertificatesForEvent(eventId, issuedById) {
+  const event = await Event.findById(eventId);
+  if (!event) throw new NotFoundError("Event not found.");
+  if (event.status === 'cancelled') throw new ConflictError('Certificates cannot be issued for a cancelled event.');
+
+  const attendances = await EventAttendance.find({ eventId, status: "present" }).lean();
+  const issued = [];
+
+  for (const attendance of attendances) {
+    const studentId = attendance.attendeeId;
+    const certificate = await EventCertificate.findOneAndUpdate(
+      { eventId, studentId },
+      {
+        $setOnInsert: {
+          _id: await nextNumericId("eventCertificate"),
+          issuedById,
+          reference: `CERT-${eventId}-${studentId}`,
+          message: "",
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+
+    if (!certificate) {
+      throw new ConflictError("Certificate already exists for this event and student.");
+    }
+    issued.push(certificate);
+  }
+
+  return issued;
 }

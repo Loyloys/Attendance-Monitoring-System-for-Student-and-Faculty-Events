@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AuthService } from '../data/authService';
+import { eventApi } from '../data/eventApi';
 import type { GoogleSignInMode } from '../data/eventApi';
 import GoogleSignInButton from './GoogleSignInButton';
 
@@ -29,6 +30,10 @@ const Login: React.FC = () => {
   // alone, so it can never describe the private test list as an institutional
   // restriction, or vice versa.
   const [googleMode, setGoogleMode] = useState<GoogleSignInMode>('unavailable');
+  const [recaptchaState, setRecaptchaState] = useState<'loading' | 'disabled' | 'enabled' | 'error'>('loading');
+  const [recaptchaError, setRecaptchaError] = useState('');
+  const recaptchaWidgetRef = useRef<HTMLDivElement>(null);
+  const recaptchaWidgetId = useRef<number | null>(null);
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
@@ -94,6 +99,71 @@ const Login: React.FC = () => {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (recaptchaState !== 'enabled') return;
+
+    const renderWidget = () => {
+      const grecaptcha = (window as any).grecaptcha;
+      if (!grecaptcha?.ready || !grecaptcha.render || !recaptchaWidgetRef.current || recaptchaWidgetId.current !== null) return;
+      grecaptcha.ready(() => {
+        if (recaptchaWidgetRef.current && recaptchaWidgetId.current === null) {
+          recaptchaWidgetId.current = grecaptcha.render(recaptchaWidgetRef.current, {
+            sitekey: import.meta.env.VITE_RECAPTCHA_SITE_KEY,
+          });
+        }
+      });
+    };
+
+    const existingScript = document.querySelector<HTMLScriptElement>('script[data-recaptcha-script], script[src*="google.com/recaptcha/api.js"]');
+    const retry = window.setInterval(renderWidget, 100);
+    if (existingScript) {
+      renderWidget();
+      existingScript.addEventListener('load', renderWidget, { once: true });
+      return () => {
+        window.clearInterval(retry);
+        existingScript.removeEventListener('load', renderWidget);
+      };
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://www.google.com/recaptcha/api.js?render=explicit';
+    script.async = true;
+    script.defer = true;
+    script.dataset.recaptchaScript = 'true';
+    script.addEventListener('load', renderWidget, { once: true });
+    document.head.appendChild(script);
+
+    return () => {
+      window.clearInterval(retry);
+      script.removeEventListener('load', renderWidget);
+    };
+  }, [recaptchaState]);
+
+  useEffect(() => {
+    let active = true;
+    eventApi.recaptchaSettings()
+      .then(status => {
+        if (!active) return;
+        if (!status.available) {
+          setRecaptchaError('Could not confirm the reCAPTCHA setting. Please try again before signing in.');
+          setRecaptchaState('error');
+          return;
+        }
+        if (status.enabled && (!status.configured || !import.meta.env.VITE_RECAPTCHA_SITE_KEY)) {
+          setRecaptchaError('reCAPTCHA is enabled but not fully configured. Please contact an administrator.');
+          setRecaptchaState('error');
+          return;
+        }
+        setRecaptchaState(status.enabled ? 'enabled' : 'disabled');
+      })
+      .catch(() => {
+        if (!active) return;
+        setRecaptchaError('Could not confirm the reCAPTCHA setting. Please try again before signing in.');
+        setRecaptchaState('error');
+      })
+    return () => { active = false; };
+  }, []);
+
   const goToDashboard = useCallback((role: string) => {
     navigate(role === 'admin' ? '/admin/dashboard' : '/portal?view=dashboard', { replace: true });
   }, [navigate]);
@@ -146,10 +216,28 @@ const Login: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const user = await login(normalizedIdentifier, password);
+      if (recaptchaState === 'loading' || recaptchaState === 'error') {
+        setError(recaptchaError || 'Could not confirm the reCAPTCHA setting. Please try again before signing in.');
+        return;
+      }
+      let token: string | undefined;
+      if (recaptchaState === 'enabled') {
+        if (recaptchaWidgetId.current === null) {
+          setError('reCAPTCHA is still loading. Please wait a moment and try again.');
+          return;
+        }
+        token = (window as any).grecaptcha?.getResponse?.(recaptchaWidgetId.current ?? undefined) || '';
+        if (!token) {
+          setError('Please complete the reCAPTCHA before signing in.');
+          (window as any).grecaptcha?.reset?.(recaptchaWidgetId.current ?? undefined);
+          return;
+        }
+      }
+      const user = await login(normalizedIdentifier, password, token);
       goToDashboard(user.role);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'We could not complete sign in.');
+      (window as any).grecaptcha?.reset?.(recaptchaWidgetId.current ?? undefined);
     } finally {
       setIsLoading(false);
     }
@@ -304,6 +392,21 @@ const Login: React.FC = () => {
             <p className="text-xs leading-5 text-slate-500">
               This is your application password, not your Google password. Google passwords and Gmail SMTP App Passwords never work here. Approved Google-only accounts can use Google sign-in above or ask an administrator to send or resend their application password setup link.
             </p>
+
+            {recaptchaError && (
+              <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                {recaptchaError}
+              </p>
+            )}
+            {recaptchaState === 'loading' ? (
+              <p className="mt-3 text-sm text-slate-500">Loading reCAPTCHA…</p>
+            ) : recaptchaState === 'enabled' ? (
+              <div ref={recaptchaWidgetRef} data-testid="g-recaptcha" className="g-recaptcha" />
+            ) : recaptchaState === 'disabled' ? (
+              <p className="mt-3 text-sm text-slate-500">
+                reCAPTCHA is disabled. Ask an administrator to enable it in Settings.
+              </p>
+            ) : null}
 
             <button type="submit" disabled={isLoading} className="auth-light-button">
               {isLoading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Signing in...</> : <><LogIn size={18} aria-hidden="true" /> Sign in</>}

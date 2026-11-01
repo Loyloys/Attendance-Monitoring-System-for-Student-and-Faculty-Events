@@ -80,6 +80,33 @@ export interface AdminUserRegistrationDetail {
   registrations: AdminUserRegistration[];
 }
 
+/**
+ * One registrant for an event, as the administrator sees it on the event's
+ * registrant list (AD024).
+ *
+ * `confirmationStatus` is the attendance record's status (Present / Late /
+ * Absent) or null when no attendance record exists. It is deliberately
+ * separate from `registrationStatus`: registering is not attending.
+ */
+export interface AdminEventRegistrant {
+  eventId: string;
+  eventName: string;
+  eventDate: string | null;
+  eventStatus: string;
+  registrationStatus: 'registered' | 'cancelled';
+  registeredAt: string | null;
+  attendee: {
+    id: string;
+    accountId: string;
+    name: string;
+    email: string;
+    role: 'student' | 'faculty' | 'admin';
+    department: string;
+  };
+  confirmationStatus: 'Present' | 'Late' | 'Absent' | null;
+  checkedInAt: string | null;
+}
+
 export interface AdminEvent {
   id: string;
   name: string;
@@ -92,7 +119,7 @@ export interface AdminEvent {
   origin: EventOrigin;
   audience: EventAudience;
   department: string;
-  method: 'QR Code' | 'Barcode' | 'ID range' | 'Manual attendance';
+  method: 'QR Code';
   identifierRange: string;
   cutoff: string;
   status: EventStatus;
@@ -134,6 +161,9 @@ export interface AdminEvent {
   qrExpiresAt?: string;
   /** When set, the event is archived and hidden from students and faculty. */
   archivedAt?: string | null;
+  /** Safe Google Calendar web URL, present only for successfully synced events. */
+  calendar_url: string | null;
+  calendar_link_reason: 'not_synced' | 'permission_unavailable' | 'calendar_disabled' | null;
   /** GST006: required in-zone minutes. Null/undefined means "not configured" - it
    * is never backfilled, so existing events keep tracking switched off. */
   requiredAttendanceMinutes?: number | null;

@@ -12,7 +12,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   isOwner: (id: string) => boolean;
-  login: (identifier: string, password: string) => Promise<AuthUser>;
+  login: (identifier: string, password: string, recaptchaToken?: string) => Promise<AuthUser>;
   /** Verifies a Google credential. The server decides the outcome: an identity
    * that is already linked is signed in here, anything else resolves to
    * `profile_incomplete` and the caller continues to the profile step.
@@ -45,8 +45,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => { active = false; };
   }, []);
 
-  const login = async (identifier: string, password: string) => {
-    const authenticated = await AuthService.login({ email: identifier, password });
+  const login = async (identifier: string, password: string, recaptchaToken?: string) => {
+    const authenticated = await AuthService.login({ email: identifier, password, recaptchaToken });
     setUser(authenticated);
     return authenticated;
   };

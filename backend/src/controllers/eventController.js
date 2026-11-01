@@ -1,5 +1,6 @@
 import { Event } from '../models/index.js';
 import {
+  archivedEventsForUser,
   availableEventsForUser,
   getManagedEvent,
   managedEventsForUser,
@@ -50,6 +51,16 @@ export async function listEvents(request, response) {
     return response.json(await serializeEventsForUser(events, request.user));
   }
   return response.json(await serializeEventsForUser(await availableEventsForUser(request.user), request.user));
+}
+
+export async function listMyArchived(request, response) {
+  // GST016: archived events the authenticated student/faculty member is
+  // connected to through their own registration or attendance. Read-only:
+  // the serializer publishes registration_status / attendance_status but
+  // can_register / can_check_in are both false for archived events.
+  return response.json(
+    await serializeEventsForUser(await archivedEventsForUser(request.user), request.user),
+  );
 }
 
 export async function eventDetail(request, response) {

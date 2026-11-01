@@ -22,7 +22,7 @@ import {
 } from '../services/adminService.js';
 
 import { archiveLegacyBrowserState } from '../services/legacyBrowserImportService.js';
-import { googleOAuthStatus, setGoogleOAuthStatus } from '../services/systemSettingsService.js';
+import { googleOAuthStatus, setGoogleOAuthStatus, recaptchaStatus, setRecaptchaStatus, recaptchaIsConfigured, mapPickerStatus, setMapPickerStatus, googleCalendarSettingStatus, setGoogleCalendarSettingStatus } from '../services/systemSettingsService.js';
 import { createAnnouncement, listAnnouncements } from '../services/announcementService.js';
 import { resendPasswordSetup } from '../services/emailSignupService.js';
 import { User } from '../models/index.js';
@@ -70,6 +70,45 @@ export async function googleOAuthSettings(request, response) {
 
 export async function updateGoogleOAuthSettings(request, response) {
   response.json(await setGoogleOAuthStatus(request.body.enabled, request.user));
+}
+
+export async function recaptchaSettings(request, response) {
+  const status = await recaptchaStatus();
+  if (!status.available) {
+    response.status(503).json({ detail: 'The persistent reCAPTCHA setting could not be read. Please try again.' });
+    return;
+  }
+  response.json(status);
+}
+
+export async function updateRecaptchaSettings(request, response) {
+  response.json(await setRecaptchaStatus(request.body.enabled, request.user));
+}
+
+export async function mapPickerSettings(request, response) {
+  const status = await mapPickerStatus();
+  if (!status.available) {
+    response.status(503).json({ detail: 'The persistent map picker setting is unavailable; map picker remains disabled.' });
+    return;
+  }
+  response.json(status);
+}
+
+export async function updateMapPickerSettings(request, response) {
+  response.json(await setMapPickerStatus(request.body.enabled, request.user));
+}
+
+export async function googleCalendarSettings(request, response) {
+  const status = await googleCalendarSettingStatus();
+  if (!status.available) {
+    response.status(503).json({ detail: 'The persistent Google Calendar setting is unavailable; Calendar remains disabled.' });
+    return;
+  }
+  response.json(status);
+}
+
+export async function updateGoogleCalendarSettings(request, response) {
+  response.json(await setGoogleCalendarSettingStatus(request.body.enabled, request.user));
 }
 
 export async function adminAnnouncements(request, response) {

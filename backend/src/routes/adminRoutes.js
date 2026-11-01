@@ -4,11 +4,20 @@ import { requireAuthentication, requireRole } from '../middleware/authentication
 import { asyncRoute } from '../utils/errors.js';
 
 const router = Router();
+// The login page must read the persisted enforcement state before a session
+// exists. The response contains only public capability metadata; updates remain
+// protected by the admin middleware below.
+router.get('/admin/settings/recaptcha/', asyncRoute(controller.recaptchaSettings));
 router.use('/admin', requireAuthentication, requireRole('admin'));
 router.get('/admin/state/', asyncRoute(controller.state));
 router.get('/admin/audit-log/', asyncRoute(controller.auditLog));
 router.get('/admin/settings/google-oauth/', asyncRoute(controller.googleOAuthSettings));
 router.put('/admin/settings/google-oauth/', asyncRoute(controller.updateGoogleOAuthSettings));
+router.put('/admin/settings/recaptcha/', asyncRoute(controller.updateRecaptchaSettings));
+router.get('/admin/settings/map-picker/', asyncRoute(controller.mapPickerSettings));
+router.put('/admin/settings/map-picker/', asyncRoute(controller.updateMapPickerSettings));
+router.get('/admin/settings/google-calendar/', asyncRoute(controller.googleCalendarSettings));
+router.put('/admin/settings/google-calendar/', asyncRoute(controller.updateGoogleCalendarSettings));
 router.get('/admin/announcements/', asyncRoute(controller.adminAnnouncements));
 router.post('/admin/announcements/', asyncRoute(controller.createAdminAnnouncement));
 router.get('/announcements/', requireAuthentication, asyncRoute(controller.userAnnouncements));

@@ -33,6 +33,37 @@ test('administrator account operations persist in MongoDB without exposing passw
   assert.match(stored.passwordHash, /^pbkdf2_sha256\$/);
 });
 
+test('administrator registrants endpoint returns registration, profile, and attendance details', async () => {
+  const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
+  const student = await createUser({ username: 'STU001', role: 'student', name: 'Student One' });
+  await createUser({ username: 'ADM001', role: 'admin' });
+  const event = await createEvent(faculty.user);
+  const registeredAt = new Date(Date.now() - 60_000);
+  const checkedInAt = new Date(Date.now() - 30_000);
+  await getModels().EventRegistration.create({
+    _id: 1, eventId: event._id, attendeeId: student.user._id,
+    status: 'registered', registeredAt,
+  });
+  await getModels().EventAttendance.create({
+    _id: 1, eventId: event._id, attendeeId: student.user._id,
+    status: 'present', method: 'qr', recordedAt: checkedInAt,
+  });
+
+  const { agent: admin } = await login('ADM001');
+  const response = await admin.get(`/api/admin/events/${event._id}/registrants/`);
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.length, 1);
+  assert.equal(response.body[0].registrationStatus, 'registered');
+  assert.equal(response.body[0].attendee.name, 'Student One');
+  assert.equal(response.body[0].attendee.department, 'COT');
+  assert.equal(response.body[0].confirmationStatus, 'present');
+  assert.equal(response.body[0].registeredAt, registeredAt.toISOString());
+  assert.equal(response.body[0].checkedInAt, checkedInAt.toISOString());
+
+  const { agent: studentAgent } = await login('STU001');
+  assert.equal((await studentAgent.get(`/api/admin/events/${event._id}/registrants/`)).status, 403);
+});
+
 test('AD002.5: archiving blocks access and preserves the account and attendance history; restore is reversible', async () => {
   const faculty = await createUser({ username: 'FAC001', role: 'faculty' });
   const student = await createUser({ username: 'STU001', role: 'student' });

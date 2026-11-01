@@ -6,6 +6,7 @@ import SignupPending from './auth/SignupPending';
 import RequireAuth from './auth/RequireAuth';
 import Portal from './pages/Portal';
 import AdminWorkspace from './pages/admin/Workspace';
+import ActivityLogPage from './pages/admin/ActivityLogPage';
 import AdminPageWrapper from './components/layout/admin/PageWrapper';
 import Signup from './auth/Signup';
 import VerifyEmail from './auth/VerifyEmail';
@@ -67,11 +68,13 @@ export default function AppRoutes() {
       <Route path="/admin/signup-requests" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/users" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/events" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+<Route path="/admin/archive" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/attendance" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/reports" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/feedback" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/announcements" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/settings" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><AdminWorkspace /></AdminPageWrapper></RequireAuth>} />
+      <Route path="/admin/activity-log" element={<RequireAuth allowedRoles={['admin']}><AdminPageWrapper><ActivityLogPage /></AdminPageWrapper></RequireAuth>} />
       <Route path="/admin/super" element={<Navigate to="/admin/dashboard" replace />} />
 
       <Route path="/" element={<Navigate to="/login" replace />} />

@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react';
 import { CalendarDays, CheckCircle2, Clock3, MapPin, QrCode, Ticket, TrendingUp } from 'lucide-react';
 import type { AuthUser, EventRecord, PersonalAttendanceData } from '../../types/eventAttendance';
 import { eventDateLabel, eventTimeLabel } from '../../utils/eventTime';
+import GoogleCalendarLink from './GoogleCalendarLink';
+import { eventApi } from '../../data/eventApi';
 
 interface Props {
   user: AuthUser;
@@ -15,6 +18,14 @@ const dateLabel = eventDateLabel;
 const timeLabel = eventTimeLabel;
 
 export default function EventDashboard({ user, events, attendance, onNavigate, onScan, onCertificate }: Props) {
+  const [calendarEnabled, setCalendarEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    let active = true;
+    eventApi.googleCalendarStatus()
+      .then(status => { if (active) setCalendarEnabled(status.enabled); })
+      .catch(() => { if (active) setCalendarEnabled(false); });
+    return () => { active = false; };
+  }, []);
   const upcoming = events.filter(event => event.status === 'upcoming' || event.status === 'ongoing');
   const certificates = events.filter(event => event.certificate_id);
   return <div className="space-y-7">
@@ -26,6 +37,11 @@ export default function EventDashboard({ user, events, attendance, onNavigate, o
         <div className="mt-6 flex flex-wrap gap-3">
           <button type="button" onClick={onScan} className="app-button-primary"><QrCode size={17} /> Scan event attendance</button>
           <button type="button" onClick={() => onNavigate('events')} className="app-button-secondary">Browse events <CalendarDays size={17} /></button>
+          <GoogleCalendarLink
+            url={calendarEnabled ? 'https://calendar.google.com/calendar/u/0/r' : null}
+            reason={calendarEnabled === false ? 'calendar_disabled' : null}
+            loading={calendarEnabled === null}
+          />
         </div>
       </div>
       <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-orange-200/40 blur-3xl" />
@@ -50,7 +66,9 @@ export default function EventDashboard({ user, events, attendance, onNavigate, o
         <div className="mt-5 space-y-3">
           {upcoming.slice(0, 4).map(event => <div key={event.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E2E3DF] bg-[#FAF9F5] p-4">
             <div><p className="font-semibold text-[#10203B]">{event.name}</p><p className="mt-1 flex flex-wrap gap-3 text-xs text-[#64748B]"><span className="inline-flex items-center gap-1"><CalendarDays size={12} />{dateLabel(event.starts_at)}</span><span className="inline-flex items-center gap-1"><Clock3 size={12} />{timeLabel(event.starts_at)}</span><span className="inline-flex items-center gap-1"><MapPin size={12} />{event.venue}</span></p></div>
-            <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-700">{event.status}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-700">{event.status}</span>
+            </div>
           </div>)}
           {!upcoming.length && <p className="py-8 text-center text-sm text-[#64748B]">No upcoming events are published.</p>}
         </div>

@@ -114,6 +114,9 @@ export interface EventRecord {
   location_verification_required: boolean;
   /** GST004: whether the event actually has a usable venue fence configured. */
   venue_geofence_configured: boolean;
+  /** Safe Google Calendar web URL, present only for successfully synced events. */
+  calendar_url: string | null;
+  calendar_link_reason: 'not_synced' | 'permission_unavailable' | 'calendar_disabled' | null;
 }
 
 export interface PersonalAttendanceSummary {
@@ -174,7 +177,7 @@ export interface AttendanceQrPreview {
 }
 
 export interface MonitoredEventAttendance {
-  event: { id: string; name: string; venue: string };
+  event: { id: string; name: string; venue: string; calendar_url: string | null };
   summary: { present: number; late: number; absent: number; total: number; registered: number };
   attendees: Array<{
     id: string;
