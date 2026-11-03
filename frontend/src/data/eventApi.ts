@@ -481,12 +481,12 @@ export const eventApi = {
     });
   },
   googleOAuthSettings() {
-    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/google-oauth/');
+    return requestJson<{ enabled: boolean; available: boolean; clientId: string }>('/admin/settings/google-oauth/');
   },
-  async updateGoogleOAuthSettings(enabled: boolean) {
+  async updateGoogleOAuthSettings(enabled: boolean, clientId?: string) {
     return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/google-oauth/', {
       method: 'PUT',
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify({ enabled, ...(clientId === undefined ? {} : { clientId }) }),
     });
   },
   async recaptchaSettings() {

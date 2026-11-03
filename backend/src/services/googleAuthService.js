@@ -12,7 +12,7 @@ import {
 } from '../utils/errors.js';
 import { stableCaseInsensitive } from '../utils/identifiers.js';
 import { regenerateSession } from '../utils/session.js';
-import { googleOAuthStatus } from './systemSettingsService.js';
+import { googleClientIdStatus, googleOAuthStatus } from './systemSettingsService.js';
 import { isApproved } from '../middleware/authentication.js';
 
 // Google-only accounts may never be given a fabricated password.
@@ -32,10 +32,10 @@ async function assertGoogleOAuthEnabled() {
   }
 }
 
-async function verifyWithGoogleLibrary(idToken) {
-  if (!env.googleClientId) throw googleNotConfigured();
-  const client = new OAuth2Client(env.googleClientId);
-  const ticket = await client.verifyIdToken({ idToken, audience: env.googleClientId });
+async function verifyWithGoogleLibrary(idToken, clientId) {
+  if (!clientId) throw googleNotConfigured();
+  const client = new OAuth2Client(clientId);
+  const ticket = await client.verifyIdToken({ idToken, audience: clientId });
   return ticket.getPayload();
 }
 
@@ -78,8 +78,8 @@ export const GOOGLE_MODE_DEVELOPMENT_TEST = 'development_test';
  * `institutional`     the verified `hd` claim must be on the approved list.
  * `development_test`   only the explicitly named local test accounts.
  */
-export function googleSignInMode() {
-  if (!env.googleClientId) return GOOGLE_MODE_UNAVAILABLE;
+export function googleSignInMode(clientId = env.googleClientId) {
+  if (!clientId) return GOOGLE_MODE_UNAVAILABLE;
   if (env.googleAccessPolicy === 'open') return GOOGLE_MODE_OPEN;
   if (env.googleAccessPolicy === 'institutional') return GOOGLE_MODE_INSTITUTIONAL;
   if (env.googleAccessPolicy === 'development_test') {
@@ -90,15 +90,15 @@ export function googleSignInMode() {
   return GOOGLE_MODE_UNAVAILABLE;
 }
 
-export function googlePublicConfig() {
-  const mode = googleSignInMode();
+export function googlePublicConfig(clientId = env.googleClientId) {
+  const mode = googleSignInMode(clientId);
   return {
     enabled: mode !== GOOGLE_MODE_UNAVAILABLE,
     mode,
     // The policy that was actually selected, so an operator can see the intent
     // behind the effective mode rather than having to infer it.
     policy: env.googleAccessPolicy,
-    clientId: env.googleClientId || null,
+    clientId: clientId || null,
     // Lets the sign-in card describe the rule honestly. These are server-side
     // configuration values; the browser cannot add one.
     hostedDomains: [...env.googleAllowedHostedDomains],
@@ -116,14 +116,14 @@ export function googlePublicConfig() {
 }
 
 export async function googleOAuthAvailability() {
-  const config = googlePublicConfig();
-  const setting = await googleOAuthStatus();
-  const enabled = config.enabled && setting.available && setting.enabled;
+  const [clientIdSetting, setting] = await Promise.all([googleClientIdStatus(), googleOAuthStatus()]);
+  const config = googlePublicConfig(clientIdSetting.clientId);
+  const enabled = config.enabled && clientIdSetting.available && setting.available && setting.enabled;
   return {
     ...config,
-    configurationAvailable: config.enabled,
+    configurationAvailable: config.enabled && clientIdSetting.available,
     clientIdPresent: Boolean(config.clientId),
-    settingAvailable: setting.available,
+    settingAvailable: setting.available && clientIdSetting.available,
     settingEnabled: setting.enabled,
     enabled,
     mode: enabled ? config.mode : GOOGLE_MODE_UNAVAILABLE,
@@ -158,14 +158,19 @@ function prefillFrom(identity, profile) {
  * token that is well formed but not meant for this application is still refused.
  */
 export async function verifyGoogleCredential(credential, { nonce } = {}) {
-  if (!env.googleClientId) throw googleNotConfigured();
+  const clientIdSetting = await googleClientIdStatus();
+  if (!clientIdSetting.available) {
+    throw new AppError(503, 'Google sign-in configuration could not be loaded. Please try again.');
+  }
+  const clientId = clientIdSetting.clientId;
+  if (!clientId) throw googleNotConfigured();
   if (typeof credential !== 'string' || !credential.trim()) {
     throw new ValidationError({ credential: 'A Google credential is required.' });
   }
 
   let payload;
   try {
-    payload = await tokenVerifier(credential.trim());
+    payload = await tokenVerifier(credential.trim(), clientId);
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AuthenticationError('Google sign-in could not be verified. Please try again.');
@@ -177,7 +182,7 @@ export async function verifyGoogleCredential(credential, { nonce } = {}) {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const skew = env.googleClockSkewSeconds;
 
-  if (payload.aud !== env.googleClientId) {
+  if (payload.aud !== clientId) {
     throw new AuthenticationError('This Google credential was issued for a different application.');
   }
   if (!env.googleAllowedIssuers.includes(payload.iss)) {
@@ -212,7 +217,7 @@ export async function verifyGoogleCredential(credential, { nonce } = {}) {
   // Normalized exactly as the stored identity is, so the private test list is
   // compared against the same value that is written to the account.
   const email = payload.email.trim().toLowerCase();
-  assertApprovedGoogleAccount(hostedDomain, email);
+  assertApprovedGoogleAccount(hostedDomain, email, clientId);
 
   return {
     sub: payload.sub.trim(),
@@ -247,8 +252,8 @@ export async function verifyGoogleCredential(credential, { nonce } = {}) {
  *    their password. An empty domain list is never read as permission to accept
  *    every verified Google account.
  */
-function assertApprovedGoogleAccount(hostedDomain, email) {
-  const mode = googleSignInMode();
+function assertApprovedGoogleAccount(hostedDomain, email, clientId = env.googleClientId) {
+  const mode = googleSignInMode(clientId);
 
   if (mode === GOOGLE_MODE_OPEN) {
     // Deliberate policy: any account Google vouches for may proceed. By this

@@ -37,7 +37,7 @@ const mockUpdateGoogleCalendarSettings = eventApi.updateGoogleCalendarSettings a
 beforeEach(() => {
   vi.clearAllMocks();
   // Default: settings available and disabled
-  mockGoogleOAuthSettings.mockResolvedValue({ enabled: false, available: true });
+  mockGoogleOAuthSettings.mockResolvedValue({ enabled: false, available: true, clientId: '1234567890-test.apps.googleusercontent.com' });
   mockGoogleConfig.mockResolvedValue({ configurationAvailable: true, enabled: true, clientId: 'test-client-id', mode: 'institutional', settingAvailable: true, settingEnabled: true, clientIdPresent: true, policy: 'open' });
   mockUpdateGoogleOAuthSettings.mockResolvedValue({ enabled: false, available: true });
   mockRecaptchaSettings.mockResolvedValue({ enabled: false, available: true, configured: true });
@@ -96,6 +96,16 @@ describe('SettingsSection', () => {
     expect(mockUpdateGoogleCalendarSettings).toHaveBeenCalledWith(false);
     expect(calendarCheckbox).not.toBeChecked();
     expect(screen.getByText(/tokens, and Calendar events were preserved/)).toBeInTheDocument();
+  });
+
+  it('saves the Google OAuth client ID from the settings card', async () => {
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    const clientIdInput = screen.getByLabelText('Google OAuth client ID');
+    fireEvent.change(clientIdInput, { target: { value: '9876543210-new.apps.googleusercontent.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save client ID' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockUpdateGoogleOAuthSettings).toHaveBeenCalledWith(false, '9876543210-new.apps.googleusercontent.com');
   });
 
   it('saves reCAPTCHA enabled state', async () => {

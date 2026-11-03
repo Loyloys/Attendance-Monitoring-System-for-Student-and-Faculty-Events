@@ -4,6 +4,7 @@ import { eventApi } from '../../data/eventApi';
 export default function SettingsSection() {
   const [oauthEnabled, setOauthEnabled] = useState(false);
   const [oauthConfigured, setOauthConfigured] = useState(false);
+  const [oauthClientId, setOauthClientId] = useState('');
   const [recaptchaEnabled, setRecaptchaEnabled] = useState(false);
   const [recaptchaConfigured, setRecaptchaConfigured] = useState(false);
   const [mapPickerEnabled, setMapPickerEnabled] = useState(false);
@@ -56,7 +57,9 @@ export default function SettingsSection() {
       const [setting, config] = await Promise.all([eventApi.googleOAuthSettings(), eventApi.googleConfig()]);
       if (!setting.available) throw new Error('The persistent setting is unavailable. Google sign-in remains disabled.');
       setOauthEnabled(setting.enabled);
+      setOauthClientId(setting.clientId);
       setOauthConfigured(config.configurationAvailable);
+      return config.configurationAvailable;
     } catch (caught) {
       setOauthError(caught instanceof Error ? caught.message : 'Settings could not be loaded.');
     } finally {
@@ -114,16 +117,17 @@ export default function SettingsSection() {
     void loadCalendar();
   }, [loadCalendar]);
 
-  const saveOauth = async (value: boolean) => {
+  const saveOauth = async (value: boolean, clientId = oauthClientId) => {
     setOauthSaving(true);
     setOauthError('');
     setOauthNotice('');
     try {
-      const result = await eventApi.updateGoogleOAuthSettings(value);
+      const result = await eventApi.updateGoogleOAuthSettings(value, clientId);
       if (!result.available) throw new Error('The setting could not be confirmed. Google sign-in remains disabled.');
       setOauthEnabled(result.enabled);
-      setOauthNotice(value && !oauthConfigured
-        ? 'Saved. Google sign-in remains unavailable until the backend Google client ID and access policy are configured.'
+      const configured = await loadOauth();
+      setOauthNotice(value && !configured
+        ? 'Saved. Google sign-in remains unavailable until a client ID and access policy are configured.'
         : `Google OAuth has been ${value ? 'enabled' : 'disabled'} for sign-in and signup.`);
     } catch (caught) {
       setOauthError(caught instanceof Error ? caught.message : 'The setting could not be saved.');
@@ -206,6 +210,30 @@ export default function SettingsSection() {
           <span className="text-sm font-semibold text-[#334155]">{oauthEnabled ? 'Enabled' : 'Disabled'}</span>
           {!oauthConfigured && <span className="text-xs text-amber-700">Backend Google OAuth configuration is unavailable.</span>}
         </label>}
+      {!oauthLoading && <>
+        <label className="mt-5 block text-sm font-semibold text-[#334155]" htmlFor="google-oauth-client-id">Google OAuth client ID</label>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            id="google-oauth-client-id"
+            className="min-w-0 flex-1 rounded-lg border border-[#CBD5E1] px-3 py-2 text-sm text-[#10203B] outline-none focus:border-[#315A8A] focus:ring-2 focus:ring-[#315A8A]/20"
+            type="text"
+            value={oauthClientId}
+            onChange={event => setOauthClientId(event.target.value)}
+            placeholder="1234567890-abc.apps.googleusercontent.com"
+            autoComplete="off"
+            disabled={oauthSaving || Boolean(oauthError)}
+          />
+          <button
+            type="button"
+            className="rounded-lg bg-[#10203B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E3A5F] disabled:opacity-50"
+            onClick={() => void saveOauth(oauthEnabled)}
+            disabled={oauthSaving || Boolean(oauthError)}
+          >
+            Save client ID
+          </button>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[#64748B]">This public web client ID is saved for Google sign-in. The backend still requires a valid GOOGLE_ACCESS_POLICY.</p>
+      </>}
       {oauthError && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{oauthError} <button className="ml-2 font-bold underline" onClick={() => void loadOauth()}>Retry</button></p>}
       {oauthNotice && <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{oauthNotice}</p>}
     </div>

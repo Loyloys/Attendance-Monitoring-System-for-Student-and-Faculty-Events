@@ -326,6 +326,8 @@ GOOGLE_CLOCK_SKEW_SECONDS=60
 GOOGLE_ALLOWED_HOSTED_DOMAINS=youruniversity.edu
 ```
 
+Administrators can also set the public Google web client ID in **Settings → Google OAuth**, directly below the enable/disable toggle. That value is persisted in MongoDB and takes precedence over `GOOGLE_CLIENT_ID` in `backend/.env` for Google sign-in. The access policy and (for institutional access) allowed domains remain backend configuration and must still be set; enabling the toggle or entering a client ID alone does not grant access.
+
 Frontend — `frontend/.env.local` (optional; see `frontend/.env.example`):
 
 ```dotenv

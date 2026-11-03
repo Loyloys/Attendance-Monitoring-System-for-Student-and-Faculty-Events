@@ -159,9 +159,15 @@ test('rejection creates no account; admin OAuth setting is protected, persistent
   const unauthorized = await send(student.agent, 'put', '/api/admin/settings/google-oauth/', { enabled: true });
   assert.equal(unauthorized.status, 403);
   assert.equal((await student.agent.get('/api/admin/settings/google-oauth/')).status, 403);
-  const saved = await send(admin.agent, 'put', '/api/admin/settings/google-oauth/', { enabled: false });
+  const clientId = '1234567890-admin-config.apps.googleusercontent.com';
+  const saved = await send(admin.agent, 'put', '/api/admin/settings/google-oauth/', { enabled: false, clientId });
   assert.equal(saved.status, 200);
   assert.equal(saved.body.enabled, false);
+  assert.equal((await admin.agent.get('/api/admin/settings/google-oauth/')).body.clientId, clientId);
+  assert.equal((await request().get('/api/auth/google/config/')).body.clientId, clientId);
+  const invalidClientId = await send(admin.agent, 'put', '/api/admin/settings/google-oauth/', { enabled: false, clientId: 'not-a-client-id' });
+  assert.equal(invalidClientId.status, 400);
+  assert.equal((await admin.agent.get('/api/admin/settings/google-oauth/')).body.clientId, clientId);
   assert.equal((await request().get('/api/auth/google/config/')).body.enabled, false);
   assert.equal((await send(agent(), 'post', '/api/auth/google/session/', {})).body.enabled, false);
   assert.equal((await send(agent(), 'post', '/api/auth/google/', { credential: 'not-accepted' })).status, 503);
@@ -175,6 +181,7 @@ test('rejection creates no account; admin OAuth setting is protected, persistent
   assert.equal(await getModels().User.exists({ emailNormalized: 'reject@student.buksu.edu.ph' }), null);
 
   await getModels().SystemSetting.deleteOne({ _id: 'google_oauth_enabled' });
+  await getModels().SystemSetting.deleteOne({ _id: 'google_client_id' });
   assert.equal((await request().get('/api/auth/google/config/')).body.enabled, false);
   assert.equal((await admin.agent.get('/api/admin/settings/google-oauth/')).status, 200);
   assert.equal((await admin.agent.get('/api/admin/settings/google-oauth/')).body.enabled, false);

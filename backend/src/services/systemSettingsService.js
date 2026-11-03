@@ -1,7 +1,9 @@
 import { SystemSetting } from '../models/index.js';
+import { env } from '../config/env.js';
 import { AppError } from '../utils/errors.js';
 
 export const GOOGLE_OAUTH_SETTING = 'google_oauth_enabled';
+export const GOOGLE_CLIENT_ID_SETTING = 'google_client_id';
 export const RECAPTCHA_SETTING = 'recaptcha_enabled';
 export const MAP_PICKER_SETTING = 'map_picker_enabled';
 export const GOOGLE_CALENDAR_SETTING = 'google_calendar_enabled';
@@ -13,6 +15,46 @@ export async function googleOAuthStatus() {
   } catch (error) {
     console.error('Could not read the persisted Google OAuth setting:', error?.name || 'unknown error');
     return { enabled: false, available: false };
+  }
+}
+
+export async function googleClientIdStatus() {
+  try {
+    const setting = await SystemSetting.findById(GOOGLE_CLIENT_ID_SETTING).lean();
+    const clientId = typeof setting?.value === 'string' && setting.value.trim()
+      ? setting.value.trim()
+      : env.googleClientId;
+    return { clientId, available: true };
+  } catch (error) {
+    console.error('Could not read the persisted Google client ID:', error?.name || 'unknown error');
+    return { clientId: '', available: false };
+  }
+}
+
+function validateGoogleClientId(clientId) {
+  if (typeof clientId !== 'string') {
+    throw new AppError(400, 'A Google client ID string is required.');
+  }
+  const value = clientId.trim();
+  if (value && !/^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(value)) {
+    throw new AppError(400, 'Enter a valid Google OAuth web client ID.');
+  }
+  return value;
+}
+
+export async function setGoogleClientId(clientId, actor) {
+  const value = validateGoogleClientId(clientId);
+  try {
+    await SystemSetting.findByIdAndUpdate(
+      GOOGLE_CLIENT_ID_SETTING,
+      { $set: { value, updatedAt: new Date(), updatedBy: actor?._id || null } },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+    );
+    return googleClientIdStatus();
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    console.error('Could not persist the Google client ID:', error?.name || 'unknown error');
+    throw new AppError(503, 'The Google client ID could not be saved.');
   }
 }
 

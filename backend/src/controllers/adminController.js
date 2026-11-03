@@ -22,7 +22,7 @@ import {
 } from '../services/adminService.js';
 
 import { archiveLegacyBrowserState } from '../services/legacyBrowserImportService.js';
-import { googleOAuthStatus, setGoogleOAuthStatus, recaptchaStatus, setRecaptchaStatus, recaptchaIsConfigured, mapPickerStatus, setMapPickerStatus, googleCalendarSettingStatus, setGoogleCalendarSettingStatus } from '../services/systemSettingsService.js';
+import { googleOAuthStatus, googleClientIdStatus, setGoogleClientId, setGoogleOAuthStatus, recaptchaStatus, setRecaptchaStatus, recaptchaIsConfigured, mapPickerStatus, setMapPickerStatus, googleCalendarSettingStatus, setGoogleCalendarSettingStatus } from '../services/systemSettingsService.js';
 import { createAnnouncement, listAnnouncements } from '../services/announcementService.js';
 import { resendPasswordSetup } from '../services/emailSignupService.js';
 import { User } from '../models/index.js';
@@ -60,16 +60,18 @@ export async function rejectSignup(request, response) {
 }
 
 export async function googleOAuthSettings(request, response) {
-  const status = await googleOAuthStatus();
-  if (!status.available) {
+  const [status, clientId] = await Promise.all([googleOAuthStatus(), googleClientIdStatus()]);
+  if (!status.available || !clientId.available) {
     response.status(503).json({ detail: 'The persistent Google OAuth setting is unavailable; Google sign-in remains disabled.' });
     return;
   }
-  response.json(status);
+  response.json({ ...status, clientId: clientId.clientId });
 }
 
 export async function updateGoogleOAuthSettings(request, response) {
-  response.json(await setGoogleOAuthStatus(request.body.enabled, request.user));
+  const body = request.body || {};
+  if (Object.hasOwn(body, 'clientId')) await setGoogleClientId(body.clientId, request.user);
+  response.json(await setGoogleOAuthStatus(body.enabled, request.user));
 }
 
 export async function recaptchaSettings(request, response) {
