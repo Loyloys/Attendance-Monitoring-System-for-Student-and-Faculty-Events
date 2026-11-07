@@ -1,5 +1,4 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { jsPDF } from 'jspdf';
 import {
   Activity, AlertCircle, Archive, ArrowRight, BarChart3, CalendarDays, CheckCircle2, Clock,
   ClipboardCheck, Download, Edit3, FileCheck, FileText, KeyRound, MessageSquare, Plus, Search, ShieldCheck, Trash2, UserCheck, Users, X,
@@ -21,9 +20,10 @@ import Button from '../../components/common/Button';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import EventQrPanel from '../../components/common/EventQRCode';
 import GoogleCalendarLink from '../../components/event/GoogleCalendarLink';
+import { createAttendanceReportPdfBlob } from '../../utils/attendanceReportPdf';
 
-import UseMyLocation from '../../components/admin/UseMyLocation';
 import MapVenuePicker, { type Coordinate } from '../../components/admin/MapVenuePicker';
+import UseMyLocation from '../../components/admin/UseMyLocation';
 import AdminAnnouncementsSection from './AnnouncementsSection';
 import SettingsSection from './SettingsSection';
 import { DEPARTMENTS } from '../../utils/departments';
@@ -42,6 +42,7 @@ type UserForm = {
 };
 
 type EventForm = {
+  id?: string;
   name: string;
   description: string;
   date: string;
@@ -327,7 +328,7 @@ function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, 
         : String(venue.default_required_attendance_minutes),
     });
   };
-  return <Modal title="Schedule event" description="Set event details, attendance method, and automatic late cut-off." onClose={onClose}><form onSubmit={event => { event.preventDefault(); onSubmit(); }} className="grid gap-4 sm:grid-cols-2">
+  return <Modal title="Schedule event" description="Set event details, attendance method, and automatic late cut-off." onClose={onClose}><form onSubmit={event => { event.preventDefault(); if (!saving) onSubmit(); }} className="grid gap-4 sm:grid-cols-2">
     <label className="sm:col-span-2"><span className={labelClass}>Event name</span><input className={inputClass} value={form.name} onChange={event => set('name', event.target.value)} required /></label>
     <label className="sm:col-span-2"><span className={labelClass}>Description</span><textarea className={inputClass} rows={2} value={form.description} onChange={event => set('description', event.target.value)} required /></label>
     <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={form.date} onChange={event => set('date', event.target.value)} required /></label>
@@ -414,15 +415,6 @@ function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, 
     )}
 
     <div className="sm:col-span-2">
-      <UseMyLocation
-        policy={{ maxAccuracyMeters: 100, maxAgeSeconds: 120 }}
-        onApply={(location) => {
-          set('venueLatitude', location.latitude);
-          set('venueLongitude', location.longitude);
-        }}
-      />
-    </div>
-    <div className="sm:col-span-2">
       <div className="grid grid-cols-2 gap-4">
         <label>
           <span className={labelClass}>Venue latitude</span>
@@ -449,6 +441,15 @@ function EventEditor({ form, setForm, onSubmit, onClose, error, saving, venues, 
           />
         </label>
       </div>
+    </div>
+    <div className="sm:col-span-2">
+      <UseMyLocation
+        policy={{ maxAccuracyMeters: 100, maxAgeSeconds: 120 }}
+        onApply={(location) => {
+          set('venueLatitude', location.latitude);
+          set('venueLongitude', location.longitude);
+        }}
+      />
     </div>
     <label><span className={labelClass}>Attendance boundary</span><select className={inputClass} value={form.geofenceType} onChange={event => setForm(current => ({ ...current, geofenceType: event.target.value as EventForm['geofenceType'], geofencePolygon: event.target.value === 'polygon' ? current.geofencePolygon : [] }))}><option value="circle">Circular fence</option><option value="polygon">Custom map polygon</option></select></label>
 
@@ -889,12 +890,12 @@ function EventsSection() {
     .sort((a, b) => b.date.localeCompare(a.date));
 
 
-  const openCreate = () => { setEditing(null); setForm(emptyEventForm); setError(''); setCalendarNotice(null); setVenueSelectedId(''); setVenueError(''); };
+  const openCreate = () => { setEditing(null); setForm({ ...emptyEventForm, id: crypto.randomUUID() }); setError(''); setCalendarNotice(null); setVenueSelectedId(''); setVenueError(''); };
   const openEdit = (event: AdminEvent) => {
     setEditing(event);
     setVenueSelectedId('');
     setVenueError('');
-    setForm({ name: event.name, description: event.description, date: event.date, start: event.start, end: event.end, venue: event.venue, organizer: event.organizer, audience: event.audience, department: event.department, method: event.method, cutoff: event.cutoff, status: event.status,
+    setForm({ id: event.id, name: event.name, description: event.description, date: event.date, start: event.start, end: event.end, venue: event.venue, organizer: event.organizer, audience: event.audience, department: event.department, method: event.method, cutoff: event.cutoff, status: event.status,
       // BOTH FLAGS ARE REPOPULATED, so create -> save -> reopen shows what was
       // actually stored. The deadline arrives as an ISO instant and is trimmed to
       // the `datetime-local` shape the input expects.
@@ -977,6 +978,7 @@ function EventsSection() {
     }
   };
   const requestFromForm = (value: EventForm): AdminEventRequest => ({
+    ...(value.id ? { id: value.id } : {}),
     name: value.name.trim(),
     description: value.description.trim(),
     date: value.date,
@@ -1013,7 +1015,10 @@ function EventsSection() {
     geofenceType: value.geofenceType,
     geofencePolygon: value.geofencePolygon,
   });
+  const saveInFlight = useRef(false);
   const save = async () => {
+    if (saving || saveInFlight.current) return;
+    saveInFlight.current = true;
     setSaving(true);
     setError('');
     setQrNotice('');
@@ -1025,7 +1030,9 @@ function EventsSection() {
         : await eventApi.createAdminEvent(request);
       setServerEvents(current => editing
         ? current.map(event => event.id === saved.id ? saved : event)
-        : [saved, ...current]);
+        : (current.some(event => event.id === saved.id)
+            ? current.map(event => event.id === saved.id ? saved : event)
+            : [saved, ...current]));
       await refreshAdminState();
       setEditing(undefined);
       // The event is already saved at this point. Auto-issuing its code is a
@@ -1041,6 +1048,7 @@ function EventsSection() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to save event.');
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
@@ -1183,25 +1191,41 @@ function ReportsSection({ state }: { state: AdminState }) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [role, setRole] = useState<'All' | 'Student' | 'Faculty'>('All');
+  const [preview, setPreview] = useState<{ url: string; blob: Blob; filename: string; title: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
   const departments = [...new Set(state.users.map(user => user.department).filter(Boolean))];
   const rows = reportRows({ eventId: eventId || undefined, department: department || undefined, startDate: startDate || undefined, endDate: endDate || undefined, role: role === 'All' ? undefined : role }, state);
   const counts = { present: rows.filter(row => row.status === 'Present').length, late: rows.filter(row => row.status === 'Late').length, absent: rows.filter(row => row.status === 'Absent').length };
-  const exportPdf = (targetRole: 'Student' | 'Faculty') => {
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview.url);
+  }, [preview]);
+  const closePreview = () => {
+    if (preview) URL.revokeObjectURL(preview.url);
+    setPreview(null);
+    setPreviewError('');
+  };
+  const previewPdf = async (targetRole: 'Student' | 'Faculty') => {
     const targetRows = rows.filter(row => row.role === targetRole);
     const targetCounts = { present: targetRows.filter(row => row.status === 'Present').length, late: targetRows.filter(row => row.status === 'Late').length, absent: targetRows.filter(row => row.status === 'Absent').length };
-    const pdf = new jsPDF();
-    pdf.setTextColor(37, 99, 235); pdf.setFontSize(18); pdf.text('COT Attendance Report', 14, 18);
-    pdf.setFontSize(10); pdf.setTextColor(70, 80, 95); pdf.text(`${targetRole} attendance · ${eventId || 'All filtered events'}`, 14, 27); pdf.text(`Generated: ${new Date().toLocaleString()}`, 14, 34);
-    pdf.text(`Present: ${targetCounts.present}   Late: ${targetCounts.late}   Absent: ${targetCounts.absent}   Total: ${targetRows.length}`, 14, 43);
-    let y = 60; pdf.text('ID', 14, y); pdf.text('Name', 42, y); pdf.text('Event', 100, y); pdf.text('Status', 168, y); y += 7;
-    targetRows.forEach(row => { if (y > 275) { pdf.addPage(); y = 20; } pdf.text(row.personId, 14, y); pdf.text(row.name.slice(0, 28), 42, y); pdf.text(row.eventId, 100, y); pdf.text(row.status, 168, y); y += 7; });
-    pdf.save(`COT_${targetRole.toLowerCase()}_attendance_${eventId || 'report'}.pdf`);
+    const filename = `COT_${targetRole.toLowerCase()}_attendance_${eventId || 'report'}.pdf`;
+    setPreviewLoading(true);
+    setPreviewError('');
+    try {
+      const blob = createAttendanceReportPdfBlob({ targetRole, eventId, rows: targetRows, counts: targetCounts });
+      if (preview) URL.revokeObjectURL(preview.url);
+      setPreview({ url: URL.createObjectURL(blob), blob, filename, title: `${targetRole} Attendance Report` });
+    } catch (caught) {
+      setPreviewError(caught instanceof Error ? caught.message : 'The PDF preview could not be generated.');
+    } finally {
+      setPreviewLoading(false);
+    }
   };
-  return <section className="space-y-5"><div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#C2410C]">Statistics · Event / department / date range</p><h1 className="mt-2 text-3xl font-black text-[#10203B]">Attendance reports</h1><p className="mt-1 text-sm text-[#64748B]">Generate summaries with Present, Late, Absent, totals, and per-person percentages.</p></div><div className="flex flex-wrap gap-2"><Button variant="glass" onClick={() => exportPdf('Student')}><Download size={15} /> Student PDF</Button><Button variant="glass" onClick={() => exportPdf('Faculty')}><Download size={15} /> Faculty PDF</Button></div></div>
+  return <><section className="space-y-5"><div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#C2410C]">Statistics · Event / department / date range</p><h1 className="mt-2 text-3xl font-black text-[#10203B]">Attendance reports</h1><p className="mt-1 text-sm text-[#64748B]">Generate summaries with Present, Late, Absent, totals, and per-person percentages.</p></div><div className="flex flex-wrap gap-2"><Button variant="glass" onClick={() => void previewPdf('Student')} disabled={previewLoading}><Download size={15} /> Student PDF</Button><Button variant="glass" onClick={() => void previewPdf('Faculty')} disabled={previewLoading}><Download size={15} /> Faculty PDF</Button></div></div>
     <div className="grid gap-4 sm:grid-cols-4"><Metric label="Present" value={counts.present} tone="green" icon={CheckCircle2} /><Metric label="Late" value={counts.late} tone="amber" icon={Activity} /><Metric label="Absent" value={counts.absent} tone="rose" icon={AlertCircle} /><Metric label="Records" value={rows.length} tone="blue" icon={FileText} /></div>
     <div className={panelClass + ' p-5'}><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><select className={inputClass} value={eventId} onChange={event => setEventId(event.target.value)}><option value="">All events</option>{state.events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}</select><select className={inputClass} value={department} onChange={event => setDepartment(event.target.value)}><option value="">All departments</option>{departments.map(value => <option key={value}>{value}</option>)}</select><input type="date" className={inputClass} value={startDate} onChange={event => setStartDate(event.target.value)} /><input type="date" className={inputClass} value={endDate} onChange={event => setEndDate(event.target.value)} /><select className={inputClass} value={role} onChange={event => setRole(event.target.value as typeof role)}><option>All</option><option>Student</option><option>Faculty</option></select></div><div className="mt-4 flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800/80"><BarChart3 size={16} /> Attendance percentage = events attended (Present or Late) ÷ required events × 100.</div></div>
     <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]"><div className="overflow-x-auto rounded-2xl border border-[#E2E3DF]"><table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-[#E2E3DF] bg-[#FAF9F5] text-xs uppercase tracking-wider text-[#64748B]"><tr><th className="px-5 py-4">Person</th><th className="px-5 py-4">Event</th><th className="px-5 py-4">Status</th><th className="px-5 py-4">Percentage</th></tr></thead><tbody className="divide-y divide-white/[0.06]">{rows.map(row => <tr key={`${row.id}-${row.personId}`}><td className="px-5 py-4"><p className="font-semibold text-[#10203B]">{row.name}</p><p className="text-xs text-[#64748B]">{row.personId} · {row.department}</p></td><td className="px-5 py-4 text-[#10203B]/60">{row.eventId}</td><td className="px-5 py-4"><StatusBadge status={statusTone(row.status)}>{row.status}</StatusBadge></td><td className="px-5 py-4 font-semibold text-[#C2410C]">{getAttendancePercentage(row.personId, row.role, state)}%</td></tr>)}</tbody></table>{rows.length === 0 && <div className="p-8"><EmptyState message="No attendance rows match these report filters." /></div>}</div><div className={panelClass + ' p-5'}><h2 className="font-bold text-[#10203B]">Per-person attendance</h2><p className="mt-1 text-xs text-[#64748B]">Required events only; pending and cancelled events are excluded.</p><div className="mt-4 space-y-3">{state.users.filter(user => user.role !== 'Admin').map(user => { const percentage = getAttendancePercentage(user.id, user.role === 'Faculty' ? 'Faculty' : 'Student', state); return <div key={user.id}><div className="mb-1 flex justify-between text-xs"><span className="text-[#10203B]/65">{user.name}</span><span className="font-bold text-[#C2410C]">{percentage}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-[#FAF9F5]"><div className="h-full rounded-full bg-[#C2410C]" style={{ width: `${percentage}%` }} /></div></div>; })}</div></div></div>
-  </section>;
+  </section>{previewLoading && <div role="status" className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#10203B] shadow-2xl">Preparing PDF preview…</div></div>}{previewError && <div role="alert" className="fixed bottom-5 right-5 z-[121] max-w-sm rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 shadow-xl">{previewError}</div>}{preview && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/70 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="attendance-pdf-preview-title"><section className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"><header className="flex items-center justify-between gap-4 border-b border-[#E2E3DF] px-4 py-3 sm:px-6"><div><h2 id="attendance-pdf-preview-title" className="text-lg font-bold text-[#10203B]">{preview.title}</h2><p className="text-xs text-[#64748B]">Review the report before downloading.</p></div><button type="button" onClick={closePreview} aria-label="Close PDF preview" className="rounded-lg p-2 text-[#64748B] hover:bg-[#FAF9F5] hover:text-[#10203B]"><X size={19} /></button></header><div className="min-h-0 flex-1 bg-slate-100 p-2 sm:p-4"><iframe src={preview.url} title={`${preview.title} PDF preview`} className="h-full w-full rounded-lg border border-[#CBD5E1] bg-white" /></div><footer className="flex flex-col-reverse gap-2 border-t border-[#E2E3DF] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6"><p className="text-xs text-[#64748B]">If the embedded viewer is unavailable, use Download PDF to save the report.</p><div className="flex justify-end gap-2"><Button variant="glass" onClick={closePreview}>Close</Button><button type="button" onClick={() => { const link = document.createElement('a'); link.href = preview.url; link.download = preview.filename; link.click(); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#F97316] px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-[#EA580C]"><Download size={15} /> Download PDF</button></div></footer></section></div>}</>;
 }
 
 function DashboardSection({ state, onNavigate }: { state: AdminState; onNavigate: (section: AdminSection) => void }) {
@@ -1419,5 +1443,5 @@ export default function AdminWorkspace() {
   const user = AuthService.getCurrentUser();
   if (loadingState) return <div className="flex min-h-64 items-center justify-center text-sm text-[#64748B]">Loading administrator workspace…</div>;
   if (workspaceError) return <div role="alert" className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-5 text-sm text-rose-200">{workspaceError}</div>;
-  return <div className="min-h-full"><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#94A3B8]">Signed in as {user?.name || 'Administrator'}</p><p className="mt-1 text-sm text-[#64748B]">Required Admin functions · functional requirements workspace</p></div><div className="flex items-center gap-3"><p role="status" data-testid="admin-sync-status" className={`text-xs ${syncFailed ? 'font-semibold text-amber-600' : pollExhausted ? 'font-semibold text-amber-600' : 'text-[#94A3B8]'}`}>{syncFailed ? 'Showing the last loaded data \u2014 the latest refresh failed' : pollExhausted ? 'Live updates paused \u2014 refresh to resume' : lastSyncedAt ? `Live \u00b7 updated ${lastSyncedAt.toLocaleTimeString()}` : 'Loading\u2026'}</p><button type="button" onClick={() => void refreshNow()} data-testid="admin-refresh-now" className="shrink-0 rounded-lg border border-[#E2E3DF] px-2.5 py-1 text-[11px] font-semibold text-[#475569] transition hover:bg-[#FAF9F5] hover:text-[#10203B]">Refresh now</button></div><nav className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-[#E2E3DF] bg-[#FAF9F5] p-1">{([{ id: 'dashboard', label: 'Dashboard' }, { id: 'signups', label: 'Signups' }, { id: 'users', label: 'Users' }, { id: 'events', label: 'Events' }, { id: 'archive', label: 'Archive' }, { id: 'attendance', label: 'Attendance' }, { id: 'reports', label: 'Reports' }, { id: 'feedback', label: 'Feedback' }, { id: 'announcements', label: 'Announcements' }, { id: 'settings', label: 'Settings' }] as const).map(item => <button type="button" key={item.id} onClick={() => go(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${section === item.id ? 'bg-[#FFF1E6] text-[#C2410C]' : 'text-[#64748B] hover:bg-[#FAF9F5] hover:text-[#10203B]'}`}>{item.label}</button>)}</nav></div>{section === 'dashboard' && <DashboardSection state={state} onNavigate={go} />}{section === 'signups' && <SignupRequestsSection />}{section === 'users' && <UsersSection users={state.users} />}{section === 'events' && <EventsSection />}{section === 'archive' && <ArchiveSection />}{section === 'attendance' && <AttendanceSection events={state.events} attendance={state.attendance} users={state.users} />}{section === 'reports' && <ReportsSection state={state} />}{section === 'feedback' && <FeedbackSection state={state} />}{section === 'announcements' && <AdminAnnouncementsSection />}{section === 'settings' && <SettingsSection />}</div>;
+  return <div className="min-h-full"><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#94A3B8]">Signed in as {user?.name || 'Administrator'}</p><p className="mt-1 text-sm text-[#64748B]">Required Admin functions · functional requirements workspace</p></div><div className="flex items-center gap-3"><p role="status" data-testid="admin-sync-status" className={`text-xs ${syncFailed ? 'font-semibold text-amber-600' : pollExhausted ? 'font-semibold text-amber-600' : 'text-[#94A3B8]'}`}>{syncFailed ? 'Showing the last loaded data \u2014 the latest refresh failed' : pollExhausted ? 'Live updates paused \u2014 refresh to resume' : lastSyncedAt ? `Live \u00b7 updated ${lastSyncedAt.toLocaleTimeString()}` : 'Loading\u2026'}</p><button type="button" onClick={() => void refreshNow()} data-testid="admin-refresh-now" className="shrink-0 rounded-lg border border-[#E2E3DF] px-2.5 py-1 text-[11px] font-semibold text-[#475569] transition hover:bg-[#FAF9F5] hover:text-[#10203B]">Refresh now</button></div></div>{section === 'dashboard' && <DashboardSection state={state} onNavigate={go} />}{section === 'signups' && <SignupRequestsSection />}{section === 'users' && <UsersSection users={state.users} />}{section === 'events' && <EventsSection />}{section === 'archive' && <ArchiveSection />}{section === 'attendance' && <AttendanceSection events={state.events} attendance={state.attendance} users={state.users} />}{section === 'reports' && <ReportsSection state={state} />}{section === 'feedback' && <FeedbackSection state={state} />}{section === 'announcements' && <AdminAnnouncementsSection />}{section === 'settings' && <SettingsSection />}</div>;
 }

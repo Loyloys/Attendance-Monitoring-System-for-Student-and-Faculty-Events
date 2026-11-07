@@ -2,7 +2,7 @@
 import { AlertTriangle, Crosshair, Loader2, MapPin, RotateCcw } from 'lucide-react';
 import {
   captureLocation, evaluateFixQuality, geolocationUnavailableReason,
-  type LocationQualityPolicy,
+  type LocationFix, type LocationQualityPolicy,
 } from '../../utils/eventQr';
 
 /**
@@ -52,6 +52,10 @@ export default function UseMyLocation({ onApply, policy }: {
   const [phase, setPhase] = useState<Phase>('idle');
   const [fix, setFix] = useState<DetectedLocation | null>(null);
   const [message, setMessage] = useState('');
+  // Latest raw observation while the reading is being taken. Mirrors the
+  // Student/Faculty scanner, which shows the newest fix the device is
+  // producing instead of a single cached one.
+  const [currentFix, setCurrentFix] = useState<LocationFix | null>(null);
 
   /**
    * Identifies the newest request. Any result carrying an older number belongs
@@ -107,8 +111,12 @@ export default function UseMyLocation({ onApply, policy }: {
     setFix(null);
     try {
       // The existing application helper: high accuracy requested, and
-      // `maximumAge: 0` so a cached fix is never presented as fresh.
-      const reading = await captureLocation();
+      // `maximumAge: 0` so a cached fix is never presented as fresh. The
+      // `onUpdate` callback reports each fresh reading the device produces so
+      // the form shows the newest coordinate instead of a single cached one.
+      const reading = await captureLocation({
+        onUpdate: setCurrentFix,
+      });
       if (!alive.current || requestId.current !== id) return;
 
       const quality = evaluateFixQuality(reading, policy);
@@ -171,9 +179,14 @@ export default function UseMyLocation({ onApply, policy }: {
 
       <p className="mt-2 text-xs leading-5 text-[#64748B]" data-testid="use-my-location-explainer">{EXPLAINER}</p>
 
-      {phase === 'locating' && (
+      {phase === 'locating' && currentFix && (
+        <p className="mt-2 flex items-center gap-2 text-xs font-medium text-sky-700" role="status" data-testid="use-my-location-loading-current">
+          <Loader2 size={14} className="animate-spin" /> Reading your device&rsquo;s location ({currentFix.latitude.toFixed(4)}, {currentFix.longitude.toFixed(4)}) \u00b1{Math.round(currentFix.accuracy)} m\u2026
+        </p>
+      )}
+      {phase === 'locating' && !currentFix && (
         <p className="mt-2 flex items-center gap-2 text-xs font-medium text-sky-700" role="status" data-testid="use-my-location-loading">
-          <Loader2 size={14} className="animate-spin" /> Waiting for your device\u2026
+          <Loader2 size={14} className="animate-spin" /> Waiting for your device&hellip;
         </p>
       )}
 
@@ -204,4 +217,4 @@ export default function UseMyLocation({ onApply, policy }: {
     </div>
   );
 }
-
+
