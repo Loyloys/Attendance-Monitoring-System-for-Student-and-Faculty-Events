@@ -5,6 +5,7 @@ import { AppError } from '../utils/errors.js';
 export const GOOGLE_OAUTH_SETTING = 'google_oauth_enabled';
 export const GOOGLE_CLIENT_ID_SETTING = 'google_client_id';
 export const RECAPTCHA_SETTING = 'recaptcha_enabled';
+export const RECAPTCHA_SITE_KEY_SETTING = 'recaptcha_site_key';
 export const MAP_PICKER_SETTING = 'map_picker_enabled';
 export const GOOGLE_CALENDAR_SETTING = 'google_calendar_enabled';
 
@@ -76,21 +77,42 @@ export async function setGoogleOAuthStatus(enabled, actor) {
 
 export async function recaptchaStatus() {
   try {
-    const setting = await SystemSetting.findById(RECAPTCHA_SETTING).lean();
-    return { enabled: setting?.value === true, available: true, configured: recaptchaIsConfigured().available };
+    const [setting, siteKeySetting] = await Promise.all([
+      SystemSetting.findById(RECAPTCHA_SETTING).lean(),
+      SystemSetting.findById(RECAPTCHA_SITE_KEY_SETTING).lean(),
+    ]);
+    return {
+      enabled: setting?.value === true,
+      siteKey: typeof siteKeySetting?.value === 'string' ? siteKeySetting.value : '',
+      available: true,
+      configured: recaptchaIsConfigured().available,
+    };
   } catch (error) {
     console.error('Could not read the persisted reCAPTCHA setting:', error?.name || 'unknown error');
-    return { enabled: false, available: false, configured: false };
+    return { enabled: false, siteKey: '', available: false, configured: false };
   }
 }
 
-export async function setRecaptchaStatus(enabled, actor) {
+export async function setRecaptchaStatus(enabled, actor, siteKey) {
   if (typeof enabled !== 'boolean') throw new AppError(400, 'enabled must be true or false.');
+  if (enabled && typeof siteKey === 'string' && !siteKey.trim()) {
+    throw new AppError(400, 'A reCAPTCHA site key is required before enabling reCAPTCHA.');
+  }
   if (enabled) {
     const configured = recaptchaIsConfigured();
     if (!configured.available) throw new AppError(400, configured.detail);
   }
   try {
+    if (siteKey !== undefined) {
+      if (typeof siteKey !== 'string' || siteKey.length > 512) {
+        throw new AppError(400, 'A valid reCAPTCHA site key string is required.');
+      }
+      await SystemSetting.findByIdAndUpdate(
+        RECAPTCHA_SITE_KEY_SETTING,
+        { $set: { value: siteKey.trim(), updatedAt: new Date(), updatedBy: actor?._id || null } },
+        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+      );
+    }
     await SystemSetting.findByIdAndUpdate(
       RECAPTCHA_SETTING,
       { $set: { value: enabled, updatedAt: new Date(), updatedBy: actor?._id || null } },
@@ -99,8 +121,8 @@ export async function setRecaptchaStatus(enabled, actor) {
     return recaptchaStatus();
   } catch (error) {
     if (error instanceof AppError) throw error;
-    console.error('Could not persist the reCAPTCHA setting:', error?.name || 'unknown error');
-    throw new AppError(503, 'The reCAPTCHA setting could not be saved. No setting change was made.');
+    console.error('Could not persist the reCAPTCHA settings:', error?.name || 'unknown error');
+    throw new AppError(503, 'The reCAPTCHA settings could not be saved. Reload settings to confirm the current configuration.');
   }
 }
 

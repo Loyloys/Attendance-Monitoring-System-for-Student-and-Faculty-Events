@@ -84,7 +84,7 @@ export async function recaptchaSettings(request, response) {
 }
 
 export async function updateRecaptchaSettings(request, response) {
-  response.json(await setRecaptchaStatus(request.body.enabled, request.user));
+  response.json(await setRecaptchaStatus(request.body.enabled, request.user, request.body.siteKey));
 }
 
 export async function mapPickerSettings(request, response) {

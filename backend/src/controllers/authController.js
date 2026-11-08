@@ -91,8 +91,8 @@ export async function googleLink(request, response) {
   response.json(serializeAuthUser(user));
 }
 
-export function googleCalendarAuthorize(request, response) {
-  response.redirect(calendarAuthorizationUrl(request));
+export async function googleCalendarAuthorize(request, response) {
+  response.redirect(await calendarAuthorizationUrl(request));
 }
 
 export async function googleCalendarStatus(request, response) {

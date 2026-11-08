@@ -63,11 +63,13 @@ test('does not require or send a reCAPTCHA token when the persisted setting is d
 
 test('exposes the reCAPTCHA enforcement setting to the anonymous login page', async () => {
   await getModels().SystemSetting.create({ _id: 'recaptcha_enabled', value: false });
+  await getModels().SystemSetting.create({ _id: 'recaptcha_site_key', value: 'public-site-key' });
   const response = await request().get('/api/admin/settings/recaptcha/');
   assert.equal(response.status, 200);
   assert.equal(response.body.enabled, false);
   assert.equal(response.body.available, true);
   assert.equal(typeof response.body.configured, 'boolean');
+  assert.equal(response.body.siteKey, 'public-site-key');
 });
 
 test('requires and verifies a reCAPTCHA token when the persisted setting is enabled', async () => {

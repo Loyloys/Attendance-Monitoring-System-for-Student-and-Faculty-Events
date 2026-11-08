@@ -490,12 +490,12 @@ export const eventApi = {
     });
   },
   async recaptchaSettings() {
-    return requestJson<{ enabled: boolean; available: boolean; configured: boolean }>('/admin/settings/recaptcha/');
+    return requestJson<{ enabled: boolean; available: boolean; configured: boolean; siteKey?: string }>('/admin/settings/recaptcha/');
   },
-  async updateRecaptchaSettings(enabled: boolean) {
+  async updateRecaptchaSettings(enabled: boolean, siteKey?: string) {
     return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/recaptcha/', {
       method: 'PUT',
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify({ enabled, ...(siteKey === undefined ? {} : { siteKey }) }),
     });
   },
   async mapPickerSettings() {

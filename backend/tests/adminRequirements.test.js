@@ -187,6 +187,24 @@ test('rejection creates no account; admin OAuth setting is protected, persistent
   assert.equal((await admin.agent.get('/api/admin/settings/google-oauth/')).body.enabled, false);
 });
 
+test('admin can persist the public reCAPTCHA site key', async () => {
+  await createUser({ username: 'ADM-CAPTCHA', role: 'admin' });
+  const admin = await login('ADM-CAPTCHA');
+  const saved = await send(admin.agent, 'put', '/api/admin/settings/recaptcha/', {
+    enabled: false,
+    siteKey: 'public-recaptcha-site-key',
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.siteKey, 'public-recaptcha-site-key');
+  assert.equal((await request().get('/api/admin/settings/recaptcha/')).body.siteKey, 'public-recaptcha-site-key');
+
+  const invalid = await send(admin.agent, 'put', '/api/admin/settings/recaptcha/', {
+    enabled: false,
+    siteKey: 123,
+  });
+  assert.equal(invalid.status, 400);
+});
+
 test('announcement publishing is admin-only and recipient targeting is enforced', async () => {
   await createUser({ username: 'ADM-ANN', role: 'admin' });
   await createUser({ username: 'STU-ANN', role: 'student' });

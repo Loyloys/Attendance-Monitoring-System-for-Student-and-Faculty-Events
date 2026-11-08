@@ -31,9 +31,9 @@ test('Calendar payload preserves event fields and Manila timezone', () => {
   });
 });
 
-test('Calendar authorization uses the configured callback and never includes the client secret', () => {
+test('Calendar authorization uses the configured callback and never includes the client secret', async () => {
   const request = { session: {} };
-  const url = new URL(calendarAuthorizationUrl(request));
+  const url = new URL(await calendarAuthorizationUrl(request));
 
   assert.equal(url.searchParams.get('redirect_uri'), 'http://localhost:8000/api/auth/google/calendar/callback/');
   assert.equal(url.searchParams.get('scope'), 'https://www.googleapis.com/auth/calendar.events');

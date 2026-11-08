@@ -103,9 +103,19 @@ describe('SettingsSection', () => {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     const clientIdInput = screen.getByLabelText('Google OAuth client ID');
     fireEvent.change(clientIdInput, { target: { value: '9876543210-new.apps.googleusercontent.com' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save client ID' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save client ID' })[0]);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     expect(mockUpdateGoogleOAuthSettings).toHaveBeenCalledWith(false, '9876543210-new.apps.googleusercontent.com');
+  });
+
+  it('saves the Calendar client ID through the shared Google OAuth setting', async () => {
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    const clientIdInput = screen.getByLabelText('Google Calendar client ID');
+    fireEvent.change(clientIdInput, { target: { value: '9876543210-calendar.apps.googleusercontent.com' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save client ID' })[1]);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockUpdateGoogleOAuthSettings).toHaveBeenCalledWith(false, '9876543210-calendar.apps.googleusercontent.com');
   });
 
   it('saves reCAPTCHA enabled state', async () => {
@@ -127,8 +137,19 @@ describe('SettingsSection', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
     });
 
-    expect(mockUpdateRecaptchaSettings).toHaveBeenCalledWith(true);
+    expect(mockUpdateRecaptchaSettings).toHaveBeenCalledWith(true, import.meta.env.VITE_RECAPTCHA_SITE_KEY ?? '');
     expect(recaptchaCheckbox).toBeChecked();
+  });
+
+  it('saves the reCAPTCHA site key', async () => {
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    const siteKeyInput = screen.getByLabelText('reCAPTCHA site key');
+    fireEvent.change(siteKeyInput, { target: { value: 'test-public-site-key' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save site key' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockUpdateRecaptchaSettings).toHaveBeenCalledWith(false, 'test-public-site-key');
+    expect(screen.getByRole('status')).toHaveTextContent('reCAPTCHA site key saved.');
   });
 
   it('disables reCAPTCHA checkbox when backend keys missing', async () => {

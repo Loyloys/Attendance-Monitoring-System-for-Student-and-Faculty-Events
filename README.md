@@ -326,7 +326,7 @@ GOOGLE_CLOCK_SKEW_SECONDS=60
 GOOGLE_ALLOWED_HOSTED_DOMAINS=youruniversity.edu
 ```
 
-Administrators can also set the public Google web client ID in **Settings → Google OAuth**, directly below the enable/disable toggle. That value is persisted in MongoDB and takes precedence over `GOOGLE_CLIENT_ID` in `backend/.env` for Google sign-in. The access policy and (for institutional access) allowed domains remain backend configuration and must still be set; enabling the toggle or entering a client ID alone does not grant access.
+Administrators can also set the public Google web client ID in **Settings → Google OAuth** or **Settings → Google Calendar**. Both fields update the same value, which is persisted in MongoDB and takes precedence over `GOOGLE_CLIENT_ID` in `backend/.env` for Google sign-in and Calendar authorization. Calendar still requires the matching `GOOGLE_CLIENT_SECRET`, redirect URI, and encryption configuration on the backend. The access policy and (for institutional access) allowed domains remain backend configuration and must still be set; enabling the toggle or entering a client ID alone does not grant access.
 
 Frontend — `frontend/.env.local` (optional; see `frontend/.env.example`):
 
@@ -337,6 +337,8 @@ VITE_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
 The client id is public, so it is not a secret and there is no client secret to store. The **backend is the authority**: it decides whether sign-in is available, issues the nonce, and rejects any credential whose audience is not its own `GOOGLE_CLIENT_ID`. Setting only the frontend variable will not enable sign-in.
 
 After changing either file, **restart both** the backend and the Vite dev server.
+
+Administrators can also save the public reCAPTCHA site key in **Settings → reCAPTCHA on login**. That persisted value is used by the login page; when it is blank, the frontend falls back to `VITE_RECAPTCHA_SITE_KEY`. The matching `RECAPTCHA_SECRET_KEY` must still be configured on the backend. The Leaflet venue map picker does not require a client ID or API key.
 
 #### Google access policy (`GOOGLE_ACCESS_POLICY`)
 

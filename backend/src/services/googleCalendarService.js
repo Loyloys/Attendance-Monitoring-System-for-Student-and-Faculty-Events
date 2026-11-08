@@ -4,7 +4,7 @@ import { env } from '../config/env.js';
 import { Event, User } from '../models/index.js';
 import { AppError } from '../utils/errors.js';
 import { decryptSecret, encryptSecret, isSecretStorageConfigured } from '../utils/secretBox.js';
-import { googleCalendarSettingStatus } from './systemSettingsService.js';
+import { googleCalendarSettingStatus, googleClientIdStatus } from './systemSettingsService.js';
 
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3/calendars';
@@ -14,18 +14,21 @@ function configurationError() {
   return new AppError(503, 'Google Calendar is not configured on this server yet.');
 }
 
-function assertConfigured() {
-  if (!env.googleClientId || !env.googleClientSecret || !env.googleCalendarRedirectUri || !isSecretStorageConfigured()) {
+async function assertConfigured() {
+  const clientIdStatus = await googleClientIdStatus();
+  const clientId = clientIdStatus.available ? clientIdStatus.clientId : env.googleClientId;
+  if (!clientId || !env.googleClientSecret || !env.googleCalendarRedirectUri || !isSecretStorageConfigured()) {
     throw configurationError();
   }
   if (env.isProduction && !env.googleCalendarRedirectUri.startsWith('https://')) {
     throw configurationError();
   }
+  return clientId;
 }
 
-function client() {
-  assertConfigured();
-  return new OAuth2Client(env.googleClientId, env.googleClientSecret, env.googleCalendarRedirectUri);
+async function client() {
+  const clientId = await assertConfigured();
+  return new OAuth2Client(clientId, env.googleClientSecret, env.googleCalendarRedirectUri);
 }
 
 function publicRedirectTarget(status) {
@@ -36,9 +39,10 @@ function publicRedirectTarget(status) {
 }
 
 export async function calendarConnectionStatus(user) {
-  const setting = await googleCalendarSettingStatus();
+  const [setting, clientIdStatus] = await Promise.all([googleCalendarSettingStatus(), googleClientIdStatus()]);
+  const clientId = clientIdStatus.available ? clientIdStatus.clientId : env.googleClientId;
   const missing = [];
-  if (!env.googleClientId) missing.push('GOOGLE_CLIENT_ID');
+  if (!clientId) missing.push('GOOGLE_CLIENT_ID');
   if (!env.googleClientSecret) missing.push('GOOGLE_CLIENT_SECRET');
   if (!env.googleCalendarRedirectUri) missing.push('GOOGLE_CALENDAR_REDIRECT_URI');
   if (!isSecretStorageConfigured()) missing.push('EVENT_QR_ENCRYPTION_KEY');
@@ -55,8 +59,8 @@ export async function calendarConnectionStatus(user) {
   };
 }
 
-export function calendarAuthorizationUrl(request) {
-  const oauth = client();
+export async function calendarAuthorizationUrl(request) {
+  const oauth = await client();
   const state = crypto.randomBytes(32).toString('base64url');
   request.session.googleCalendarState = state;
   return oauth.generateAuthUrl({
@@ -68,7 +72,7 @@ export function calendarAuthorizationUrl(request) {
 }
 
 export async function completeCalendarAuthorization(request, code, state) {
-  assertConfigured();
+  const oauth = await client();
   if (!state || state !== request.session.googleCalendarState) {
     throw new AppError(400, 'The Google Calendar authorization session is invalid or expired.');
   }
@@ -76,7 +80,7 @@ export async function completeCalendarAuthorization(request, code, state) {
   if (!code) throw new AppError(400, 'Google Calendar authorization was not completed.');
   const user = await User.findById(request.session.userId).select('+googleCalendarRefreshTokenEncrypted');
   if (!user || !user.isActive || user.archivedAt) throw new AppError(401, 'Your Admin session has expired. Sign in again.');
-  const { tokens } = await client().getToken(code);
+  const { tokens } = await oauth.getToken(code);
   if (!tokens.refresh_token) throw new AppError(400, 'Google did not provide a Calendar refresh credential. Please authorize Calendar again.');
   user.googleCalendarRefreshTokenEncrypted = encryptSecret(tokens.refresh_token);
   user.googleCalendarConnectedAt = new Date();
@@ -86,7 +90,7 @@ export async function completeCalendarAuthorization(request, code, state) {
 async function accessTokenFor(user) {
   const stored = user.googleCalendarRefreshTokenEncrypted;
   if (!stored) return null;
-  const oauth = client();
+  const oauth = await client();
   oauth.setCredentials({ refresh_token: decryptSecret(stored) });
   const token = await oauth.getAccessToken();
   return token?.token || null;
@@ -121,7 +125,7 @@ export async function syncEventToCalendar(event, organizer, request) {
     if (!token) {
       let authorizationUrl;
       try {
-        authorizationUrl = calendarAuthorizationUrl(request);
+        authorizationUrl = await calendarAuthorizationUrl(request);
       } catch {
         return { ok: false, reason: 'Google Calendar is not configured on this server yet.' };
       }

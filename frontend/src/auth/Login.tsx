@@ -31,6 +31,7 @@ const Login: React.FC = () => {
   // restriction, or vice versa.
   const [googleMode, setGoogleMode] = useState<GoogleSignInMode>('unavailable');
   const [recaptchaState, setRecaptchaState] = useState<'loading' | 'disabled' | 'enabled' | 'error'>('loading');
+  const [recaptchaSiteKey, setRecaptchaSiteKey] = useState('');
   const [recaptchaError, setRecaptchaError] = useState('');
   const recaptchaWidgetRef = useRef<HTMLDivElement>(null);
   const recaptchaWidgetId = useRef<number | null>(null);
@@ -108,7 +109,7 @@ const Login: React.FC = () => {
       grecaptcha.ready(() => {
         if (recaptchaWidgetRef.current && recaptchaWidgetId.current === null) {
           recaptchaWidgetId.current = grecaptcha.render(recaptchaWidgetRef.current, {
-            sitekey: import.meta.env.VITE_RECAPTCHA_SITE_KEY,
+            sitekey: recaptchaSiteKey,
           });
         }
       });
@@ -137,7 +138,7 @@ const Login: React.FC = () => {
       window.clearInterval(retry);
       script.removeEventListener('load', renderWidget);
     };
-  }, [recaptchaState]);
+  }, [recaptchaState, recaptchaSiteKey]);
 
   useEffect(() => {
     let active = true;
@@ -149,7 +150,9 @@ const Login: React.FC = () => {
           setRecaptchaState('error');
           return;
         }
-        if (status.enabled && (!status.configured || !import.meta.env.VITE_RECAPTCHA_SITE_KEY)) {
+        const siteKey = status.siteKey?.trim() || import.meta.env.VITE_RECAPTCHA_SITE_KEY || '';
+        setRecaptchaSiteKey(siteKey);
+        if (status.enabled && (!status.configured || !siteKey)) {
           setRecaptchaError('reCAPTCHA is enabled but not fully configured. Please contact an administrator.');
           setRecaptchaState('error');
           return;

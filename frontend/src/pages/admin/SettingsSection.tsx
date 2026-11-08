@@ -5,7 +5,9 @@ export default function SettingsSection() {
   const [oauthEnabled, setOauthEnabled] = useState(false);
   const [oauthConfigured, setOauthConfigured] = useState(false);
   const [oauthClientId, setOauthClientId] = useState('');
+  const [calendarClientId, setCalendarClientId] = useState('');
   const [recaptchaEnabled, setRecaptchaEnabled] = useState(false);
+  const [recaptchaSiteKey, setRecaptchaSiteKey] = useState('');
   const [recaptchaConfigured, setRecaptchaConfigured] = useState(false);
   const [mapPickerEnabled, setMapPickerEnabled] = useState(false);
   const [calendarConfigured, setCalendarConfigured] = useState(false);
@@ -58,6 +60,7 @@ export default function SettingsSection() {
       if (!setting.available) throw new Error('The persistent setting is unavailable. Google sign-in remains disabled.');
       setOauthEnabled(setting.enabled);
       setOauthClientId(setting.clientId);
+      setCalendarClientId(setting.clientId);
       setOauthConfigured(config.configurationAvailable);
       return config.configurationAvailable;
     } catch (caught) {
@@ -74,9 +77,9 @@ export default function SettingsSection() {
       const status = await eventApi.recaptchaSettings();
       if (!status.available) throw new Error('The persistent setting is unavailable. reCAPTCHA remains disabled.');
       setRecaptchaEnabled(status.enabled);
-      // "configured" = backend secret key available (status.configured) AND
-      // frontend public site key is loaded (VITE_RECAPTCHA_SITE_KEY).
-      setRecaptchaConfigured(status.configured && Boolean(import.meta.env.VITE_RECAPTCHA_SITE_KEY));
+      const siteKey = status.siteKey?.trim() || import.meta.env.VITE_RECAPTCHA_SITE_KEY || '';
+      setRecaptchaSiteKey(siteKey);
+      setRecaptchaConfigured(status.configured && Boolean(siteKey));
     } catch (caught) {
       setRecaptchaError(caught instanceof Error ? caught.message : 'Settings could not be loaded.');
     } finally {
@@ -137,18 +140,25 @@ export default function SettingsSection() {
     }
   };
 
-  const saveRecaptcha = async (value: boolean) => {
+  const saveRecaptcha = async (value: boolean, siteKey = recaptchaSiteKey) => {
     setRecaptchaSaving(true);
     setRecaptchaError('');
     setRecaptchaNotice('');
     try {
-      const result = await eventApi.updateRecaptchaSettings(value);
+      const result = await eventApi.updateRecaptchaSettings(value, siteKey);
       if (!result.available) throw new Error('The setting could not be confirmed. reCAPTCHA remains disabled.');
       setRecaptchaEnabled(result.enabled);
-      if (value) {
-        setRecaptchaNotice('reCAPTCHA is now required on password login. Users must complete the checkbox before signing in.');
+      const status = await eventApi.recaptchaSettings();
+      if (!status.available) throw new Error('The saved reCAPTCHA setting could not be confirmed.');
+      const effectiveSiteKey = status.siteKey?.trim() || import.meta.env.VITE_RECAPTCHA_SITE_KEY || '';
+      setRecaptchaSiteKey(effectiveSiteKey);
+      setRecaptchaConfigured(status.configured && Boolean(effectiveSiteKey));
+      if (value !== recaptchaEnabled) {
+        setRecaptchaNotice(value
+          ? 'reCAPTCHA is now required on password login. Users must complete the checkbox before signing in.'
+          : 'reCAPTCHA is no longer required on password login.');
       } else {
-        setRecaptchaNotice('reCAPTCHA is no longer required on password login.');
+        setRecaptchaNotice('reCAPTCHA site key saved.');
       }
     } catch (caught) {
       setRecaptchaError(caught instanceof Error ? caught.message : 'The setting could not be saved.');
@@ -198,6 +208,23 @@ export default function SettingsSection() {
     }
   };
 
+  const saveCalendarClientId = async () => {
+    setCalendarSaving(true);
+    setCalendarError('');
+    setCalendarNotice('');
+    try {
+      const result = await eventApi.updateGoogleOAuthSettings(oauthEnabled, calendarClientId);
+      if (!result.available) throw new Error('The Google client ID could not be confirmed.');
+      await Promise.all([loadOauth(), loadCalendar()]);
+      setCalendarNotice('Google Calendar client ID saved. This shared Google client ID is also used for Google sign-in; Calendar still requires the matching server client secret.');
+    } catch (caught) {
+      setCalendarError(caught instanceof Error ? caught.message : 'The Google Calendar client ID could not be saved.');
+      await loadCalendar();
+    } finally {
+      setCalendarSaving(false);
+    }
+  };
+
   return <section className="mt-6 space-y-5">
     <header><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#94A3B8]">Administrator settings</p><h1 className="mt-1 text-2xl font-black text-[#10203B]">Settings</h1><p className="mt-2 text-sm text-[#64748B]">Persistent controls supported by the application. Google OAuth and reCAPTCHA are enforced by the backend.</p></header>
 
@@ -241,6 +268,30 @@ export default function SettingsSection() {
     <div className="max-w-3xl rounded-2xl border border-[#E2E3DF] bg-white p-5 shadow-sm">
       <h2 className="font-bold text-[#10203B]">Google Calendar</h2>
       <p className="mt-1 text-sm leading-6 text-[#64748B]">Connect this Admin account’s Google Calendar so newly saved and edited events are synchronized without creating duplicates.</p>
+      {!oauthLoading && <div className="mt-5">
+        <label className="block text-sm font-semibold text-[#334155]" htmlFor="google-calendar-client-id">Google Calendar client ID</label>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            id="google-calendar-client-id"
+            className="min-w-0 flex-1 rounded-lg border border-[#CBD5E1] px-3 py-2 text-sm text-[#10203B] outline-none focus:border-[#315A8A] focus:ring-2 focus:ring-[#315A8A]/20"
+            type="text"
+            value={calendarClientId}
+            onChange={event => setCalendarClientId(event.target.value)}
+            placeholder="1234567890-abc.apps.googleusercontent.com"
+            autoComplete="off"
+            disabled={calendarSaving || oauthSaving || Boolean(oauthError)}
+          />
+          <button
+            type="button"
+            className="rounded-lg bg-[#10203B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E3A5F] disabled:opacity-50"
+            onClick={() => void saveCalendarClientId()}
+            disabled={calendarSaving || oauthSaving || Boolean(oauthError)}
+          >
+            Save client ID
+          </button>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[#64748B]">This is the shared Google client ID. Calendar also requires its matching server-side client secret.</p>
+      </div>}
       {calendarLoading ? <p role="status" className="mt-4 text-sm text-[#64748B]">Checking Calendar connection…</p>
         : <div className="mt-5 flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-3">
@@ -269,10 +320,33 @@ export default function SettingsSection() {
       <p className="mt-1 text-sm leading-6 text-[#64748B]">When enabled, the reCAPTCHA checkbox is shown and required before password sign-in. When disabled, the checkbox is hidden and verification is skipped.</p>
       {recaptchaLoading ? <p role="status" className="mt-4 text-sm text-[#64748B]">Loading settings…</p>
         : <label className="mt-5 flex items-center gap-3">
-          <input type="checkbox" checked={recaptchaEnabled} disabled={recaptchaSaving || Boolean(recaptchaError) || !recaptchaConfigured} onChange={event => void saveRecaptcha(event.target.checked)} aria-label="Enable reCAPTCHA on login" />
+          <input type="checkbox" checked={recaptchaEnabled} disabled={recaptchaSaving || Boolean(recaptchaError) || ((!recaptchaConfigured || !recaptchaSiteKey.trim()) && !recaptchaEnabled)} onChange={event => void saveRecaptcha(event.target.checked)} aria-label="Enable reCAPTCHA on login" />
           <span className="text-sm font-semibold text-[#334155]">{recaptchaEnabled ? 'Enabled' : 'Disabled'}</span>
-          {!recaptchaConfigured && <span className="text-xs text-amber-700">Backend reCAPTCHA keys are not configured.</span>}
+          {!recaptchaConfigured && <span className="text-xs text-amber-700">A site key or backend secret is missing.</span>}
         </label>}
+      {!recaptchaLoading && <div className="mt-5">
+        <label className="block text-sm font-semibold text-[#334155]" htmlFor="recaptcha-site-key">reCAPTCHA site key</label>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            id="recaptcha-site-key"
+            className="min-w-0 flex-1 rounded-lg border border-[#CBD5E1] px-3 py-2 text-sm text-[#10203B] outline-none focus:border-[#315A8A] focus:ring-2 focus:ring-[#315A8A]/20"
+            type="text"
+            value={recaptchaSiteKey}
+            onChange={event => setRecaptchaSiteKey(event.target.value)}
+            autoComplete="off"
+            disabled={recaptchaSaving || Boolean(recaptchaError) || (recaptchaEnabled && !recaptchaSiteKey.trim())}
+          />
+          <button
+            type="button"
+            className="rounded-lg bg-[#10203B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E3A5F] disabled:opacity-50"
+            onClick={() => void saveRecaptcha(recaptchaEnabled)}
+            disabled={recaptchaSaving || Boolean(recaptchaError)}
+          >
+            Save site key
+          </button>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[#64748B]">The public site key is safe to expose to browsers. The matching secret must still be configured on the backend.</p>
+      </div>}
       {recaptchaError && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{recaptchaError} <button className="ml-2 font-bold underline" onClick={() => void loadRecaptcha()}>Retry</button></p>}
       {recaptchaNotice && <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{recaptchaNotice}</p>}
     </div>
