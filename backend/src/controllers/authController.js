@@ -18,10 +18,12 @@ import { User } from '../models/index.js';
 import { issueCsrfToken, rotateCsrfToken } from '../middleware/csrf.js';
 import { ValidationError } from '../utils/errors.js';
 import { regenerateSession } from '../utils/session.js';
+import { recordAudit } from '../services/auditService.js';
 import {
   emailSignupStatus,
   requestEmailSignup,
   setApplicationPassword,
+  requestPasswordSetup,
   verifySignupEmail,
 } from '../services/emailSignupService.js';
 
@@ -62,10 +64,15 @@ export async function passwordSetup(request, response) {
   response.json(await setApplicationPassword(request.body.token, request.body.password));
 }
 
+export async function passwordSetupRequest(request, response) {
+  response.json(await requestPasswordSetup(request.body.email));
+}
+
 export async function googleAuthenticate(request, response) {
   const result = await authenticateWithGoogle(request, request.body);
   if (result.status === 'signed_in') {
     rotateCsrfToken(request, response);
+    await recordAudit({ actor: result.user, action: 'login_succeeded', targetUser: result.user, detail: 'Signed in with Google.' });
     response.json({ status: result.status, user: serializeAuthUser(result.user) });
     return;
   }
@@ -76,6 +83,7 @@ export async function googleCompleteProfile(request, response) {
   const result = await completeGoogleProfile(request, request.body);
   if (result.status === 'signed_in') {
     rotateCsrfToken(request, response);
+    await recordAudit({ actor: result.user, action: 'login_succeeded', targetUser: result.user, detail: 'Signed in with Google.' });
     response.json({ status: result.status, user: serializeAuthUser(result.user) });
     return;
   }
@@ -135,6 +143,14 @@ export function me(request, response) {
 export async function profile(request, response) {
   if (request.method === 'GET') return response.json(serializeAuthUser(request.user));
   const updated = await updateProfile(request.user, request.body);
+  if (updated.changedFields?.length) {
+    await recordAudit({
+      actor: request.user,
+      action: 'profile_updated',
+      targetUser: request.user,
+      detail: `Updated profile fields: ${updated.changedFields.join(', ')}`,
+    });
+  }
   response.json(serializeAuthUser(updated));
 }
 

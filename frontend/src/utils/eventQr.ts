@@ -126,29 +126,27 @@ export async function runWithValidatedLocation<T>({
  * The location-quality limits the SERVER is actually enforcing.
  *
  * Read from `/api/health/` rather than hard-coded here, so an operator who
- * tightens `LOCATION_MAX_ACCURACY_METERS` does not end up with a second,
- * contradictory threshold in the browser. Defaults mirror the server's own
- * documented fallbacks and are only used if the health read has not landed yet.
+ * The browser uses the server's freshness limit and leaves reported accuracy
+ * informational. The server independently decides whether coordinates are
+ * inside the event geofence.
  */
 export interface LocationQualityPolicy {
-  maxAccuracyMeters: number;
+  /** Kept optional for compatibility with older health responses. */
+  maxAccuracyMeters?: number;
   maxAgeSeconds: number;
 }
 
 export const FALLBACK_LOCATION_QUALITY: LocationQualityPolicy = {
-  maxAccuracyMeters: 100,
   maxAgeSeconds: 120,
 };
 
 /**
  * Is this fix good enough to use?
  *
- * THE SAME RULES THE SERVER APPLIES, not a looser local invention. A fix is
- * refused when the device reports it is less accurate than the published
- * maximum, or when it is older than the published maximum age - the two reasons
- * `LOCATION_POLICY` exists. Reusing the published numbers is the whole point: a
- * configuration step that accepted a fix the server would later refuse would
- * only push the problem to check-in time.
+ * A fix is refused only when coordinates are invalid, accuracy is missing or
+ * invalid, or the reading is outside the freshness window. Reported accuracy
+ * is shown to the user but is not a client-side acceptance cutoff; the server
+ * decides the event geofence result.
  *
  * Age is measured against the fix's OWN timestamp, so a slow request does not
  * make a fresh reading look stale.
@@ -169,13 +167,6 @@ export function evaluateFixQuality(
   }
   if (fix.accuracy < 0) {
     return { acceptable: false, reason: 'Your device reported invalid location accuracy. Try again.' };
-  }
-  if (fix.accuracy > policy.maxAccuracyMeters) {
-    return {
-      acceptable: false,
-      reason: `That reading is only accurate to about ${Math.round(fix.accuracy)} m, and this system requires ${policy.maxAccuracyMeters} m or better. `
-        + 'Move somewhere with a clearer view of the sky or turn on high-accuracy location, then try again.',
-    };
   }
   const capturedAt = Date.parse(fix.capturedAt);
   if (!Number.isFinite(capturedAt)) {
@@ -211,7 +202,10 @@ export interface LocationFix {
  * silent failure. `maximumAge: 0` forces a new reading instead of reusing a
  * cached one, because the server also rejects stale fixes.
  */
-export function captureLocation(options: { timeoutMs?: number } = {}): Promise<LocationFix> {
+export function captureLocation(options: {
+  timeoutMs?: number;
+  onUpdate?: (fix: LocationFix) => void;
+} = {}): Promise<LocationFix> {
   return new Promise((resolve, reject) => {
     const unavailable = geolocationUnavailableReason();
     if (unavailable) {
@@ -219,19 +213,54 @@ export function captureLocation(options: { timeoutMs?: number } = {}): Promise<L
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
+    const timeoutMs = options.timeoutMs ?? 30_000;
+    let bestFix: LocationFix | null = null;
+    let settled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let watchId: number | undefined;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
+      callback();
+    };
+    const accept = (position: GeolocationPosition) => {
+      const fix = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy: position.coords.accuracy,
           capturedAt: new Date(position.timestamp || Date.now()).toISOString(),
-        });
-      },
-      (error) => {
-        reject(new Error(geolocationErrorMessage(error.code)));
-      },
-      { enableHighAccuracy: true, timeout: options.timeoutMs ?? 15_000, maximumAge: 0 },
-    );
+        };
+      if (!bestFix || (Number.isFinite(fix.accuracy) && fix.accuracy < bestFix.accuracy)) {
+        bestFix = fix;
+        options.onUpdate?.(fix);
+      }
+    };
+    const fail = (error: GeolocationPositionError) => {
+      if (error.code === 1) {
+        finish(() => reject(new Error(geolocationErrorMessage(error.code))));
+        return;
+      }
+      if (bestFix) return;
+      finish(() => reject(new Error(geolocationErrorMessage(error.code))));
+    };
+    try {
+      watchId = navigator.geolocation.watchPosition(
+        accept,
+        fail,
+        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 },
+      );
+      if (settled) {
+        navigator.geolocation.clearWatch(watchId);
+        return;
+      }
+      timeoutId = setTimeout(() => {
+        if (bestFix) finish(() => resolve(bestFix as LocationFix));
+        else finish(() => reject(new Error(geolocationErrorMessage(3))));
+      }, timeoutMs);
+    } catch (error) {
+      finish(() => reject(error instanceof Error ? error : new Error('Your location could not be read.')));
+    }
   });
 }

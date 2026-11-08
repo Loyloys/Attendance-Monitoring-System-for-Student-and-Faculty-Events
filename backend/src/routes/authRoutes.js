@@ -12,6 +12,7 @@ router.get('/auth/google/config/', controller.googleConfig);
 router.get('/auth/email/status/', controller.emailStatus);
 router.post('/auth/email/signup/', emailActionLimiter, requireObjectBody, asyncRoute(controller.emailSignup));
 router.post('/auth/email/verify/', emailActionLimiter, requireObjectBody, asyncRoute(controller.emailVerify));
+router.post('/auth/password/request-setup/', emailActionLimiter, requireObjectBody, asyncRoute(controller.passwordSetupRequest));
 router.post('/auth/password/setup/', emailActionLimiter, requireObjectBody, asyncRoute(controller.passwordSetup));
 router.post('/auth/login/', loginLimiter, requireObjectBody, asyncRoute(controller.login));
 router.post('/auth/logout/', controller.logout);

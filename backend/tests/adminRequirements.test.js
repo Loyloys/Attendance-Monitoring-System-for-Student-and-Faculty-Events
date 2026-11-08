@@ -203,6 +203,13 @@ test('admin can persist the public reCAPTCHA site key', async () => {
     siteKey: 123,
   });
   assert.equal(invalid.status, 400);
+
+  const reset = await send(admin.agent, 'put', '/api/admin/settings/recaptcha/', {
+    enabled: false,
+    siteKey: '',
+  });
+  assert.equal(reset.status, 200);
+  assert.equal(await getModels().SystemSetting.exists({ _id: 'recaptcha_site_key' }), null);
 });
 
 test('announcement publishing is admin-only and recipient targeting is enforced', async () => {

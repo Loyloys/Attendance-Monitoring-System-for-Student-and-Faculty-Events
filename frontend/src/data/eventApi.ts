@@ -13,6 +13,19 @@ import type {
 import type { AdminEvent, AdminEventRegistrant, AdminState, AdminUserAccount, AdminUserRegistrationDetail, AdminAttendanceRecord, AttendanceStatus, EvaluationForm } from './adminStore';
 import type { LocationFix } from '../utils/eventQr';
 
+export type AdminAuditEntry = {
+  id: string;
+  action: string;
+  detail: string;
+  actor: string;
+  actorRole: string;
+  targetAccountId: string;
+  targetName: string;
+  eventId: string;
+  eventName: string;
+  at: string;
+};
+
 /**
  * GST006: how usable the current code actually is right now.
  *
@@ -100,6 +113,7 @@ export type AdminEventCreated = AdminEvent & { qr?: EventQrIssuance; calendar?: 
 export type AdminEventUpdated = AdminEvent & { calendar?: CalendarSync };
 
 export type AdminEventRequest = {
+  id?: string;
   name: string;
   description: string;
   date: string;
@@ -269,6 +283,12 @@ export type GoogleSession = {
   openRegistration?: boolean;
   schoolApproved?: boolean;
 };
+
+export type PushNotificationSettings = {
+  enabled: boolean;
+  available: boolean;
+  configured: boolean;
+};
 export type GoogleConfig = Omit<GoogleSession, 'nonce'>;
 
 function readCookie(name: string) {
@@ -433,6 +453,9 @@ export const eventApi = {
   async setApplicationPassword(token: string, password: string) {
     return requestJson<{ status: string; message: string }>('/auth/password/setup/', { method: 'POST', body: JSON.stringify({ token, password }) });
   },
+  async requestPasswordSetup(email: string) {
+    return requestJson<{ message: string }>('/auth/password/request-setup/', { method: 'POST', body: JSON.stringify({ email }) });
+  },
   async googleAuthenticate(credential: string, selectedRole?: string) {
     return requestJson<GoogleAuthResult>('/auth/google/', {
       method: 'POST',
@@ -522,6 +545,30 @@ export const eventApi = {
       body: JSON.stringify({ enabled }),
     });
   },
+  pushNotificationSettings() {
+    return requestJson<PushNotificationSettings>('/admin/settings/push-notifications/');
+  },
+  async updatePushNotificationSettings(enabled: boolean) {
+    return requestJson<PushNotificationSettings>('/admin/settings/push-notifications/', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  pushNotificationStatus() {
+    return requestJson<PushNotificationSettings>('/notifications/status/');
+  },
+  async registerPushDevice(token: string) {
+    return requestJson<{ registered: boolean }>('/notifications/devices/', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  },
+  async unregisterPushDevice(token: string) {
+    return requestJson<{ registered: boolean }>('/notifications/devices/', {
+      method: 'DELETE',
+      body: JSON.stringify({ token }),
+    });
+  },
   adminAnnouncements() {
     return requestJson<Announcement[]>('/admin/announcements/');
   },
@@ -594,9 +641,8 @@ export const eventApi = {
     });
   },
   /**
-   * The server's published configuration, including the location-quality policy
-   * it actually enforces. Read so the browser never hard-codes a second,
-   * potentially contradictory accuracy threshold.
+   * The server's published freshness and geofence policy. Reported device
+   * accuracy is informational; acceptance is decided by the event geofence.
    */
   health() {
     return requestJson<{
@@ -702,6 +748,12 @@ export const eventApi = {
       { method: 'POST' },
     );
   },
+  async cancelRegistration(eventId: string) {
+    return requestJson<{ registered: boolean; cancelled: boolean; message: string }>(
+      `/events/${eventId}/registrations/`,
+      { method: 'DELETE' },
+    );
+  },
   /**
    * GST006 event QR credential.
    *
@@ -781,8 +833,13 @@ export const eventApi = {
    * AD024: Registrants for an event, with registration and confirmation status.
    * Administrator-only on the server.
    */
-  adminAuditLog(limit = 50) {
-    return requestJson<any[]>(`/admin/audit-log/?limit=${limit}`);
+  adminAuditLog(options: { limit?: number; search?: string; action?: string; actorRole?: string } = {}) {
+    const params = new URLSearchParams();
+    params.set('limit', String(options.limit ?? 100));
+    if (options.search) params.set('search', options.search);
+    if (options.action) params.set('action', options.action);
+    if (options.actorRole) params.set('actorRole', options.actorRole);
+    return requestJson<AdminAuditEntry[]>(`/admin/audit-log/?${params.toString()}`);
   },
   adminEventRegistrants(eventId: string) {
     return requestJson<AdminEventRegistrant[]>(`/admin/events/${encodeURIComponent(eventId)}/registrants/`);
@@ -801,6 +858,11 @@ export type Announcement = {
   audience: 'all' | 'student' | 'faculty';
   createdByName: string;
   createdAt: string;
+  notificationDelivery?: {
+    status: 'not_configured' | 'no_recipients' | 'no_subscribers' | 'sent' | 'partial' | 'failed';
+    sent: number;
+    failed: number;
+  };
 };
 
 export const roleLabel: Record<UserRole, string> = {

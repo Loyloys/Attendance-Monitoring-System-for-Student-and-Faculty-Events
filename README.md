@@ -340,6 +340,19 @@ After changing either file, **restart both** the backend and the Vite dev server
 
 Administrators can also save the public reCAPTCHA site key in **Settings → reCAPTCHA on login**. That persisted value is used by the login page; when it is blank, the frontend falls back to `VITE_RECAPTCHA_SITE_KEY`. The matching `RECAPTCHA_SECRET_KEY` must still be configured on the backend. The Leaflet venue map picker does not require a client ID or API key.
 
+Integration credential fields are masked in the Admin Settings UI. Each integration card has a **Reset … to default** action: Google OAuth, the venue map picker, reCAPTCHA, and Firebase Cloud Messaging reset to disabled, while Google Calendar resets to enabled. Resetting a Google client ID or reCAPTCHA site key removes its saved override so the configured environment value is used instead.
+
+#### Firebase Cloud Messaging browser notifications
+
+FCM sends a browser push notification to opted-in Students and Faculty when an Admin publishes an announcement. The announcement remains available in the app if push delivery is unconfigured or unavailable. Push requires HTTPS in production (localhost is allowed for development).
+
+1. Create a Firebase project, register a Web app, enable Cloud Messaging, and generate a Web Push certificate key pair (VAPID key).
+2. Copy the Web app’s public values into `frontend/.env.local` using the `VITE_FIREBASE_*` names in `frontend/.env.example`, and set `VITE_FIREBASE_VAPID_KEY` to the public VAPID key. Rebuild/restart the frontend after changing these values.
+3. Create a Firebase service account with Firebase Cloud Messaging permissions. Put its JSON credentials in the backend environment variable `FIREBASE_SERVICE_ACCOUNT_JSON` as one-line JSON; keep this credential private and never commit it.
+4. Set `FCM_TOKEN_ENCRYPTION_KEY` in the backend to a separate random value of at least 32 characters. For example, generate one with `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"`. Restart the backend.
+5. In Admin **Settings → Firebase Cloud Messaging**, enable the integration. It is disabled by default; the toggle is unavailable until the backend credentials are configured.
+6. Students and Faculty can opt in or out from their **Announcements** page. Browser tokens are encrypted at rest; announcement delivery is limited to the selected audience. Disabling FCM from Settings pauses delivery without deleting registrations.
+
 #### Google access policy (`GOOGLE_ACCESS_POLICY`)
 
 One explicit value chooses who may sign in. It is **never** inferred from whether a domain list happens to be empty, so `open` can only ever be reached deliberately.

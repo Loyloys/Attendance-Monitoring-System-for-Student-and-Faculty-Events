@@ -17,6 +17,7 @@ import { manilaWallClockToInstant } from '../utils/eventTimeZone.js';
 import { effectiveEventStatus, eventAllows, isCheckInOpen, isSupervisor, verifyAttendanceLocation } from '../utils/events.js';
 import { polygonValidationError } from '../utils/geofence.js';
 import { serializeAdminEvent, serializeEventContext } from './eventSerializer.js';
+import { recordAudit } from './auditService.js';
 
 function normalizeEventId(value) {
   const id = toLegacyUuid(value);
@@ -300,7 +301,7 @@ export async function recordEventAttendance(user, { token, eventId, identifier, 
   const required = requiredMinutesFor(event);
   const arrival = now > event.lateCutoff ? 'late' : 'present';
   try {
-    return await EventAttendance.create({
+    const record = await EventAttendance.create({
       _id: await nextNumericId('eventAttendance'),
       eventId: event._id,
       attendeeId: user._id,
@@ -326,6 +327,8 @@ export async function recordEventAttendance(user, { token, eventId, identifier, 
         }
         : {}),
     });
+    await recordAudit({ actor: user, action: 'attendance_checked_in', targetUser: user, event, detail: `Checked in with ${method}. Status: ${record.status}.` });
+    return record;
   } catch (error) {
     if (error.code === 11000) throw new ConflictError('Attendance is already recorded for this event.');
     throw error;
@@ -357,6 +360,7 @@ export async function registerForEvent(user, eventId) {
         status: 'registered',
         registeredAt: new Date(),
       });
+      await recordAudit({ actor: user, action: 'event_registered', targetUser: user, event, detail: 'Registered for event.' });
       return { registered: true, created: true, message: 'Registration confirmed.' };
     } catch (error) {
       if (error.code !== 11000) throw error;
@@ -370,9 +374,23 @@ export async function registerForEvent(user, eventId) {
     existing.status = 'registered';
     existing.registeredAt = new Date();
     await existing.save();
+    await recordAudit({ actor: user, action: 'event_registered', targetUser: user, event, detail: 'Registered for event.' });
     return { registered: true, created: true, message: 'Registration confirmed.' };
   }
+
   return { registered: true, created: false, message: 'You are already registered for this event.' };
+}
+
+export async function cancelRegistration(user, eventId) {
+  if (user.profile.role !== 'student') throw new PermissionError('This action is not available for your role.');
+  const event = await Event.findById(normalizeEventId(eventId)).lean();
+  if (!event) throw new ValidationError({ event: 'Event not found.' });
+  const registration = await EventRegistration.findOne({ eventId: event._id, attendeeId: user._id, status: 'registered' });
+  if (!registration) throw new ValidationError({ event: 'You are not registered for this event.' });
+  registration.status = 'cancelled';
+  await registration.save();
+  await recordAudit({ actor: user, action: 'event_registration_cancelled', targetUser: user, event, detail: 'Cancelled event registration.' });
+  return { registered: false, cancelled: true, message: 'Registration cancelled.' };
 }
 
 /**
@@ -558,18 +576,59 @@ function validateWriteValues(data, current = null, partial = false) {
 
 export async function createEvent(data, organizer) {
   const values = validateWriteValues(data);
-  const event = new Event({ ...values, _id: randomUUID(), organizerId: organizer._id, dataSource: 'managed' });
-  await event.save();
-  return event;
+  const rawId = data?.id ?? data?._id;
+  const eventId = rawId ? (toLegacyUuid(rawId) || String(rawId).trim()) : null;
+
+  if (eventId) {
+    const existing = await Event.findById(eventId);
+    if (existing) {
+      Object.assign(existing, validateWriteValues(data, existing, true));
+      await existing.save();
+      return existing;
+    }
+  } else {
+    const recentDuplicate = await Event.findOne({
+      organizerId: organizer._id,
+      name: values.name,
+      venue: values.venue,
+      startsAt: values.startsAt,
+      endsAt: values.endsAt,
+      status: values.status,
+      archivedAt: null,
+      createdAt: { $gte: new Date(Date.now() - 300_000) },
+    });
+    if (recentDuplicate) {
+      Object.assign(recentDuplicate, validateWriteValues(data, recentDuplicate, true));
+      await recentDuplicate.save();
+      return recentDuplicate;
+    }
+  }
+
+  const idToUse = eventId || randomUUID();
+  const event = new Event({ ...values, _id: idToUse, organizerId: organizer._id, dataSource: 'managed' });
+  try {
+    await event.save();
+    await recordAudit({ actor: organizer, action: 'event_created', event, detail: 'Created event.' });
+    return event;
+  } catch (error) {
+    if (error.code === 11000 && idToUse) {
+      const existing = await Event.findById(idToUse);
+      if (existing) return existing;
+    }
+    throw error;
+  }
 }
 
-export async function updateEvent(eventId, data) {
+export async function updateEvent(eventId, data, actor = null) {
   const id = normalizeEventId(eventId);
   const event = await Event.findById(id);
   if (!event) throw new ValidationError({ event: 'Event not found.' }, 'Event not found.');
   if (event.archivedAt) throw new ValidationError({ event: 'An archived event cannot be edited.' });
+  const before = event.toObject();
   Object.assign(event, validateWriteValues(data, event, true));
   await event.save();
+  const changedFields = Object.keys(event.toObject()).filter(key => !['_id', 'updatedAt'].includes(key) && String(before[key] ?? '') !== String(event[key] ?? ''));
+  if (changedFields.length) await recordAudit({ actor, action: 'event_updated', event, detail: `Updated event fields: ${changedFields.join(', ')}` });
   return event;
 }
 
@@ -580,9 +639,10 @@ export async function updateEvent(eventId, data) {
  * `save()` re-validates every path, so a legacy record missing an unrelated
  * required field could not be cancelled either.
  */
-export async function cancelEvent(event) {
+export async function cancelEvent(event, actor = null) {
   await Event.updateOne({ _id: event._id }, { $set: { status: 'cancelled' } });
   event.status = 'cancelled';
+  await recordAudit({ actor, action: 'event_cancelled', event, detail: 'Cancelled event.' });
   return event;
 }
 
@@ -615,6 +675,7 @@ export async function archiveEvent(event, archivedBy) {
   await Event.updateOne({ _id: event._id }, { $set: { archivedAt, archivedBy: archivedById } });
   event.archivedAt = archivedAt;
   event.archivedBy = archivedById;
+  await recordAudit({ actor: archivedBy, action: 'event_archived', event, detail: 'Archived event.' });
   return event;
 }
 
@@ -623,11 +684,12 @@ export async function archiveEvent(event, archivedBy) {
  *
  * The mirror of `archiveEvent`, and scoped the same way for the same reason.
  */
-export async function restoreEvent(event) {
+export async function restoreEvent(event, actor = null) {
   if (!event.archivedAt) throw new ValidationError({ event: 'This event is not archived.' });
   await Event.updateOne({ _id: event._id }, { $set: { archivedAt: null, archivedBy: null } });
   event.archivedAt = null;
   event.archivedBy = null;
+  await recordAudit({ actor, action: 'event_restored', event, detail: 'Restored event from archive.' });
   return event;
 }
 

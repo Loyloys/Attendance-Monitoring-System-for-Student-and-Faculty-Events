@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as controller from '../controllers/adminController.js';
-import { requireAuthentication, requireRole } from '../middleware/authentication.js';
+import { requireAuthentication } from '../middleware/authentication.js';
+import { requireAdmin } from '../middleware/admin.js';
 import { asyncRoute } from '../utils/errors.js';
 
 const router = Router();
@@ -8,7 +9,7 @@ const router = Router();
 // exists. The response contains only public capability metadata; updates remain
 // protected by the admin middleware below.
 router.get('/admin/settings/recaptcha/', asyncRoute(controller.recaptchaSettings));
-router.use('/admin', requireAuthentication, requireRole('admin'));
+router.use('/admin', requireAdmin);
 router.get('/admin/state/', asyncRoute(controller.state));
 router.get('/admin/audit-log/', asyncRoute(controller.auditLog));
 router.get('/admin/settings/google-oauth/', asyncRoute(controller.googleOAuthSettings));
@@ -18,6 +19,8 @@ router.get('/admin/settings/map-picker/', asyncRoute(controller.mapPickerSetting
 router.put('/admin/settings/map-picker/', asyncRoute(controller.updateMapPickerSettings));
 router.get('/admin/settings/google-calendar/', asyncRoute(controller.googleCalendarSettings));
 router.put('/admin/settings/google-calendar/', asyncRoute(controller.updateGoogleCalendarSettings));
+router.get('/admin/settings/push-notifications/', asyncRoute(controller.pushNotificationsSettings));
+router.put('/admin/settings/push-notifications/', asyncRoute(controller.updatePushNotificationsSettings));
 router.get('/admin/announcements/', asyncRoute(controller.adminAnnouncements));
 router.post('/admin/announcements/', asyncRoute(controller.createAdminAnnouncement));
 router.get('/announcements/', requireAuthentication, asyncRoute(controller.userAnnouncements));
@@ -33,8 +36,8 @@ router.post('/admin/signup-requests/:requestId/password-setup/', asyncRoute(cont
 // were never delivered/completed); eligibility is enforced in the service.
 router.post('/admin/users/:accountId/password-setup/', asyncRoute(controller.resendUserPasswordSetupLink));
 // Declared before the `/admin/users/:accountId/` route so "registrations" is not
-// swallowed as an account id. `router.use('/admin', requireAuthentication,
-// requireRole('admin'))` above already restricts this to administrators.
+// swallowed as an account id. The shared `requireAdmin` middleware above
+// already restricts this to administrators.
 router.get('/admin/users/:accountId/registrations/', asyncRoute(controller.userRegistrations));
 router.post('/admin/users/:accountId/archive/', asyncRoute(controller.archiveUser));
 router.post('/admin/users/:accountId/restore/', asyncRoute(controller.restoreUser));

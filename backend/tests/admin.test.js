@@ -6,6 +6,24 @@ before(setup);
 after(teardown);
 beforeEach(reset);
 
+test('all admin routers use shared Admin middleware protection', async () => {
+  await createUser({ username: 'ADM001', role: 'admin' });
+  await createUser({ username: 'STU001', role: 'student' });
+  const { agent: admin } = await login('ADM001');
+  const { agent: student } = await login('STU001');
+
+  const protectedAdminRoutes = [
+    '/api/admin/state/',
+    '/api/admin/events/',
+    '/api/admin/venues/',
+  ];
+  for (const path of protectedAdminRoutes) {
+    assert.equal((await request().get(path)).status, 401, `anonymous access should be denied for ${path}`);
+    assert.equal((await student.get(path)).status, 403, `student access should be denied for ${path}`);
+    assert.equal((await admin.get(path)).status, 200, `admin access should be allowed for ${path}`);
+  }
+});
+
 test('administrator account operations persist in MongoDB without exposing passwords', async () => {
   await createUser({ username: 'ADM001', role: 'admin' });
   const { agent } = await login('ADM001');

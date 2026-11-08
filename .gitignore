@@ -48,3 +48,16 @@ desktop.ini
 *.sqlite3
 *.sqlite3-journal
 
+
+# Local-only/generated scratch files identified during cleanup.
+# Test run logs and ad-hoc text outputs (no source .txt is tracked at root).
+*.txt
+!legacy/django/requirements.txt
+*.bat
+*.tmp
+_tmp_*
+node_modules/
+.mongo-test/
+backend/data/
+frontend/e2e/*.tmp
+frontend/build_*.txt

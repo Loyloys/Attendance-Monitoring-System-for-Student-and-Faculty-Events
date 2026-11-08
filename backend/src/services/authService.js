@@ -6,6 +6,7 @@ import { clearLoginFailures, loginIsLocked, recordLoginFailure } from './loginTh
 import { serializeAuthUser } from './userSerializer.js';
 import { isApproved } from '../middleware/authentication.js';
 import { recaptchaStatus } from './systemSettingsService.js';
+import { recordAudit } from './auditService.js';
 
 export async function authenticate(request, body) {
   const identifier = typeof body.identifier === 'string' ? body.identifier.trim() : body.identifier;
@@ -91,6 +92,7 @@ export async function authenticate(request, body) {
   await clearLoginFailures(request, identifier);
   user.lastLogin = new Date();
   await user.save();
+  await recordAudit({ actor: user, action: 'login_succeeded', targetUser: user, detail: 'Signed in with application credentials.' });
   return { ...user.toObject(), profile: profile.toObject() };
 }
 
@@ -148,7 +150,7 @@ export async function updateProfile(user, data) {
   }
   const updatedUser = await User.findById(user._id).lean();
   const updatedProfile = await UserProfile.findOne({ userId: user._id }).lean();
-  return { ...updatedUser, profile: updatedProfile };
+  return { ...updatedUser, profile: updatedProfile, changedFields };
 }
 
 async function verifyRecaptchaToken(token) {

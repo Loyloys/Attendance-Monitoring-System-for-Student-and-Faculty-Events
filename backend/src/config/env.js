@@ -146,6 +146,8 @@ export const env = Object.freeze({
   smtpPass: process.env.SMTP_PASS || '',
   smtpFrom: (process.env.SMTP_FROM || '').trim(),
   publicAppUrl: (process.env.PUBLIC_APP_URL || '').trim(),
+  firebaseServiceAccountJson: (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim(),
+  fcmTokenEncryptionKey: (process.env.FCM_TOKEN_ENCRYPTION_KEY || '').trim(),
   demoPasswords: Object.freeze({
     student: process.env.DEMO_STUDENT_PASSWORD || 'student123',
     faculty: process.env.DEMO_FACULTY_PASSWORD || 'faculty123',

@@ -18,6 +18,8 @@ vi.mock('../src/data/eventApi', () => ({
     googleCalendarSettings: vi.fn(),
     updateGoogleCalendarSettings: vi.fn(),
     googleCalendarAuthorizeUrl: vi.fn(),
+    pushNotificationSettings: vi.fn(),
+    updatePushNotificationSettings: vi.fn(),
   },
 }));
 
@@ -33,6 +35,8 @@ const mockUpdateMapPickerSettings = eventApi.updateMapPickerSettings as ReturnTy
 const mockGoogleCalendarStatus = eventApi.googleCalendarStatus as ReturnType<typeof vi.fn>;
 const mockGoogleCalendarAuthorizeUrl = eventApi.googleCalendarAuthorizeUrl as ReturnType<typeof vi.fn>;
 const mockUpdateGoogleCalendarSettings = eventApi.updateGoogleCalendarSettings as ReturnType<typeof vi.fn>;
+const mockPushNotificationSettings = eventApi.pushNotificationSettings as ReturnType<typeof vi.fn>;
+const mockUpdatePushNotificationSettings = eventApi.updatePushNotificationSettings as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -47,6 +51,8 @@ beforeEach(() => {
   mockGoogleCalendarStatus.mockResolvedValue({ configured: true, connected: false, enabled: true, settingAvailable: true, missing: [] });
   mockUpdateGoogleCalendarSettings.mockResolvedValue({ enabled: false, available: true });
   mockGoogleCalendarAuthorizeUrl.mockReturnValue('/api/auth/google/calendar/authorize/');
+  mockPushNotificationSettings.mockResolvedValue({ enabled: false, available: true, configured: true });
+  mockUpdatePushNotificationSettings.mockImplementation(async (enabled: boolean) => ({ enabled, available: true, configured: true }));
 });
 
 afterEach(() => {
@@ -71,6 +77,8 @@ describe('SettingsSection', () => {
     // Map Picker card
     expect(screen.getByText('Leaflet venue map picker')).toBeInTheDocument();
     expect(screen.getByText('Google Calendar')).toBeInTheDocument();
+    expect(screen.getByText('Firebase Cloud Messaging')).toBeInTheDocument();
+    expect(screen.getByLabelText('Enable Firebase Cloud Messaging')).not.toBeChecked();
     expect(screen.getByText('Not connected')).toBeInTheDocument();
     expect(screen.getByLabelText('Enable Google Calendar')).toBeChecked();
     expect(screen.getByRole('link', { name: 'Connect Google Calendar' })).toHaveAttribute(
@@ -98,10 +106,27 @@ describe('SettingsSection', () => {
     expect(screen.getByText(/tokens, and Calendar events were preserved/)).toBeInTheDocument();
   });
 
+  it('enables and disables Firebase Cloud Messaging from settings', async () => {
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    const checkbox = screen.getByLabelText('Enable Firebase Cloud Messaging');
+    fireEvent.click(checkbox);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockUpdatePushNotificationSettings).toHaveBeenCalledWith(true);
+    expect(checkbox).toBeChecked();
+    expect(screen.getByText(/enabled for announcements/)).toBeInTheDocument();
+
+    fireEvent.click(checkbox);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockUpdatePushNotificationSettings).toHaveBeenLastCalledWith(false);
+    expect(checkbox).not.toBeChecked();
+  });
+
   it('saves the Google OAuth client ID from the settings card', async () => {
     render(<SettingsSection />);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     const clientIdInput = screen.getByLabelText('Google OAuth client ID');
+    expect(clientIdInput).toHaveAttribute('type', 'password');
     fireEvent.change(clientIdInput, { target: { value: '9876543210-new.apps.googleusercontent.com' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Save client ID' })[0]);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
@@ -112,10 +137,32 @@ describe('SettingsSection', () => {
     render(<SettingsSection />);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     const clientIdInput = screen.getByLabelText('Google Calendar client ID');
+    expect(clientIdInput).toHaveAttribute('type', 'password');
     fireEvent.change(clientIdInput, { target: { value: '9876543210-calendar.apps.googleusercontent.com' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Save client ID' })[1]);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     expect(mockUpdateGoogleOAuthSettings).toHaveBeenCalledWith(false, '9876543210-calendar.apps.googleusercontent.com');
+  });
+
+  it('resets Google OAuth to disabled and the server client ID default', async () => {
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Google OAuth to default' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockUpdateGoogleOAuthSettings).toHaveBeenCalledWith(false, '');
+    expect(screen.getByLabelText('Enable Google OAuth')).not.toBeChecked();
+    expect(screen.getByText(/Google OAuth was reset to defaults/)).toBeInTheDocument();
+  });
+
+  it('resets Google Calendar to enabled and the server client ID default', async () => {
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Google Calendar to default' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockUpdateGoogleOAuthSettings).toHaveBeenCalledWith(false, '');
+    expect(mockUpdateGoogleCalendarSettings).toHaveBeenCalledWith(true);
+    expect(screen.getByLabelText('Enable Google Calendar')).toBeChecked();
+    expect(screen.getByText(/Google Calendar was reset to defaults/)).toBeInTheDocument();
   });
 
   it('saves reCAPTCHA enabled state', async () => {
@@ -152,6 +199,17 @@ describe('SettingsSection', () => {
     expect(screen.getByRole('status')).toHaveTextContent('reCAPTCHA site key saved.');
   });
 
+  it('resets reCAPTCHA to disabled and frontend site-key defaults', async () => {
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(screen.getByLabelText('reCAPTCHA site key')).toHaveAttribute('type', 'password');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset reCAPTCHA to default' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockUpdateRecaptchaSettings).toHaveBeenCalledWith(false, '');
+    expect(screen.getByLabelText('Enable reCAPTCHA on login')).not.toBeChecked();
+    expect(screen.getByText(/reCAPTCHA was reset to defaults/)).toBeInTheDocument();
+  });
+
   it('disables reCAPTCHA checkbox when backend keys missing', async () => {
     mockRecaptchaSettings.mockResolvedValue({ enabled: false, available: false });
 
@@ -186,6 +244,17 @@ describe('SettingsSection', () => {
 
     expect(mockUpdateMapPickerSettings).toHaveBeenCalledWith(true);
     expect(mapPickerCheckbox).toBeChecked();
+  });
+
+  it('resets the venue map picker to its hidden default', async () => {
+    mockMapPickerSettings.mockResolvedValue({ enabled: true, available: true });
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset venue map picker to default' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockUpdateMapPickerSettings).toHaveBeenCalledWith(false);
+    expect(screen.getByLabelText('Enable venue map picker')).not.toBeChecked();
+    expect(screen.getByText(/Venue map picker was reset to its default hidden state/)).toBeInTheDocument();
   });
 
   it('shows error state when reCAPTCHA load fails', async () => {

@@ -101,15 +101,26 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
       if (!health.locationPolicy) {
         throw new Error('The server location-verification policy is unavailable. Retry location before scanning.');
       }
-      await continueScannerAfterLocation(captureLocation, health.locationPolicy, fix => {
+      const locationPolicy = health.locationPolicy;
+      await continueScannerAfterLocation(
+        () => captureLocation({
+          timeoutMs: 30_000,
+          onUpdate: fix => {
+            setLocationStatus('requesting');
+            setLocationStatusMessage(`Improving location reading: ${fix.latitude}, ${fix.longitude} (±${Math.round(fix.accuracy)} m)…`);
+          },
+        }),
+        locationPolicy,
+        fix => {
         const capturedAt = Date.parse(fix.capturedAt);
         setLocationStatus('available');
-        setLocationStatusMessage(`Fresh reading received (±${Math.round(fix.accuracy)} m) at ${new Date(capturedAt).toLocaleTimeString()}. A new fix will still be required if the event requires location at check-in.`);
+        setLocationStatusMessage(`Fresh reading: ${fix.latitude}, ${fix.longitude} (±${Math.round(fix.accuracy)} m) at ${new Date(capturedAt).toLocaleTimeString()}. A new fix will still be required if the event requires location at check-in.`);
         if (knownEventNeedsLocation && knownEvent) {
           setLocationReadyForEventId(knownEvent.id);
           setIsScanning(true);
         }
-      });
+        },
+      );
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Your location could not be verified. Try again.';
       setLocationStatus('error');
@@ -266,13 +277,20 @@ export default function AttendanceScanner({ events, onClose, onRecorded, onSessi
       if (!health.locationPolicy) {
         throw new Error('The server location-verification policy is unavailable. Retry location before checking in.');
       }
+      const locationPolicy = health.locationPolicy;
       const result = await submitPreviewedQr(
         pendingQr.preview,
-        captureLocation,
-        health.locationPolicy,
+        () => captureLocation({
+          timeoutMs: 30_000,
+          onUpdate: fix => {
+            setLocationStatus('requesting');
+            setLocationStatusMessage(`Improving location reading: ${fix.latitude}, ${fix.longitude} (±${Math.round(fix.accuracy)} m)…`);
+          },
+        }),
+        locationPolicy,
         location => {
           setLocationStatus('available');
-          setLocationStatusMessage(`Fresh reading received (±${Math.round(location?.accuracy ?? 0)} m). Sending it for server verification.`);
+          setLocationStatusMessage(`Fresh reading: ${location?.latitude}, ${location?.longitude} (±${Math.round(location?.accuracy ?? 0)} m). Sending it for server verification.`);
           submitting = true;
           return eventApi.scan({ token: pendingQr.token, method: 'qr', location: location ?? undefined });
         },

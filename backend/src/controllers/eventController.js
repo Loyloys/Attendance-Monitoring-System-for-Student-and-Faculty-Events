@@ -7,6 +7,7 @@ import {
   previewEventAttendance,
   recordEventAttendance,
   registerForEvent,
+  cancelRegistration,
   serializeAdminEvents,
   serializeEventsForUser,
 } from '../services/eventService.js';
@@ -128,6 +129,10 @@ export async function previewAttendance(request, response) {
 export async function register(request, response) {
   const result = await registerForEvent(request.user, request.params.eventId);
   return response.status(result.created ? 201 : 200).json(result);
+}
+
+export async function cancelRegister(request, response) {
+  return response.json(await cancelRegistration(request.user, request.params.eventId));
 }
 
 export async function myAttendance(request, response) {

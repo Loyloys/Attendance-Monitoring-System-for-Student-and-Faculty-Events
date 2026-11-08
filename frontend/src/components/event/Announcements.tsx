@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { eventApi, type Announcement as AnnouncementRecord } from '../../data/eventApi';
+import PushNotificationControl from './PushNotificationControl';
 
 export default function Announcements() {
   const [items, setItems] = useState<AnnouncementRecord[]>([]);
@@ -19,6 +20,7 @@ export default function Announcements() {
     <p className="app-label">Updates</p>
     <h1 className="app-page-title">Announcements</h1>
     <p className="app-page-subtitle">Information shared with your account group.</p>
+    <PushNotificationControl />
     {loading ? <p role="status" className="app-card mt-5 p-5 text-sm text-slate-500">Loading announcements…</p>
       : error ? <div role="alert" className="app-card mt-5 p-5"><p className="text-sm text-rose-700">{error}</p><button type="button" onClick={() => void load()} className="app-button-secondary mt-3">Retry</button></div>
         : items.length === 0 ? <p className="app-card mt-5 p-5 text-sm text-slate-500">There are no announcements for you yet.</p>

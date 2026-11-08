@@ -30,7 +30,18 @@ export default function AnnouncementsSection() {
       setItems(current => [created, ...current]);
       setTitle('');
       setMessage('');
-      setNotice('Announcement was saved and is now available to its selected recipients.');
+      const delivery = created.notificationDelivery;
+      if (!delivery || delivery.status === 'not_configured') {
+        setNotice('Announcement was saved for its selected recipients. Push delivery is not configured on the server yet.');
+      } else if (delivery.status === 'sent') {
+        setNotice(`Announcement was saved and push notifications were sent to ${delivery.sent} browser${delivery.sent === 1 ? '' : 's'}.`);
+      } else if (delivery.status === 'partial') {
+        setNotice(`Announcement was saved. Push reached ${delivery.sent} browser${delivery.sent === 1 ? '' : 's'}; ${delivery.failed} push delivery attempt${delivery.failed === 1 ? '' : 's'} failed.`);
+      } else if (delivery.status === 'failed') {
+        setNotice('Announcement was saved, but push delivery failed. Recipients can still read it in Announcements.');
+      } else {
+        setNotice('Announcement was saved and is available in the app. No subscribed browsers were available for push delivery.');
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Announcement could not be saved.');
     } finally {

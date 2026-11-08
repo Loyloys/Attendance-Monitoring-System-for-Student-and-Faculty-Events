@@ -141,7 +141,7 @@ test('a missing or denied location is refused with an actionable message', async
   assert.equal(await getModels().EventAttendance.countDocuments({ eventId: event._id, attendeeId: student.user._id }), 0);
 });
 
-test('a stale or low-accuracy fix is refused', async () => {
+test('a stale fix is refused but measured accuracy does not bypass freshness or geofence checks', async () => {
   const { event, student, code, studentAgent } = await scenario();
 
   const stale = await scanWith(studentAgent, code, atVenue({ capturedAt: new Date(Date.now() - 15 * 60_000).toISOString() }));
@@ -149,10 +149,10 @@ test('a stale or low-accuracy fix is refused', async () => {
   assert.match(stale.body.location, /too old/);
 
   const inaccurate = await scanWith(studentAgent, code, atVenue({ accuracy: 2_000 }));
-  assert.equal(inaccurate.status, 400);
-  assert.match(inaccurate.body.location, /not precise enough/);
+  assert.equal(inaccurate.status, 200);
+  assert.equal(inaccurate.body.locationVerified, true);
 
-  assert.equal(await getModels().EventAttendance.countDocuments({ eventId: event._id, attendeeId: student.user._id }), 0);
+  assert.equal(await getModels().EventAttendance.countDocuments({ eventId: event._id, attendeeId: student.user._id }), 1);
 });
 
 test('an event without a geofence reports missing configuration instead of accepting', async () => {
@@ -219,4 +219,3 @@ test('an administrator can set a geofence and a half-configured one is rejected'
   });
   assert.equal(badRadius.status, 400);
 });
-

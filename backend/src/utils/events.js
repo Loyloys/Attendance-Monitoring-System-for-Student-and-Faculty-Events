@@ -66,16 +66,12 @@ export function verifyAttendanceLocation(event, submitted, now = new Date()) {
     throw new ValidationError({ location: 'Your device reported an invalid location. Try again outdoors or near a window.' });
   }
 
-  // Accuracy: a fix that is honest about being imprecise is not usable for a
-  // campus-sized fence.
+  // Accuracy is retained as measured metadata. It is not a check-in cutoff;
+  // the event geofence below decides whether the reported coordinates are
+  // inside the permitted area.
   if (isFiniteNumber(accuracy)) {
     if (accuracy < 0) {
       throw new ValidationError({ location: 'Your device reported an invalid location accuracy. Try again.' });
-    }
-    if (accuracy > LOCATION_POLICY.maxAccuracyMeters) {
-      throw new ValidationError({
-        location: `Your location is not precise enough (±${Math.round(accuracy)} m, needs ±${LOCATION_POLICY.maxAccuracyMeters} m or better). Move away from buildings or switch on high-accuracy location, then try again.`,
-      });
     }
   }
 

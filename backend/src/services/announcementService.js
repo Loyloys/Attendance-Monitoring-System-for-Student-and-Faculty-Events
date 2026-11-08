@@ -1,5 +1,6 @@
 import { Announcement } from '../models/index.js';
 import { ValidationError } from '../utils/errors.js';
+import { sendAnnouncementPush } from './pushNotificationService.js';
 
 function serialize(row) {
   return {
@@ -32,5 +33,13 @@ export async function createAnnouncement(data, actor) {
     createdBy: actor._id,
     createdByName: `${actor.firstName || ''} ${actor.lastName || ''}`.trim() || actor.username,
   });
-  return serialize(row);
+  const announcement = serialize(row);
+  let notificationDelivery;
+  try {
+    notificationDelivery = await sendAnnouncementPush(announcement);
+  } catch (error) {
+    console.error('Could not send push notifications for announcement:', error?.code || error?.name || 'unknown error');
+    notificationDelivery = { status: 'failed', sent: 0, failed: 0 };
+  }
+  return { ...announcement, notificationDelivery };
 }

@@ -67,9 +67,6 @@ export function classifyObservation(event, submitted, now = new Date()) {
     throw new ValidationError({ location: 'Your device reported an invalid location.' });
   }
   const accuracy = typeof submitted?.accuracy === 'number' && Number.isFinite(submitted.accuracy) ? submitted.accuracy : null;
-  if (accuracy !== null && accuracy > LOCATION_POLICY.maxAccuracyMeters) {
-    throw new ValidationError({ location: `Your location is not precise enough (±${Math.round(accuracy)} m, needs ±${LOCATION_POLICY.maxAccuracyMeters} m or better). Move away from buildings and try again.` });
-  }
   const capturedAt = submitted?.capturedAt;
   const capturedMs = typeof capturedAt === 'string' || typeof capturedAt === 'number' ? new Date(capturedAt).getTime() : NaN;
   if (Number.isNaN(capturedMs)) throw new ValidationError({ location: 'The location reading was not timestamped.' });

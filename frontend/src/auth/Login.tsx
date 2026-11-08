@@ -299,6 +299,9 @@ const Login: React.FC = () => {
           <div className="mb-6">
             {google ? (
               <div className="flex flex-col items-center gap-3">
+                <p className="w-full text-center text-sm font-bold text-slate-800">
+                  Gmail account? Sign in securely with Google
+                </p>
                 <div className="w-full">
                   <GoogleSignInButton
                     clientId={google.clientId}
@@ -310,8 +313,8 @@ const Login: React.FC = () => {
                 </div>
                 <p className="w-full text-center text-xs font-medium leading-5 text-slate-600">
                   {googleMode === 'development_test'
-                    ? "Sign in with the Google account on this server's private test list."
-                    : 'Continue with Google to sign in.'}
+                    ? "Use the Google account on this server's private test list. Your Google password stays with Google."
+                    : 'Your Google password stays with Google; this app only receives Google’s sign-in confirmation.'}
                 </p>
               </div>
             ) : (
@@ -393,9 +396,8 @@ const Login: React.FC = () => {
             </div>
 
             <p className="text-xs leading-5 text-slate-500">
-              This is your application password, not your Google password. Google passwords and Gmail SMTP App Passwords never work here. Approved Google-only accounts can use Google sign-in above or ask an administrator to send or resend their application password setup link.
+              This field is only for an application password. Do not enter your Google password or Gmail SMTP App Password here. To use your Gmail account, click <strong>Continue with Google</strong> above.
             </p>
-
             {recaptchaError && (
               <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
                 {recaptchaError}

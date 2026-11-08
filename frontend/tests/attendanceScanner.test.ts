@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   cameraFailureKind,
   cameraFailureMessage,
+  captureLocation,
   evaluateFixQuality,
   geolocationErrorMessage,
   runWithValidatedLocation,
@@ -87,6 +88,80 @@ test('known location-required event shows a user-triggered location gate before 
   assert.equal(shouldShowLocationGate(true, true, false), false);
 });
 
+test('captureLocation keeps the best fresh high-accuracy reading and stops at the target', async () => {
+  const originalNavigator = globalThis.navigator;
+  const updates: number[] = [];
+  let cleared = false;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {
+      geolocation: {
+        watchPosition(success: PositionCallback) {
+          setTimeout(() => success({
+            coords: { latitude: 14.600001, longitude: 121.000001, accuracy: 114 },
+            timestamp: Date.now(),
+          } as GeolocationPosition), 0);
+          setTimeout(() => success({
+            coords: { latitude: 14.600002, longitude: 121.000002, accuracy: 80 },
+            timestamp: Date.now(),
+          } as GeolocationPosition), 5);
+          return 7;
+        },
+        clearWatch() { cleared = true; },
+      },
+    },
+  });
+  try {
+    const fix = await captureLocation({
+      timeoutMs: 100,
+      targetAccuracyMeters: 100,
+      onUpdate: reading => updates.push(reading.accuracy),
+    });
+    assert.equal(fix.accuracy, 80);
+    assert.deepEqual(updates, [114, 80]);
+    assert.equal(cleared, true);
+  } finally {
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: originalNavigator });
+  }
+});
+
+test('captureLocation reports permission denial and returns the best poor reading after timeout', async () => {
+  const originalNavigator = globalThis.navigator;
+  const makeNavigator = (errorCode: number) => ({
+    geolocation: {
+      watchPosition(_success: PositionCallback, error: PositionErrorCallback) {
+        setTimeout(() => error({ code: errorCode } as GeolocationPositionError), 0);
+        return 8;
+      },
+      clearWatch() {},
+    },
+  });
+  try {
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: makeNavigator(1) });
+    await assert.rejects(captureLocation({ timeoutMs: 20 }), /permission is blocked/i);
+
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        geolocation: {
+          watchPosition(success: PositionCallback) {
+            setTimeout(() => success({
+              coords: { latitude: 14.6, longitude: 121, accuracy: 114 },
+              timestamp: Date.now(),
+            } as GeolocationPosition), 0);
+            return 9;
+          },
+          clearWatch() {},
+        },
+      },
+    });
+    const poorFix = await captureLocation({ timeoutMs: 10 });
+    assert.equal(poorFix.accuracy, 114);
+  } finally {
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: originalNavigator });
+  }
+});
+
 test('known-event location failures keep the camera closed and the location gate retryable', async () => {
   let cameraStarts = 0;
   let attempts = 0;
@@ -106,13 +181,12 @@ test('known-event location failures keep the camera closed and the location gate
   assert.equal(cameraStarts, 1);
 });
 
-test('known-event location unavailable, timeout, stale, and inaccurate fixes block camera startup', async () => {
+test('known-event location unavailable, timeout, and stale fixes block camera startup', async () => {
   const policy = { maxAccuracyMeters: 100, maxAgeSeconds: 120 };
   const invalidFixes = [
     async () => { throw new Error(geolocationErrorMessage(2)); },
     async () => { throw new Error(geolocationErrorMessage(3)); },
     async () => ({ latitude: 14.6, longitude: 121, accuracy: 10, capturedAt: new Date(Date.now() - 180_000).toISOString() }),
-    async () => ({ latitude: 14.6, longitude: 121, accuracy: 250, capturedAt: new Date().toISOString() }),
   ];
   for (const requestLocation of invalidFixes) {
     let cameraStarts = 0;
@@ -183,7 +257,7 @@ test('ineligible QR preview never requests location or permits check-in', async 
   assert.equal(submitted, false);
 });
 
-test('QR location permission, unavailable, stale, and inaccurate fixes block submission', async () => {
+test('QR location permission, unavailable, and stale fixes block submission', async () => {
   const preview = {
     eventId: 'event-1',
     eventName: 'Verified event',
@@ -198,7 +272,6 @@ test('QR location permission, unavailable, stale, and inaccurate fixes block sub
     async () => { throw new Error('Location permission is blocked.'); },
     async () => { throw new Error('Your location is unavailable.'); },
     async () => ({ latitude: 14.6, longitude: 121, accuracy: 10, capturedAt: new Date(Date.now() - 180_000).toISOString() }),
-    async () => ({ latitude: 14.6, longitude: 121, accuracy: 250, capturedAt: new Date().toISOString() }),
   ]) {
     let submitted = false;
     await assert.rejects(submitPreviewedQr(preview, rejectedLocation, policy, async () => { submitted = true; }));
@@ -392,12 +465,6 @@ test('QR check-in submission stays blocked for location errors and invalid fixes
     accuracy: 12,
     capturedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
   };
-  const inaccurate = {
-    latitude: 14.6,
-    longitude: 121,
-    accuracy: 5_000,
-    capturedAt: new Date().toISOString(),
-  };
   const failures: Array<() => Promise<{
     latitude: number; longitude: number; accuracy: number; capturedAt: string;
   }>> = [
@@ -405,7 +472,6 @@ test('QR check-in submission stays blocked for location errors and invalid fixes
     async () => { throw new Error(geolocationErrorMessage(2)); },
     async () => { throw new Error(geolocationErrorMessage(3)); },
     async () => stale,
-    async () => inaccurate,
     async () => ({ ...stale, capturedAt: 'not-a-timestamp' }),
   ];
 
@@ -496,7 +562,7 @@ test('manual card location still follows the selected event policy', () => {
   }), false);
 });
 
-test('location quality rejects malformed timestamps, old fixes, and poor accuracy', () => {
+test('location quality rejects malformed timestamps and old fixes but accepts measured accuracy above 100 m', () => {
   assert.equal(evaluateFixQuality({
     latitude: 14.6,
     longitude: 121,
@@ -514,5 +580,11 @@ test('location quality rejects malformed timestamps, old fixes, and poor accurac
     longitude: 121,
     accuracy: 5_000,
     capturedAt: new Date().toISOString(),
-  }).acceptable, false);
+  }).acceptable, true);
+  assert.equal(evaluateFixQuality({
+    latitude: 14.6,
+    longitude: 121,
+    accuracy: 10,
+    capturedAt: new Date().toISOString(),
+  }).acceptable, true);
 });

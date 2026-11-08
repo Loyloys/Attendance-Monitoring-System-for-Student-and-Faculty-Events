@@ -91,7 +91,7 @@ export const QR_PREFIX = 'COT-EVENT';
  * defaulting to "accept anything".
  */
 export const LOCATION_POLICY = Object.freeze({
-  /** Reported accuracy (metres) worse than this is refused as a poor fix. */
+  /** Retained for compatibility with existing health consumers; not an acceptance cutoff. */
   maxAccuracyMeters: Number(process.env.LOCATION_MAX_ACCURACY_METERS || 100),
   /** A fix older than this is refused as stale, so replayed coordinates fail. */
   maxAgeSeconds: Number(process.env.LOCATION_MAX_AGE_SECONDS || 120),

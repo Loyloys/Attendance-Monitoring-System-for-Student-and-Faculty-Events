@@ -20,6 +20,7 @@ import SignupRequest from './SignupRequest.js';
 import SystemSetting from './SystemSetting.js';
 import Announcement from './Announcement.js';
 import EmailActionToken from './EmailActionToken.js';
+import PushDevice from './PushDevice.js';
 
 export {
   User,
@@ -44,4 +45,5 @@ export {
   SystemSetting,
   Announcement,
   EmailActionToken,
+  PushDevice,
 };

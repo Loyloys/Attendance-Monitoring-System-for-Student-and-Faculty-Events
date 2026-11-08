@@ -172,6 +172,22 @@ export async function resendPasswordSetup(user, signupRequestId = null) {
   return { status: 'sent' };
 }
 
+export async function requestPasswordSetup(emailValue) {
+  ensureEmailConfigured();
+  const { normalized } = normalizeEmail(emailValue);
+  const user = await User.findOne({
+    emailNormalized: normalized,
+    approvalStatus: 'approved',
+    isActive: true,
+    archivedAt: null,
+  }).select('+passwordHash');
+
+  // Keep the response identical for unknown, pending, and already-configured
+  // accounts so this endpoint cannot be used to enumerate users.
+  if (user && !user.passwordHash) await sendPasswordSetupLink(user);
+  return { message: genericMessage };
+}
+
 export function emailSignupStatus() {
   return emailDeliveryStatus();
 }

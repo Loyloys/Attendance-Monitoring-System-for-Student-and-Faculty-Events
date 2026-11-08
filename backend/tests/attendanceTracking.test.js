@@ -744,17 +744,14 @@ test('a gap longer than 30 seconds credits nothing', async () => {
   assert.equal(late.creditedSeconds, 0, 'a 45s gap exceeds the 30s crediting bound');
 });
 
-test('an inaccurate fix pauses instead of crediting', async () => {
+test('a low-accuracy but fresh in-zone fix remains eligible for tracking', async () => {
   const { event, student } = await trackingEvent();
   const user = asUser(student);
   const t0 = new Date();
   const session = await start(user, event, t0);
   const t1 = new Date(t0.getTime() + 10_000);
-  await assert.rejects(
-    updateTrackingSession(user, session.id, { location: { ...fix(t1), accuracy: 5_000 } }, t1),
-    detail(/not precise enough/i),
-  );
-  assert.equal((await getTrackingSession(user, event._id, t1)).creditedSeconds, 0, 'a refused fix never credits');
+  const updated = await updateTrackingSession(user, session.id, { location: { ...fix(t1), accuracy: 5_000 } }, t1);
+  assert.equal(updated.creditedSeconds, 10, 'fresh in-zone coordinates remain eligible regardless of reported accuracy');
 });
 
 test('duplicate and out-of-order updates cannot double-count', async () => {

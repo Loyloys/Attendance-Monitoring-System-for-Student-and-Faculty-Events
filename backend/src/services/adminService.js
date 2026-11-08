@@ -26,6 +26,7 @@ import { serializeAdminEvents } from './eventService.js';
 import { serializeAdminAttendance, serializeAdminUser, serializeEventFeedback } from './adminSerializer.js';
 import { finalizeExpiredSessions } from './attendanceSessionService.js';
 import { serializeEvaluationForm, serializeEvaluationResponse } from './evaluationSerializer.js';
+import { recordAudit } from './auditService.js';
 
 const roleMap = { Student: 'student', Faculty: 'faculty', Admin: 'admin' };
 const adminRoleMap = { student: 'Student', faculty: 'Faculty', admin: 'Admin' };
@@ -166,21 +167,6 @@ export async function listAdminUsers() {
  * has already been committed, and losing the audit row must not turn a
  * successful administrator action into a failed request.
  */
-async function recordAudit(actor, action, target, detail) {
-  if (!actor?._id) return;
-  // Rejections have no User yet, so there is no target id. Skip the audit row
-  // rather than failing the rejection on a required field.
-  if (!target?.userId) return;
-  await AuditLog.create({
-    actorId: actor._id,
-    actorName: actor.profile?.displayName || actor.accountId || '',
-    action,
-    targetUserId: target.userId,
-    targetAccountId: target.accountId || '',
-    detail: detail || '',
-  }).catch(() => {});
-}
-
 export async function createAdminUser(data, actor) {
   if (data.status !== undefined || data.approvalStatus !== undefined) {
     throw new ValidationError({ status: 'Account blocking and deactivation are not available during account creation.' });
@@ -219,7 +205,7 @@ export async function createAdminUser(data, actor) {
     department,
     cardIdentifier: null,
   });
-  await recordAudit(actor, 'account_created', { userId: user._id, accountId }, `Created as ${role}`);
+  await recordAudit({ actor, action: 'account_created', targetUser: { userId: user._id, accountId, displayName: name }, detail: `Created as ${role}` });
   return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
 }
 
@@ -264,6 +250,14 @@ export async function updateAdminUser(accountId, data, actor) {
       revokedAt: new Date(),
     })), { ordered: false }).catch((error) => { if (error.code !== 11000) throw error; });
   }
+  const previousValues = {
+    accountId: user.accountId,
+    username: user.username,
+    email: user.email,
+    name: profile.displayName,
+    contact: profile.phone,
+    department: profile.department,
+  };
   user.accountId = nextAccountId;
   user.accountIdNormalized = stableCaseInsensitive(nextAccountId);
   user.username = nextUsername;
@@ -280,11 +274,20 @@ export async function updateAdminUser(accountId, data, actor) {
   await profile.save();
 
   // AD003: record what actually changed, so a role change is traceable.
-  const auditTarget = { userId: user._id, accountId: user.accountId };
+  const changedFields = [
+    nextAccountId !== previousValues.accountId ? 'accountId' : '',
+    nextUsername !== previousValues.username ? 'username' : '',
+    nextEmail !== previousValues.email ? 'email' : '',
+    nextName !== previousValues.name ? 'name' : '',
+    nextContact !== previousValues.contact ? 'contact' : '',
+    nextDepartment !== previousValues.department ? 'department' : '',
+    password ? 'credentials' : '',
+    roleChanged ? 'role' : '',
+  ].filter(Boolean);
   if (roleChanged) {
-    await recordAudit(actor, 'role_changed', auditTarget, `Role changed from ${previousRole} to ${nextRole}`);
-  } else {
-    await recordAudit(actor, 'account_updated', auditTarget, 'Account details updated');
+    await recordAudit({ actor, action: 'role_changed', targetUser: { userId: user._id, accountId: user.accountId, displayName: nextName }, detail: `Changed fields: ${changedFields.filter(field => field !== 'role').join(', ') || 'role'}; role changed from ${previousRole} to ${nextRole}` });
+  } else if (changedFields.length) {
+    await recordAudit({ actor, action: 'account_updated', targetUser: { userId: user._id, accountId: user.accountId, displayName: nextName }, detail: `Changed fields: ${changedFields.join(', ')}` });
   }
 
   return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
@@ -429,7 +432,7 @@ export async function approveSignupRequest(requestId, data, actor) {
   await signup.save();
   // 'account_created' is the closest existing audit action for an approval that
   // creates the account; the detail names the approval explicitly.
-  await recordAudit(actor, 'account_created', { userId: user._id, accountId }, `Signup request approved as ${role}`);
+  await recordAudit({ actor, action: 'account_approved', targetUser: { userId: user._id, accountId, displayName: signup.displayName || accountId }, detail: `Signup request approved as ${role}` });
   // Never claim delivery unless the provider accepted the message. A transport
   // failure keeps the approval itself (the account is valid and Google sign-in
   // works) and reports the failure honestly so an Admin can resend the link.
@@ -460,7 +463,7 @@ export async function rejectSignupRequest(requestId, actor) {
   signup.reviewedBy = actor?._id || null;
   await signup.save();
   // Reuses an existing audit action; the detail records that this was a signup refusal.
-  await recordAudit(actor, 'account_updated', { userId: null, accountId: signup.accountId || signup.googleEmail }, 'Signup request rejected');
+  await recordAudit({ actor, action: 'account_rejected', detail: 'Signup request rejected' });
   return { id: String(signup._id), status: signup.status };
 }
 
@@ -474,7 +477,7 @@ export async function resendUserPasswordSetup(accountId, actor) {
   const result = await resendPasswordSetup(user, null);
   // 'account_updated' is the closest existing audit action; the detail names the
   // resend explicitly. No new audit action is introduced.
-  await recordAudit(actor, 'account_updated', { userId: user._id, accountId: user.accountId }, 'Application password setup link resent');
+  await recordAudit({ actor, action: 'account_updated', targetUser: { userId: user._id, accountId: user.accountId }, detail: 'Application password setup link resent' });
   return result;
 }
 
@@ -492,7 +495,7 @@ export async function archiveAdminUser(accountId, actor) {
   user.archivedAt = new Date();
   user.archivedBy = actor?._id || null;
   await user.save();
-  await recordAudit(actor, 'account_archived', { userId: user._id, accountId: user.accountId }, 'Archived without deleting account history');
+  await recordAudit({ actor, action: 'account_archived', targetUser: { userId: user._id, accountId: user.accountId }, detail: 'Archived without deleting account history' });
   return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
 }
 
@@ -506,7 +509,7 @@ export async function restoreArchivedAdminUser(accountId, actor) {
   user.archivedAt = null;
   user.archivedBy = null;
   await user.save();
-  await recordAudit(actor, 'account_restored', { userId: user._id, accountId: user.accountId }, 'Restored from archive');
+  await recordAudit({ actor, action: 'account_restored', targetUser: { userId: user._id, accountId: user.accountId }, detail: 'Restored from archive' });
   return serializeAdminUser({ ...user.toObject(), profile: profile.toObject() });
 }
 
@@ -558,7 +561,7 @@ export async function deleteAdminUser(accountId, actor) {
     reason: 'Account deleted',
     revokedAt: new Date(),
   });
-  await recordAudit(actor, 'account_deleted', { userId: user._id, accountId: user.accountId }, 'Account permanently deleted');
+  await recordAudit({ actor, action: 'account_deleted', targetUser: { userId: user._id, accountId: user.accountId }, detail: 'Account permanently deleted' });
 }
 
 export async function listAttendance() {
@@ -586,14 +589,30 @@ async function findUserById(userId) {
 }
 
 /** AD003: recent role and account changes, newest first, for the admin workspace. */
-export async function listAuditLog(limit = 50) {
-  const entries = await AuditLog.find().sort({ createdAt: -1 }).limit(Math.min(Number(limit) || 50, 200)).lean();
+export async function listAuditLog(options = {}) {
+  const limit = Math.min(Number(options.limit) || 100, 200);
+  const query = {};
+  if (options.action && typeof options.action === 'string') query.action = options.action;
+  if (options.actorRole && ['student', 'faculty', 'admin'].includes(options.actorRole)) query.actorRole = options.actorRole;
+  if (options.search && typeof options.search === 'string') {
+    const search = options.search.trim().slice(0, 80);
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(escaped, 'i');
+      query.$or = [{ actorName: pattern }, { targetName: pattern }, { targetAccountId: pattern }, { eventName: pattern }, { detail: pattern }];
+    }
+  }
+  const entries = await AuditLog.find(query).sort({ createdAt: -1 }).limit(limit).lean();
   return entries.map((entry) => ({
     id: entry._id,
     action: entry.action,
     detail: entry.detail,
-    actor: entry.actorName || 'Administrator',
+    actor: entry.actorName || 'Unknown actor',
+    actorRole: entry.actorRole || '',
     targetAccountId: entry.targetAccountId,
+    targetName: entry.targetName || '',
+    eventId: entry.targetEventId || '',
+    eventName: entry.eventName || '',
     at: new Date(entry.createdAt).toISOString(),
   }));
 }
@@ -606,7 +625,7 @@ function normalizeUuid(value) {
     : null;
 }
 
-export async function addAttendance(data) {
+export async function addAttendance(data, actor = null) {
   const eventId = normalizeUuid(data.eventId);
   const event = eventId ? await Event.findById(eventId) : null;
   if (!event) throw new NotFoundError('Event not found.');
@@ -627,6 +646,7 @@ export async function addAttendance(data) {
       source: 'Manual addition',
       note: String(data.note || '').slice(0, 1000),
     });
+    await recordAudit({ actor, action: 'attendance_checked_in', targetUser: user, event, detail: `Added attendance manually. Status: ${status}.` });
     return serializeAdminAttendance(record, { ...user.toObject(), profile: profile.toObject() }, event.toObject());
   } catch (error) {
     if (error.code === 11000) throw new ConflictError('An attendance record already exists for this person and event.');
@@ -634,7 +654,7 @@ export async function addAttendance(data) {
   }
 }
 
-export async function correctAttendance(recordId, data) {
+export async function correctAttendance(recordId, data, actor = null) {
   const record = await EventAttendance.findById(Number(recordId));
   if (!record) throw new NotFoundError('Attendance record not found.');
   const status = String(data.status || '').toLowerCase();
@@ -664,6 +684,7 @@ export async function correctAttendance(recordId, data) {
     findUserById(record.attendeeId),
     Event.findById(record.eventId),
   ]);
+  await recordAudit({ actor, action: 'attendance_status_changed', targetUser: user, event, detail: `Changed attendance status to ${status}.` });
   return serializeAdminAttendance(record, { ...user.toObject(), profile: profile.toObject() }, event.toObject());
 }
 

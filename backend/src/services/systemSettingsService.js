@@ -8,6 +8,7 @@ export const RECAPTCHA_SETTING = 'recaptcha_enabled';
 export const RECAPTCHA_SITE_KEY_SETTING = 'recaptcha_site_key';
 export const MAP_PICKER_SETTING = 'map_picker_enabled';
 export const GOOGLE_CALENDAR_SETTING = 'google_calendar_enabled';
+export const PUSH_NOTIFICATIONS_SETTING = 'push_notifications_enabled';
 
 export async function googleOAuthStatus() {
   try {
@@ -46,11 +47,15 @@ function validateGoogleClientId(clientId) {
 export async function setGoogleClientId(clientId, actor) {
   const value = validateGoogleClientId(clientId);
   try {
-    await SystemSetting.findByIdAndUpdate(
-      GOOGLE_CLIENT_ID_SETTING,
-      { $set: { value, updatedAt: new Date(), updatedBy: actor?._id || null } },
-      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-    );
+    if (value) {
+      await SystemSetting.findByIdAndUpdate(
+        GOOGLE_CLIENT_ID_SETTING,
+        { $set: { value, updatedAt: new Date(), updatedBy: actor?._id || null } },
+        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+      );
+    } else {
+      await SystemSetting.deleteOne({ _id: GOOGLE_CLIENT_ID_SETTING });
+    }
     return googleClientIdStatus();
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -107,11 +112,15 @@ export async function setRecaptchaStatus(enabled, actor, siteKey) {
       if (typeof siteKey !== 'string' || siteKey.length > 512) {
         throw new AppError(400, 'A valid reCAPTCHA site key string is required.');
       }
-      await SystemSetting.findByIdAndUpdate(
-        RECAPTCHA_SITE_KEY_SETTING,
-        { $set: { value: siteKey.trim(), updatedAt: new Date(), updatedBy: actor?._id || null } },
-        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-      );
+      if (siteKey.trim()) {
+        await SystemSetting.findByIdAndUpdate(
+          RECAPTCHA_SITE_KEY_SETTING,
+          { $set: { value: siteKey.trim(), updatedAt: new Date(), updatedBy: actor?._id || null } },
+          { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+        );
+      } else {
+        await SystemSetting.deleteOne({ _id: RECAPTCHA_SITE_KEY_SETTING });
+      }
     }
     await SystemSetting.findByIdAndUpdate(
       RECAPTCHA_SETTING,
@@ -183,5 +192,31 @@ export async function setGoogleCalendarSettingStatus(enabled, actor) {
     if (error instanceof AppError) throw error;
     console.error('Could not persist the Google Calendar setting:', error?.name || 'unknown error');
     throw new AppError(503, 'The Google Calendar setting could not be saved. No setting change was made.');
+  }
+}
+
+export async function pushNotificationsSettingStatus() {
+  try {
+    const setting = await SystemSetting.findById(PUSH_NOTIFICATIONS_SETTING).lean();
+    return { enabled: setting?.value === true, available: true };
+  } catch (error) {
+    console.error('Could not read the push notifications setting:', error?.name || 'unknown error');
+    return { enabled: false, available: false };
+  }
+}
+
+export async function setPushNotificationsSettingStatus(enabled, actor) {
+  if (typeof enabled !== 'boolean') throw new AppError(400, 'enabled must be true or false.');
+  try {
+    await SystemSetting.findByIdAndUpdate(
+      PUSH_NOTIFICATIONS_SETTING,
+      { $set: { value: enabled, updatedAt: new Date(), updatedBy: actor?._id || null } },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+    );
+    return pushNotificationsSettingStatus();
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    console.error('Could not persist the push notifications setting:', error?.name || 'unknown error');
+    throw new AppError(503, 'The push notifications setting could not be saved. No setting change was made.');
   }
 }

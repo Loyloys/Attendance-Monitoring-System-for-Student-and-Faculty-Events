@@ -73,6 +73,27 @@ test('approved Google-linked account signs in manually with its Google email and
   assert.equal((await client.get('/api/auth/me/')).status, 200);
 });
 
+test('approved Google-linked account can request its first application password setup link', async () => {
+  const user = await createGoogleApprovedUser({ password: null });
+  stubEmailDelivery();
+  const client = agent();
+  const response = await send(client, 'post', '/api/auth/password/request-setup/', { email: GOOGLE_EMAIL });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.match(response.body.message, /email with the next step/i);
+
+  const models = getModels();
+  const token = await models.EmailActionToken.findOne({ userId: user._id, purpose: 'set-application-password' });
+  assert.ok(token);
+});
+
+test('password setup request does not reveal whether an account exists', async () => {
+  stubEmailDelivery();
+  const client = agent();
+  const response = await send(client, 'post', '/api/auth/password/request-setup/', { email: 'unknown@gmail.com' });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.match(response.body.message, /email with the next step/i);
+});
+
 test('the same approved account signs in with its account ID', async () => {
   await createGoogleApprovedUser();
   const { user } = await login('GOO001', APPLIED_PASSWORD);

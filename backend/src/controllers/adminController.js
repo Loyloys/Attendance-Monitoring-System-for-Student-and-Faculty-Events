@@ -22,11 +22,12 @@ import {
 } from '../services/adminService.js';
 
 import { archiveLegacyBrowserState } from '../services/legacyBrowserImportService.js';
-import { googleOAuthStatus, googleClientIdStatus, setGoogleClientId, setGoogleOAuthStatus, recaptchaStatus, setRecaptchaStatus, recaptchaIsConfigured, mapPickerStatus, setMapPickerStatus, googleCalendarSettingStatus, setGoogleCalendarSettingStatus } from '../services/systemSettingsService.js';
+import { googleOAuthStatus, googleClientIdStatus, setGoogleClientId, setGoogleOAuthStatus, recaptchaStatus, setRecaptchaStatus, recaptchaIsConfigured, mapPickerStatus, setMapPickerStatus, googleCalendarSettingStatus, setGoogleCalendarSettingStatus, pushNotificationsSettingStatus, setPushNotificationsSettingStatus } from '../services/systemSettingsService.js';
+import { pushNotificationConfiguration } from '../services/pushNotificationService.js';
 import { createAnnouncement, listAnnouncements } from '../services/announcementService.js';
 import { resendPasswordSetup } from '../services/emailSignupService.js';
 import { User } from '../models/index.js';
-import { NotFoundError } from '../utils/errors.js';
+import { AppError, NotFoundError } from '../utils/errors.js';
 import { SignupRequest } from '../models/index.js';
 
 export async function state(request, response) {
@@ -39,7 +40,7 @@ export async function importLegacyBrowserState(request, response) {
 
 // AD003: who changed whose role, and when.
 export async function auditLog(request, response) {
-  response.json(await listAuditLog(request.query.limit));
+  response.json(await listAuditLog(request.query));
 }
 
 export async function createUser(request, response) {
@@ -113,6 +114,23 @@ export async function updateGoogleCalendarSettings(request, response) {
   response.json(await setGoogleCalendarSettingStatus(request.body.enabled, request.user));
 }
 
+export async function pushNotificationsSettings(request, response) {
+  const status = await pushNotificationsSettingStatus();
+  if (!status.available) {
+    response.status(503).json({ detail: 'The persistent push notifications setting is unavailable.' });
+    return;
+  }
+  response.json({ ...status, configured: pushNotificationConfiguration().configured });
+}
+
+export async function updatePushNotificationsSettings(request, response) {
+  if (request.body?.enabled === true && !pushNotificationConfiguration().configured) {
+    throw new AppError(400, 'Configure Firebase credentials and the token encryption key before enabling push notifications.');
+  }
+  const status = await setPushNotificationsSettingStatus(request.body?.enabled, request.user);
+  response.json({ ...status, configured: pushNotificationConfiguration().configured });
+}
+
 export async function adminAnnouncements(request, response) {
   response.json(await listAnnouncements('admin'));
 }
@@ -164,11 +182,11 @@ export async function restoreUser(request, response) {
 }
 
 export async function createAttendance(request, response) {
-  response.status(201).json(await addAttendance(request.body));
+  response.status(201).json(await addAttendance(request.body, request.user));
 }
 
 export async function updateAttendance(request, response) {
-  response.json(await correctAttendance(request.params.recordId, request.body));
+  response.json(await correctAttendance(request.params.recordId, request.body, request.user));
 }
 
 export async function removeAttendance(request, response) {

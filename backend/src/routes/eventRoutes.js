@@ -11,6 +11,7 @@ router.get('/events/', asyncRoute(controller.listEvents));
 router.get('/events/archived/', requireRole('student', 'faculty'), asyncRoute(controller.listMyArchived));
 router.get('/events/:eventId/', asyncRoute(controller.eventDetail));
 router.post('/events/:eventId/registrations/', requireRole('student'), asyncRoute(controller.register));
+router.delete('/events/:eventId/registrations/', requireRole('student'), asyncRoute(controller.cancelRegister));
 router.post('/attendance/scan/preview/', requireRole('student', 'faculty'), asyncRoute(controller.previewAttendance));
 // GST006: Faculty reach their assigned event's QR here. The route is open to
 // admin as well so an Administrator can manage any event's code; the SERVICE

@@ -96,7 +96,7 @@ export async function detail(request, response) {
   if (!event) throw new NotFoundError('Event not found.');
   let calendar;
   if (request.method === 'PATCH') {
-    event = await updateEvent(event._id, request.body);
+    event = await updateEvent(event._id, request.body, request.user);
     calendar = await syncEventToCalendar(event, request.user, request);
   }
   return response.json({ ...(await serializeAdminEvents([event.toObject()]))[0], ...(calendar ? { calendar } : {}) });
@@ -105,7 +105,7 @@ export async function detail(request, response) {
 export async function cancel(request, response) {
   const event = await Event.findById(request.params.eventId);
   if (!event) throw new NotFoundError('Event not found.');
-  await cancelEvent(event);
+  await cancelEvent(event, request.user);
   return response.json((await serializeAdminEvents([event.toObject()]))[0]);
 }
 
@@ -134,7 +134,7 @@ export async function issue(request, response) {
 export async function restore(request, response) {
   const event = await Event.findById(request.params.eventId);
   if (!event) throw new NotFoundError('Event not found.');
-  await restoreEvent(event);
+  await restoreEvent(event, request.user);
   return response.json((await serializeAdminEvents([event.toObject()]))[0]);
 }
 
