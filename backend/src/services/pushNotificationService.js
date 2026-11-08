@@ -3,7 +3,7 @@ import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { env } from '../config/env.js';
 import { PushDevice, User, UserProfile } from '../models/index.js';
-import { pushNotificationsSettingStatus } from './systemSettingsService.js';
+import { firebaseWebConfigStatus, pushNotificationsSettingStatus } from './systemSettingsService.js';
 import { AppError, ValidationError } from '../utils/errors.js';
 
 const TOKEN_ALGORITHM = 'aes-256-gcm';
@@ -46,11 +46,12 @@ export function pushNotificationConfiguration() {
 }
 
 export async function pushNotificationStatus() {
-  const [configuration, setting] = await Promise.all([
+  const [configuration, setting, webConfig] = await Promise.all([
     Promise.resolve(pushNotificationConfiguration()),
     pushNotificationsSettingStatus(),
+    firebaseWebConfigStatus(),
   ]);
-  return { ...configuration, ...setting };
+  return { ...configuration, ...setting, ...webConfig };
 }
 
 function encryptToken(token) {

@@ -132,6 +132,10 @@ describe('MapVenuePicker', () => {
   it('renders the picker, mode tabs, and neutral hint', () => {
     renderPicker();
 
+    expect(L.tileLayer).toHaveBeenCalledWith(
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      expect.objectContaining({ maxZoom: 19 }),
+    );
     expect(screen.getByTestId('map-venue-picker')).toBeInTheDocument();
     expect(screen.getByText('Map venue picker')).toBeInTheDocument();
     expect(screen.getByTestId('mode-venue')).toBeInTheDocument();

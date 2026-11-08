@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { eventApi } from '../../data/eventApi';
-import { deletePushToken, getPushToken, listenForPushMessages, pushNotificationsSupported } from '../../data/pushNotifications';
+import { deletePushToken, getPushToken, listenForPushMessages, pushNotificationsConfigured, pushNotificationsSupported } from '../../data/pushNotifications';
 
 type PushState = 'checking' | 'unsupported' | 'unconfigured' | 'disabled' | 'off' | 'enabled' | 'working' | 'error';
 
@@ -26,7 +26,7 @@ export default function PushNotificationControl() {
       if (!token) throw new Error('Firebase did not return a browser push token.');
       await eventApi.registerPushDevice(token);
       setState('enabled');
-      setMessage('Push notifications are enabled for announcements on this browser.');
+      setMessage('This browser is registered for announcement notifications.');
     } catch (caught) {
       setState('error');
       setMessage(caught instanceof Error ? caught.message : 'Push notifications could not be enabled.');
@@ -52,15 +52,8 @@ export default function PushNotificationControl() {
     let active = true;
     const initialize = async () => {
       try {
-        const [supported, status] = await Promise.all([
-          pushNotificationsSupported(),
-          eventApi.pushNotificationStatus(),
-        ]);
+        const status = await eventApi.pushNotificationStatus();
         if (!active) return;
-        if (!supported) {
-          setState('unsupported');
-          return;
-        }
         if (!status.available) throw new Error('Push notification settings could not be loaded. Please try again later.');
         if (!status.enabled) {
           setState('disabled');
@@ -68,13 +61,23 @@ export default function PushNotificationControl() {
         }
         if (!status.configured) {
           setState('unconfigured');
+          setMessage('Firebase Admin credentials or the token-encryption key are missing from the backend environment.');
+          return;
+        }
+        if (!await pushNotificationsConfigured(status.firebaseWebConfig)) {
+          setState('unconfigured');
+          setMessage('Firebase browser configuration is incomplete. Ask an administrator to configure the Firebase Web Configuration and VAPID public key in Admin Settings.');
+          return;
+        }
+        if (!await pushNotificationsSupported(status.firebaseWebConfig)) {
+          setState('unsupported');
           return;
         }
         if (Notification.permission !== 'granted') {
           setState('off');
           return;
         }
-        const token = await getPushToken();
+        const token = await getPushToken(status.firebaseWebConfig);
         if (!token) {
           setState('off');
           return;
@@ -113,7 +116,7 @@ export default function PushNotificationControl() {
     return <p className="app-card mt-5 p-4 text-sm text-slate-600">Push notifications are not supported by this browser or connection.</p>;
   }
   if (state === 'unconfigured') {
-    return <p className="app-card mt-5 p-4 text-sm text-slate-600">Push notifications are not configured on this server yet.</p>;
+    return <p role="status" className="app-card mt-5 p-4 text-sm text-slate-600">{message || 'Push notifications are not configured yet.'}</p>;
   }
   if (state === 'disabled') {
     return <p className="app-card mt-5 p-4 text-sm text-slate-600">Push notifications have been disabled by an administrator.</p>;

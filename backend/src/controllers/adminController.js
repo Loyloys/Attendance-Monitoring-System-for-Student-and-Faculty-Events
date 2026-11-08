@@ -22,7 +22,7 @@ import {
 } from '../services/adminService.js';
 
 import { archiveLegacyBrowserState } from '../services/legacyBrowserImportService.js';
-import { googleOAuthStatus, googleClientIdStatus, setGoogleClientId, setGoogleOAuthStatus, recaptchaStatus, setRecaptchaStatus, recaptchaIsConfigured, mapPickerStatus, setMapPickerStatus, googleCalendarSettingStatus, setGoogleCalendarSettingStatus, pushNotificationsSettingStatus, setPushNotificationsSettingStatus } from '../services/systemSettingsService.js';
+import { googleOAuthStatus, googleClientIdStatus, setGoogleClientId, setGoogleOAuthStatus, recaptchaStatus, setRecaptchaStatus, recaptchaIsConfigured, mapPickerStatus, setMapPickerStatus, googleCalendarSettingStatus, setGoogleCalendarSettingStatus, pushNotificationsSettingStatus, setPushNotificationsSettingStatus, firebaseWebConfigStatus, setFirebaseWebConfig, resetFirebaseWebConfig } from '../services/systemSettingsService.js';
 import { pushNotificationConfiguration } from '../services/pushNotificationService.js';
 import { createAnnouncement, listAnnouncements } from '../services/announcementService.js';
 import { resendPasswordSetup } from '../services/emailSignupService.js';
@@ -98,7 +98,7 @@ export async function mapPickerSettings(request, response) {
 }
 
 export async function updateMapPickerSettings(request, response) {
-  response.json(await setMapPickerStatus(request.body.enabled, request.user));
+  response.json(await setMapPickerStatus(request.body.enabled, request.user, request.body.tileProviderApiKey));
 }
 
 export async function googleCalendarSettings(request, response) {
@@ -115,20 +115,49 @@ export async function updateGoogleCalendarSettings(request, response) {
 }
 
 export async function pushNotificationsSettings(request, response) {
-  const status = await pushNotificationsSettingStatus();
+  const [status, webConfig] = await Promise.all([
+    pushNotificationsSettingStatus(),
+    firebaseWebConfigStatus(),
+  ]);
   if (!status.available) {
     response.status(503).json({ detail: 'The persistent push notifications setting is unavailable.' });
     return;
   }
-  response.json({ ...status, configured: pushNotificationConfiguration().configured });
+  if (!webConfig.firebaseWebConfigAvailable) {
+    response.status(503).json({ detail: 'The Firebase web configuration is temporarily unavailable.' });
+    return;
+  }
+  response.json({ ...status, ...webConfig, configured: pushNotificationConfiguration().configured });
 }
 
 export async function updatePushNotificationsSettings(request, response) {
-  if (request.body?.enabled === true && !pushNotificationConfiguration().configured) {
+  const body = request.body || {};
+  if (Object.hasOwn(body, 'firebaseWebConfig')) {
+    const [webConfig, status] = await Promise.all([
+      setFirebaseWebConfig(body.firebaseWebConfig, request.user),
+      pushNotificationsSettingStatus(),
+    ]);
+    response.json({ ...status, ...webConfig, configured: pushNotificationConfiguration().configured });
+    return;
+  }
+  if (body.resetFirebaseWebConfig === true) {
+    const [webConfig, status] = await Promise.all([
+      resetFirebaseWebConfig(),
+      pushNotificationsSettingStatus(),
+    ]);
+    response.json({ ...status, ...webConfig, configured: pushNotificationConfiguration().configured });
+    return;
+  }
+  if (body.enabled === true && !pushNotificationConfiguration().configured) {
     throw new AppError(400, 'Configure Firebase credentials and the token encryption key before enabling push notifications.');
   }
-  const status = await setPushNotificationsSettingStatus(request.body?.enabled, request.user);
-  response.json({ ...status, configured: pushNotificationConfiguration().configured });
+  const webConfig = await firebaseWebConfigStatus();
+  if (!webConfig.firebaseWebConfigAvailable) {
+    response.status(503).json({ detail: 'The Firebase web configuration is temporarily unavailable.' });
+    return;
+  }
+  const status = await setPushNotificationsSettingStatus(body.enabled, request.user);
+  response.json({ ...status, ...webConfig, configured: pushNotificationConfiguration().configured });
 }
 
 export async function adminAnnouncements(request, response) {

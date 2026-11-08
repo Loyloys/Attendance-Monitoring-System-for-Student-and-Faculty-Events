@@ -13,6 +13,7 @@ vi.mock('../src/data/eventApi', () => ({
 }));
 
 vi.mock('../src/data/pushNotifications', () => ({
+  pushNotificationsConfigured: vi.fn(),
   pushNotificationsSupported: vi.fn(),
   getPushToken: vi.fn(),
   deletePushToken: vi.fn(),
@@ -20,12 +21,13 @@ vi.mock('../src/data/pushNotifications', () => ({
 }));
 
 import { eventApi } from '../src/data/eventApi';
-import { deletePushToken, getPushToken, pushNotificationsSupported } from '../src/data/pushNotifications';
+import { deletePushToken, getPushToken, pushNotificationsConfigured, pushNotificationsSupported } from '../src/data/pushNotifications';
 
 const mockPushStatus = eventApi.pushNotificationStatus as ReturnType<typeof vi.fn>;
 const mockRegister = eventApi.registerPushDevice as ReturnType<typeof vi.fn>;
 const mockUnregister = eventApi.unregisterPushDevice as ReturnType<typeof vi.fn>;
 const mockSupported = pushNotificationsSupported as ReturnType<typeof vi.fn>;
+const mockWebConfigConfigured = pushNotificationsConfigured as ReturnType<typeof vi.fn>;
 const mockGetToken = getPushToken as ReturnType<typeof vi.fn>;
 const mockDeleteToken = deletePushToken as ReturnType<typeof vi.fn>;
 
@@ -43,6 +45,7 @@ beforeEach(() => {
   MockNotification.permission = 'default';
   MockNotification.requestPermission.mockResolvedValue('granted');
   mockSupported.mockResolvedValue(true);
+  mockWebConfigConfigured.mockResolvedValue(true);
   mockPushStatus.mockResolvedValue({ configured: true, enabled: true, available: true });
   mockGetToken.mockResolvedValue('browser-fcm-token-1234567890');
   mockRegister.mockResolvedValue({ registered: true });
@@ -68,7 +71,7 @@ describe('PushNotificationControl', () => {
 
     expect(MockNotification.requestPermission).toHaveBeenCalledOnce();
     expect(mockRegister).toHaveBeenCalledWith('browser-fcm-token-1234567890');
-    expect(screen.getByText(/Push notifications are enabled/)).toBeInTheDocument();
+    expect(screen.getByText(/browser is registered for announcement notifications/)).toBeInTheDocument();
   });
 
   it('unregisters and deletes the browser token when opting out', async () => {
@@ -87,7 +90,21 @@ describe('PushNotificationControl', () => {
     mockPushStatus.mockResolvedValue({ configured: false, enabled: true, available: true });
     render(<PushNotificationControl />);
     await settle();
-    expect(screen.getByText(/not configured on this server yet/)).toBeInTheDocument();
+    expect(screen.getByText(/Firebase Admin credentials or the token-encryption key are missing/)).toBeInTheDocument();
+  });
+
+  it('explains that Firebase web configuration must be set up before browser support checks', async () => {
+    mockPushStatus.mockResolvedValue({
+      configured: true,
+      enabled: true,
+      available: true,
+      firebaseWebConfig: null,
+    });
+    mockWebConfigConfigured.mockResolvedValue(false);
+    render(<PushNotificationControl />);
+    await settle();
+    expect(screen.getByText(/Firebase browser configuration is incomplete/)).toBeInTheDocument();
+    expect(mockSupported).not.toHaveBeenCalled();
   });
 
   it('explains when an administrator has disabled push notifications', async () => {

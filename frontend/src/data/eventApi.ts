@@ -284,10 +284,23 @@ export type GoogleSession = {
   schoolApproved?: boolean;
 };
 
+export type FirebaseWebConfig = {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
+  vapidKey: string;
+};
+
 export type PushNotificationSettings = {
   enabled: boolean;
   available: boolean;
   configured: boolean;
+  firebaseWebConfig: FirebaseWebConfig | null;
+  firebaseWebConfigConfigured: boolean;
+  firebaseWebConfigAvailable?: boolean;
 };
 export type GoogleConfig = Omit<GoogleSession, 'nonce'>;
 
@@ -522,7 +535,7 @@ export const eventApi = {
     });
   },
   async mapPickerSettings() {
-    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/map-picker/');
+    return requestJson<{ enabled: boolean; available: boolean; tileProviderKeyConfigured: boolean }>('/admin/settings/map-picker/');
   },
   async googleCalendarStatus() {
     return requestJson<{ configured: boolean; connected: boolean; enabled: boolean; settingAvailable: boolean; missing: string[] }>('/auth/google/calendar/status/');
@@ -539,10 +552,10 @@ export const eventApi = {
   googleCalendarAuthorizeUrl() {
     return `${API_ROOT}/auth/google/calendar/authorize/`;
   },
-  async updateMapPickerSettings(enabled: boolean) {
-    return requestJson<{ enabled: boolean; available: boolean }>('/admin/settings/map-picker/', {
+  async updateMapPickerSettings(enabled: boolean, tileProviderApiKey?: string) {
+    return requestJson<{ enabled: boolean; available: boolean; tileProviderKeyConfigured: boolean }>('/admin/settings/map-picker/', {
       method: 'PUT',
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify({ enabled, ...(tileProviderApiKey === undefined ? {} : { tileProviderApiKey }) }),
     });
   },
   pushNotificationSettings() {
@@ -552,6 +565,18 @@ export const eventApi = {
     return requestJson<PushNotificationSettings>('/admin/settings/push-notifications/', {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
+    });
+  },
+  async saveFirebaseWebConfig(firebaseWebConfig: FirebaseWebConfig) {
+    return requestJson<PushNotificationSettings>('/admin/settings/push-notifications/', {
+      method: 'PUT',
+      body: JSON.stringify({ firebaseWebConfig }),
+    });
+  },
+  async resetFirebaseWebConfig() {
+    return requestJson<PushNotificationSettings>('/admin/settings/push-notifications/', {
+      method: 'PUT',
+      body: JSON.stringify({ resetFirebaseWebConfig: true }),
     });
   },
   pushNotificationStatus() {

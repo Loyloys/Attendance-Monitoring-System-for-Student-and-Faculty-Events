@@ -20,6 +20,8 @@ vi.mock('../src/data/eventApi', () => ({
     googleCalendarAuthorizeUrl: vi.fn(),
     pushNotificationSettings: vi.fn(),
     updatePushNotificationSettings: vi.fn(),
+    saveFirebaseWebConfig: vi.fn(),
+    resetFirebaseWebConfig: vi.fn(),
   },
 }));
 
@@ -37,6 +39,18 @@ const mockGoogleCalendarAuthorizeUrl = eventApi.googleCalendarAuthorizeUrl as Re
 const mockUpdateGoogleCalendarSettings = eventApi.updateGoogleCalendarSettings as ReturnType<typeof vi.fn>;
 const mockPushNotificationSettings = eventApi.pushNotificationSettings as ReturnType<typeof vi.fn>;
 const mockUpdatePushNotificationSettings = eventApi.updatePushNotificationSettings as ReturnType<typeof vi.fn>;
+const mockSaveFirebaseWebConfig = eventApi.saveFirebaseWebConfig as ReturnType<typeof vi.fn>;
+const mockResetFirebaseWebConfig = eventApi.resetFirebaseWebConfig as ReturnType<typeof vi.fn>;
+
+const firebaseWebConfig = {
+  apiKey: 'AIzaSyTestFirebaseWebApiKey000000000',
+  authDomain: 'attendance-test.firebaseapp.com',
+  projectId: 'attendance-test',
+  storageBucket: 'attendance-test.firebasestorage.app',
+  messagingSenderId: '696332399690',
+  appId: '1:696332399690:web:ccd6602a07a1978b4422b3',
+  vapidKey: 'BFDmIchOfLp8j3oZ6drOef3so9oilBl8N8gMlHTdtizj9GTT9e8BMHuBy_mMpg8b2NtwisdIsFJZ6nNZW-aaNVQ',
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -46,13 +60,40 @@ beforeEach(() => {
   mockUpdateGoogleOAuthSettings.mockResolvedValue({ enabled: false, available: true });
   mockRecaptchaSettings.mockResolvedValue({ enabled: false, available: true, configured: true });
   mockUpdateRecaptchaSettings.mockResolvedValue({ enabled: false, available: true });
-  mockMapPickerSettings.mockResolvedValue({ enabled: false, available: true });
-  mockUpdateMapPickerSettings.mockResolvedValue({ enabled: false, available: true });
+  mockMapPickerSettings.mockResolvedValue({ enabled: false, available: true, tileProviderKeyConfigured: false });
+  mockUpdateMapPickerSettings.mockImplementation(async (enabled: boolean, tileProviderApiKey?: string) => ({
+    enabled,
+    available: true,
+    tileProviderKeyConfigured: Boolean(tileProviderApiKey),
+  }));
   mockGoogleCalendarStatus.mockResolvedValue({ configured: true, connected: false, enabled: true, settingAvailable: true, missing: [] });
   mockUpdateGoogleCalendarSettings.mockResolvedValue({ enabled: false, available: true });
   mockGoogleCalendarAuthorizeUrl.mockReturnValue('/api/auth/google/calendar/authorize/');
-  mockPushNotificationSettings.mockResolvedValue({ enabled: false, available: true, configured: true });
+  mockPushNotificationSettings.mockResolvedValue({
+    enabled: false,
+    available: true,
+    configured: true,
+    firebaseWebConfig: null,
+    firebaseWebConfigConfigured: false,
+    firebaseWebConfigAvailable: true,
+  });
   mockUpdatePushNotificationSettings.mockImplementation(async (enabled: boolean) => ({ enabled, available: true, configured: true }));
+  mockSaveFirebaseWebConfig.mockImplementation(async (config: typeof firebaseWebConfig) => ({
+    enabled: false,
+    available: true,
+    configured: true,
+    firebaseWebConfig: config,
+    firebaseWebConfigConfigured: true,
+    firebaseWebConfigAvailable: true,
+  }));
+  mockResetFirebaseWebConfig.mockResolvedValue({
+    enabled: false,
+    available: true,
+    configured: true,
+    firebaseWebConfig: null,
+    firebaseWebConfigConfigured: false,
+    firebaseWebConfigAvailable: true,
+  });
 });
 
 afterEach(() => {
@@ -114,12 +155,57 @@ describe('SettingsSection', () => {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     expect(mockUpdatePushNotificationSettings).toHaveBeenCalledWith(true);
     expect(checkbox).toBeChecked();
-    expect(screen.getByText(/enabled for announcements/)).toBeInTheDocument();
+    expect(screen.getByText(/setting is enabled/)).toBeInTheDocument();
 
     fireEvent.click(checkbox);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     expect(mockUpdatePushNotificationSettings).toHaveBeenLastCalledWith(false);
     expect(checkbox).not.toBeChecked();
+  });
+
+  it('saves masked Firebase web configuration and shows saved-state feedback', async () => {
+    mockPushNotificationSettings.mockResolvedValue({
+      enabled: false,
+      available: true,
+      configured: true,
+      firebaseWebConfig,
+      firebaseWebConfigConfigured: true,
+      firebaseWebConfigAvailable: true,
+    });
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    const configInput = screen.getByLabelText('Firebase Web Configuration');
+    expect(configInput).toHaveAttribute('type', 'password');
+    fireEvent.change(configInput, { target: { value: JSON.stringify(firebaseWebConfig) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Firebase web configuration' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockSaveFirebaseWebConfig).toHaveBeenCalledWith(firebaseWebConfig);
+    expect(screen.getByText(/Firebase web configuration saved/)).toBeInTheDocument();
+    expect(screen.getByText(/Firebase web configuration is saved/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Firebase (Web API key|project ID|messaging sender ID)/)).not.toBeInTheDocument();
+  });
+
+  it('validates required Firebase web configuration before saving', async () => {
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    fireEvent.change(screen.getByLabelText('Firebase Web Configuration'), { target: { value: '{"apiKey":"incomplete"}' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Firebase web configuration' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The Firebase Web Configuration is missing the project ID.');
+    expect(mockSaveFirebaseWebConfig).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Firebase Web Configuration'), { target: { value: '{"private_key":"not for the browser"}' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Firebase web configuration' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Do not paste Firebase service-account credentials');
+    expect(mockSaveFirebaseWebConfig).not.toHaveBeenCalled();
+  });
+
+  it('resets Firebase web configuration to the frontend defaults', async () => {
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Firebase web configuration to default' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockResetFirebaseWebConfig).toHaveBeenCalledOnce();
+    expect(screen.getByText(/Firebase web configuration reset/)).toBeInTheDocument();
   });
 
   it('saves the Google OAuth client ID from the settings card', async () => {
@@ -255,6 +341,36 @@ describe('SettingsSection', () => {
     expect(mockUpdateMapPickerSettings).toHaveBeenCalledWith(false);
     expect(screen.getByLabelText('Enable venue map picker')).not.toBeChecked();
     expect(screen.getByText(/Venue map picker was reset to its default hidden state/)).toBeInTheDocument();
+  });
+
+  it('saves a masked tile provider key without loading the saved value back', async () => {
+    mockMapPickerSettings.mockResolvedValue({ enabled: true, available: true, tileProviderKeyConfigured: true });
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+
+    const apiKeyInput = screen.getByLabelText('Tile provider API key');
+    expect(apiKeyInput).toHaveAttribute('type', 'password');
+    expect(apiKeyInput).toHaveValue('');
+    fireEvent.change(apiKeyInput, { target: { value: 'test-map-provider-key' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save tile provider key' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+
+    expect(mockUpdateMapPickerSettings).toHaveBeenCalledWith(true, 'test-map-provider-key');
+    expect(apiKeyInput).toHaveValue('');
+    expect(screen.getByRole('status')).toHaveTextContent('Tile provider API key saved securely.');
+  });
+
+  it('shows an error when the tile provider key cannot be saved', async () => {
+    mockUpdateMapPickerSettings.mockRejectedValue(new Error('Secure key storage is unavailable.'));
+    render(<SettingsSection />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    const apiKeyInput = screen.getByLabelText('Tile provider API key');
+    fireEvent.change(apiKeyInput, { target: { value: 'test-map-provider-key' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save tile provider key' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Secure key storage is unavailable.');
+    expect(apiKeyInput).toHaveValue('test-map-provider-key');
   });
 
   it('shows error state when reCAPTCHA load fails', async () => {

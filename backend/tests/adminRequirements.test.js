@@ -212,6 +212,93 @@ test('admin can persist the public reCAPTCHA site key', async () => {
   assert.equal(await getModels().SystemSetting.exists({ _id: 'recaptcha_site_key' }), null);
 });
 
+test('map tile provider API key is encrypted and accessible only through admin settings', async () => {
+  await createUser({ username: 'ADM-TILE-KEY', role: 'admin' });
+  await createUser({ username: 'STU-TILE-KEY', role: 'student' });
+  const admin = await login('ADM-TILE-KEY');
+  const student = await login('STU-TILE-KEY');
+  const path = '/api/admin/settings/map-picker/';
+  const key = 'private-test-tile-provider-key';
+
+  assert.equal((await request().get(path)).status, 401);
+  assert.equal((await student.agent.get(path)).status, 403);
+  assert.equal((await send(student.agent, 'put', path, { enabled: false, tileProviderApiKey: key })).status, 403);
+
+  const saved = await send(admin.agent, 'put', path, { enabled: true, tileProviderApiKey: key });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.enabled, true);
+  assert.equal(saved.body.tileProviderKeyConfigured, true);
+  assert.equal(JSON.stringify(saved.body).includes(key), false);
+
+  const status = await admin.agent.get(path);
+  assert.equal(status.status, 200);
+  assert.equal(status.body.tileProviderKeyConfigured, true);
+  assert.equal(JSON.stringify(status.body).includes(key), false);
+
+  const stored = await getModels().SystemSetting.findById('map_tile_provider_api_key').lean();
+  assert.notEqual(stored.value, key);
+  const { decryptSecret } = await import('../src/utils/secretBox.js');
+  assert.equal(decryptSecret(stored.value), key);
+
+  const cleared = await send(admin.agent, 'put', path, { enabled: true, tileProviderApiKey: '' });
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.body.tileProviderKeyConfigured, false);
+  assert.equal(await getModels().SystemSetting.exists({ _id: 'map_tile_provider_api_key' }), null);
+});
+
+test('Firebase public web configuration can be saved, validated, used by push clients, and reset', async () => {
+  await createUser({ username: 'ADM-FCM-CONFIG', role: 'admin' });
+  await createUser({ username: 'STU-FCM-CONFIG', role: 'student' });
+  const admin = await login('ADM-FCM-CONFIG');
+  const student = await login('STU-FCM-CONFIG');
+  const path = '/api/admin/settings/push-notifications/';
+  const firebaseWebConfig = {
+    apiKey: 'AIzaSyTestFirebaseWebApiKey000000000',
+    authDomain: 'attendance-test.firebaseapp.com',
+    projectId: 'attendance-test',
+    storageBucket: 'attendance-test.firebasestorage.app',
+    messagingSenderId: '696332399690',
+    appId: '1:696332399690:web:ccd6602a07a1978b4422b3',
+    vapidKey: 'BFDmIchOfLp8j3oZ6drOef3so9oilBl8N8gMlHTdtizj9GTT9e8BMHuBy_mMpg8b2NtwisdIsFJZ6nNZW-aaNVQ',
+  };
+  await getModels().SystemSetting.create({ _id: 'push_notifications_enabled', value: true });
+
+  assert.equal((await request().get(path)).status, 401);
+  assert.equal((await student.agent.get(path)).status, 403);
+  assert.equal((await send(student.agent, 'put', path, { firebaseWebConfig })).status, 403);
+
+  const saved = await send(admin.agent, 'put', path, { firebaseWebConfig });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.enabled, true);
+  assert.equal(saved.body.firebaseWebConfigConfigured, true);
+  assert.deepEqual(saved.body.firebaseWebConfig, firebaseWebConfig);
+  const setting = await getModels().SystemSetting.findById('firebase_web_config').lean();
+  assert.deepEqual(setting.value, firebaseWebConfig);
+
+  const clientStatus = await request().get('/api/notifications/status/');
+  assert.equal(clientStatus.status, 200);
+  assert.deepEqual(clientStatus.body.firebaseWebConfig, firebaseWebConfig);
+  assert.equal(JSON.stringify(clientStatus.body).includes('private_key'), false);
+
+  const invalid = await send(admin.agent, 'put', path, {
+    firebaseWebConfig: { ...firebaseWebConfig, private_key: 'must-not-be-accepted' },
+  });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual((await admin.agent.get(path)).body.firebaseWebConfig, firebaseWebConfig);
+
+  const invalidSender = await send(admin.agent, 'put', path, {
+    firebaseWebConfig: { ...firebaseWebConfig, messagingSenderId: 'not-numeric' },
+  });
+  assert.equal(invalidSender.status, 400);
+
+  const reset = await send(admin.agent, 'put', path, { resetFirebaseWebConfig: true });
+  assert.equal(reset.status, 200);
+  assert.equal(reset.body.firebaseWebConfig, null);
+  assert.equal(reset.body.firebaseWebConfigConfigured, false);
+  assert.equal(reset.body.enabled, true);
+  assert.equal(await getModels().SystemSetting.exists({ _id: 'firebase_web_config' }), null);
+});
+
 test('announcement publishing is admin-only and recipient targeting is enforced', async () => {
   await createUser({ username: 'ADM-ANN', role: 'admin' });
   await createUser({ username: 'STU-ANN', role: 'student' });
