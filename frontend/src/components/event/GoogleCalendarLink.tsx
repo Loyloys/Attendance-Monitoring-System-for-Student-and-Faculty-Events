@@ -1,14 +1,17 @@
 import { ExternalLink } from 'lucide-react';
+import type { MouseEvent } from 'react';
 
 export default function GoogleCalendarLink({
   url,
   reason = 'not_synced',
   authorizeUrl,
+  onConnect,
   loading = false,
 }: {
   url: string | null | undefined;
   reason?: 'not_synced' | 'permission_unavailable' | 'calendar_disabled' | null;
   authorizeUrl?: string;
+  onConnect?: (event: MouseEvent<HTMLAnchorElement>) => void;
   loading?: boolean;
 }) {
   if (loading) {
@@ -19,6 +22,7 @@ export default function GoogleCalendarLink({
       return (
         <a
           href={authorizeUrl}
+          onClick={onConnect}
           className="inline-flex items-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 focus-visible:ring-2 focus-visible:ring-[#F97316] focus-visible:ring-offset-2"
           aria-label="Connect Google Calendar"
         >

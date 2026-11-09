@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { eventApi, type FirebaseWebConfig } from '../../data/eventApi';
 import { parseFirebaseWebConfig, serializeFirebaseWebConfig } from '../../data/firebaseWebConfig';
 
@@ -12,6 +12,16 @@ const defaultFirebaseWebConfig: FirebaseWebConfig = {
   vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY || '',
 };
 export default function SettingsSection() {
+  const [settingsUnlocked, setSettingsUnlocked] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [pinResetNotice, setPinResetNotice] = useState('');
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [emailCodePurpose, setEmailCodePurpose] = useState<'settings_change' | 'pin_reset' | null>(null);
+  const [emailCodeInput, setEmailCodeInput] = useState('');
+  const [emailCodeError, setEmailCodeError] = useState('');
+  const [emailCodeSaving, setEmailCodeSaving] = useState(false);
+  const emailCodeResolver = useRef<((approved: boolean) => void) | null>(null);
   const [oauthEnabled, setOauthEnabled] = useState(false);
   const [oauthConfigured, setOauthConfigured] = useState(false);
   const [oauthClientId, setOauthClientId] = useState('');
@@ -58,6 +68,87 @@ export default function SettingsSection() {
   const [pushNotice, setPushNotice] = useState('');
   const [firebaseWebConfigErrorMessage, setFirebaseWebConfigErrorMessage] = useState('');
   const [firebaseWebConfigNotice, setFirebaseWebConfigNotice] = useState('');
+
+  const requestSettingsChangeApproval = async () => {
+    await eventApi.sendAdminSettingsEmailCode('settings_change');
+    setEmailCodeInput('');
+    setEmailCodeError('');
+    setEmailCodePurpose('settings_change');
+    return new Promise<boolean>(resolve => { emailCodeResolver.current = resolve; });
+  };
+
+  const verifyPin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAccessSaving(true);
+    setPinError('');
+    try {
+      await eventApi.verifyAdminSettingsPin(pinInput);
+      setSettingsUnlocked(true);
+      setPinInput('');
+    } catch (caught) {
+      setPinError(caught instanceof Error ? caught.message : 'The admin settings PIN could not be verified.');
+    } finally {
+      setAccessSaving(false);
+    }
+  };
+
+  const requestPinReset = async () => {
+    setAccessSaving(true);
+    setPinError('');
+    setPinResetNotice('');
+    try {
+      await eventApi.sendAdminSettingsEmailCode('pin_reset');
+      setEmailCodeInput('');
+      setEmailCodeError('');
+      setEmailCodePurpose('pin_reset');
+    } catch (caught) {
+      setPinError(caught instanceof Error ? caught.message : 'A PIN reset code could not be sent.');
+    } finally {
+      setAccessSaving(false);
+    }
+  };
+
+  const cancelEmailCode = () => {
+    setEmailCodePurpose(null);
+    setEmailCodeInput('');
+    emailCodeResolver.current?.(false);
+    emailCodeResolver.current = null;
+  };
+
+  const submitEmailCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!emailCodePurpose) return;
+    setEmailCodeSaving(true);
+    setEmailCodeError('');
+    try {
+      const result = await eventApi.verifyAdminSettingsEmailCode(emailCodePurpose, emailCodeInput.trim());
+      const purpose = emailCodePurpose;
+      setEmailCodePurpose(null);
+      setEmailCodeInput('');
+      if (purpose === 'pin_reset') {
+        setSettingsUnlocked(false);
+        setPinResetNotice(result.detail || 'Email verified. Update SU_PIN in the backend .env file and restart the backend.');
+      } else {
+        emailCodeResolver.current?.(true);
+      }
+      emailCodeResolver.current = null;
+    } catch (caught) {
+      setEmailCodeError(caught instanceof Error ? caught.message : 'The email verification code could not be verified.');
+    } finally {
+      setEmailCodeSaving(false);
+    }
+  };
+
+  const connectGoogleCalendar = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    try {
+      if (await requestSettingsChangeApproval()) {
+        window.location.assign(eventApi.googleCalendarAuthorizeUrl());
+      }
+    } catch (caught) {
+      setCalendarError(caught instanceof Error ? caught.message : 'Google Calendar connection could not be started.');
+    }
+  };
 
   const firebaseWebConfigReady = (() => {
     try {
@@ -154,14 +245,16 @@ export default function SettingsSection() {
   }, []);
 
   useEffect(() => {
+    if (!settingsUnlocked) return;
     void loadOauth();
     void loadRecaptcha();
     void loadMapPicker();
     void loadCalendar();
     void loadPushNotifications();
-  }, [loadOauth, loadRecaptcha, loadMapPicker, loadCalendar, loadPushNotifications]);
+  }, [settingsUnlocked, loadOauth, loadRecaptcha, loadMapPicker, loadCalendar, loadPushNotifications]);
 
   useEffect(() => {
+    if (!settingsUnlocked) return;
     const result = new URLSearchParams(window.location.search).get('googleCalendar');
     if (!result) return;
     setCalendarNotice(result === 'connected'
@@ -171,13 +264,14 @@ export default function SettingsSection() {
     cleanUrl.searchParams.delete('googleCalendar');
     window.history.replaceState({}, '', cleanUrl);
     void loadCalendar();
-  }, [loadCalendar]);
+  }, [settingsUnlocked, loadCalendar]);
 
   const saveOauth = async (value: boolean, clientId = oauthClientId, reset = false) => {
     setOauthSaving(true);
     setOauthError('');
     setOauthNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const result = await eventApi.updateGoogleOAuthSettings(value, clientId);
       if (!result.available) throw new Error('The setting could not be confirmed. Google sign-in remains disabled.');
       setOauthEnabled(result.enabled);
@@ -200,6 +294,7 @@ export default function SettingsSection() {
     setRecaptchaError('');
     setRecaptchaNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const result = await eventApi.updateRecaptchaSettings(value, siteKey);
       if (!result.available) throw new Error('The setting could not be confirmed. reCAPTCHA remains disabled.');
       setRecaptchaEnabled(result.enabled);
@@ -230,6 +325,7 @@ export default function SettingsSection() {
     setMapPickerError('');
     setMapPickerNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const result = await eventApi.updateMapPickerSettings(value);
       if (!result.available) throw new Error('The setting could not be confirmed. Map picker remains disabled.');
       setMapPickerEnabled(result.enabled);
@@ -253,6 +349,7 @@ export default function SettingsSection() {
     setMapPickerError('');
     setMapPickerNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const result = await eventApi.updateMapPickerSettings(mapPickerEnabled, apiKey);
       if (!result.available) throw new Error('The key setting could not be confirmed.');
       setTileProviderKeyConfigured(result.tileProviderKeyConfigured);
@@ -272,6 +369,7 @@ export default function SettingsSection() {
     setCalendarError('');
     setCalendarNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const result = await eventApi.updateGoogleCalendarSettings(value);
       if (!result.available) throw new Error('The setting could not be confirmed. Google Calendar synchronization remains disabled.');
       setCalendarEnabled(result.enabled);
@@ -291,6 +389,7 @@ export default function SettingsSection() {
     setPushError('');
     setPushNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const result = await eventApi.updatePushNotificationSettings(value);
       if (!result.available) throw new Error('The setting could not be confirmed. Push notifications remain disabled.');
       setPushEnabled(result.enabled);
@@ -323,6 +422,7 @@ export default function SettingsSection() {
     setFirebaseWebConfigErrorMessage('');
     setFirebaseWebConfigNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const result = await eventApi.saveFirebaseWebConfig(config);
       if (!result.available || !result.firebaseWebConfigAvailable || !result.firebaseWebConfigConfigured) {
         throw new Error('The Firebase web configuration could not be confirmed as saved.');
@@ -342,6 +442,7 @@ export default function SettingsSection() {
     setFirebaseWebConfigErrorMessage('');
     setFirebaseWebConfigNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const result = await eventApi.resetFirebaseWebConfig();
       if (!result.available || !result.firebaseWebConfigAvailable || result.firebaseWebConfigConfigured) {
         throw new Error('The Firebase web configuration could not be confirmed as reset.');
@@ -361,6 +462,7 @@ export default function SettingsSection() {
     setCalendarError('');
     setCalendarNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const result = await eventApi.updateGoogleOAuthSettings(oauthEnabled, calendarClientId);
       if (!result.available) throw new Error('The Google client ID could not be confirmed.');
       await Promise.all([loadOauth(), loadCalendar()]);
@@ -378,8 +480,10 @@ export default function SettingsSection() {
     setCalendarError('');
     setCalendarNotice('');
     try {
+      if (!await requestSettingsChangeApproval()) return;
       const clientIdResult = await eventApi.updateGoogleOAuthSettings(oauthEnabled, '');
       if (!clientIdResult.available) throw new Error('The shared Google client ID could not be reset.');
+      if (!await requestSettingsChangeApproval()) return;
       const calendarResult = await eventApi.updateGoogleCalendarSettings(true);
       if (!calendarResult.available) throw new Error('Google Calendar could not be restored to its default enabled state.');
       await Promise.all([loadOauth(), loadCalendar()]);
@@ -392,7 +496,70 @@ export default function SettingsSection() {
     }
   };
 
-  return <section className="mt-6 space-y-5">
+  const emailCodeDialog = emailCodePurpose && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" role="presentation">
+    <form
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="admin-settings-email-code-title"
+      onSubmit={event => void submitEmailCode(event)}
+      className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+    >
+      <h2 id="admin-settings-email-code-title" className="text-lg font-bold text-[#10203B]">
+        {emailCodePurpose === 'pin_reset' ? 'Verify PIN reset' : 'Confirm settings change'}
+      </h2>
+      <p className="mt-2 text-sm leading-6 text-[#64748B]">A one-time code was sent to the configured administrator email address. It expires in 10 minutes.</p>
+      <label className="mt-5 block text-sm font-semibold text-[#334155]" htmlFor="admin-settings-email-code">Email verification code</label>
+      <input
+        id="admin-settings-email-code"
+        className="mt-2 block w-full rounded-lg border border-[#CBD5E1] px-3 py-2 text-sm text-[#10203B] outline-none focus:border-[#315A8A] focus:ring-2 focus:ring-[#315A8A]/20"
+        value={emailCodeInput}
+        onChange={event => setEmailCodeInput(event.target.value)}
+        autoComplete="one-time-code"
+        inputMode="numeric"
+        maxLength={6}
+        required
+      />
+      {emailCodeError && <p role="alert" className="mt-3 text-sm text-rose-700">{emailCodeError}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <button type="button" className="rounded-lg border border-[#CBD5E1] px-4 py-2 text-sm font-semibold text-[#334155] disabled:opacity-50" onClick={cancelEmailCode} disabled={emailCodeSaving}>Cancel</button>
+        <button type="submit" className="rounded-lg bg-[#10203B] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={emailCodeSaving || !emailCodeInput.trim()}>
+          {emailCodeSaving ? 'Verifying…' : 'Verify code'}
+        </button>
+      </div>
+    </form>
+  </div>;
+
+  if (!settingsUnlocked) return <>
+    <main className="mx-auto mt-10 max-w-md rounded-2xl border border-[#E2E3DF] bg-white p-6 shadow-sm">
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#94A3B8]">Administrator settings</p>
+      <h1 className="mt-1 text-2xl font-black text-[#10203B]">Settings access</h1>
+      <p className="mt-2 text-sm leading-6 text-[#64748B]">Enter the administrator settings PIN to continue.</p>
+      <form className="mt-5 space-y-3" onSubmit={event => void verifyPin(event)}>
+        <label className="block text-sm font-semibold text-[#334155]" htmlFor="admin-settings-pin">Settings PIN</label>
+        <input
+          id="admin-settings-pin"
+          className="block w-full rounded-lg border border-[#CBD5E1] px-3 py-2 text-sm text-[#10203B] outline-none focus:border-[#315A8A] focus:ring-2 focus:ring-[#315A8A]/20"
+          type="password"
+          value={pinInput}
+          onChange={event => setPinInput(event.target.value)}
+          autoComplete="current-password"
+          required
+        />
+        {pinError && <p role="alert" className="text-sm text-rose-700">{pinError}</p>}
+        {pinResetNotice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{pinResetNotice}</p>}
+        <button type="submit" className="w-full rounded-lg bg-[#10203B] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={accessSaving || !pinInput}>
+          {accessSaving ? 'Verifying…' : 'Continue'}
+        </button>
+      </form>
+      <button type="button" className="mt-4 text-sm font-semibold text-[#315A8A] underline disabled:opacity-50" onClick={() => void requestPinReset()} disabled={accessSaving}>
+        Forgot or reset PIN?
+      </button>
+    </main>
+    {emailCodeDialog}
+  </>;
+
+  return <>
+    <section className="mt-6 space-y-5">
     <header><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#94A3B8]">Administrator settings</p><h1 className="mt-1 text-2xl font-black text-[#10203B]">Settings</h1><p className="mt-2 text-sm text-[#64748B]">Persistent controls supported by the application. Google OAuth and reCAPTCHA are enforced by the backend.</p></header>
 
     <div className="max-w-3xl rounded-2xl border border-[#E2E3DF] bg-white p-5 shadow-sm">
@@ -492,6 +659,7 @@ export default function SettingsSection() {
           {!calendarConnected && calendarConfigured && <a
             className="rounded-lg bg-[#10203B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E3A5F]"
             href={eventApi.googleCalendarAuthorizeUrl()}
+            onClick={connectGoogleCalendar}
           >
             Connect Google Calendar
           </a>}
@@ -662,5 +830,7 @@ export default function SettingsSection() {
       {pushError && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{pushError} <button className="ml-2 font-bold underline" onClick={() => void loadPushNotifications()}>Retry</button></p>}
       {pushNotice && <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{pushNotice}</p>}
     </div>
-  </section>;
+    </section>
+    {emailCodeDialog}
+  </>;
 }

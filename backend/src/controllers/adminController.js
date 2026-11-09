@@ -29,6 +29,11 @@ import { resendPasswordSetup } from '../services/emailSignupService.js';
 import { User } from '../models/index.js';
 import { AppError, NotFoundError } from '../utils/errors.js';
 import { SignupRequest } from '../models/index.js';
+import {
+  sendAdminSettingsEmailCode,
+  verifyAdminSettingsEmailCode,
+  verifyAdminSettingsPin,
+} from '../services/adminSettingsAccessService.js';
 
 export async function state(request, response) {
   response.json(await adminState());
@@ -45,6 +50,27 @@ export async function auditLog(request, response) {
 
 export async function createUser(request, response) {
   response.status(201).json(await createAdminUser(request.body, request.user));
+}
+
+export async function verifyAdminSettingsPinController(request, response) {
+  await verifyAdminSettingsPin(request, request.body?.pin);
+  response.json({ verified: true });
+}
+
+export async function sendAdminSettingsEmailCodeController(request, response) {
+  await sendAdminSettingsEmailCode(request, request.body?.purpose);
+  response.json({ sent: true });
+}
+
+export async function verifyAdminSettingsEmailCodeController(request, response) {
+  const purpose = request.body?.purpose;
+  verifyAdminSettingsEmailCode(request, purpose, request.body?.emailCode);
+  response.json({
+    verified: true,
+    ...(purpose === 'pin_reset'
+      ? { detail: 'Email verified. Set the new SU_PIN in the backend .env file and restart the backend.' }
+      : {}),
+  });
 }
 
 // AD003.3: email-only pending signup requests (no User exists yet).

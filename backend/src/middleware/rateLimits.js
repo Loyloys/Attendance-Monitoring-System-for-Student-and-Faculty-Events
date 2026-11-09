@@ -38,3 +38,11 @@ export const emailActionLimiter = rateLimit({
   legacyHeaders: false,
   message: { detail: 'Too many email verification or password setup attempts. Try again later.' },
 });
+
+export const adminSettingsPinLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: env.isProduction ? 10 : 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { detail: 'Too many admin settings PIN attempts. Try again later.' },
+});

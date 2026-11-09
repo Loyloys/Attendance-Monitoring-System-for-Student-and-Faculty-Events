@@ -77,8 +77,12 @@ Replace `SESSION_SECRET` with a random value of at least 32 characters. Importan
 | `ATTENDANCE_MAX_OBSERVATION_AGE_SECONDS` | Age of a fix, in seconds, above which it is refused during **continuous tracking**. Deliberately separate from and stricter than `LOCATION_MAX_AGE_SECONDS`. Tracking samples every 10 s, so an older reading is a replayed cached position; resending one every 10 s satisfies the 30 s crediting-spacing rule on every call. Defaults to `30`. Only ever tightens the general limit, never relaxes it. |
 | `LOCATION_FENCE_SLACK_METERS` | Metres allowed *outside* the event radius. The check-in limit is `radius + slack`, so the default `25` means a "150 m" venue really accepts 175 m. Set `0` for a strict fence. |
 | `DEMO_*_PASSWORD` | Passwords for optional, separately tagged demo accounts. |
+| `SU_PIN` | Backend-only PIN required to open administrator settings; use a private value of at least 6 characters. |
+| `SU_EMAIL` | Recipient for one-time email codes required before each administrator setting change and PIN reset. SMTP must be configured. |
 
 Backend secrets are read only by the backend. No backend secret is exposed through Vite or frontend configuration.
+
+Administrator Settings asks for `SU_PIN` before displaying settings. Each setting change also requires a short-lived email code sent to `SU_EMAIL`; configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, and `PUBLIC_APP_URL` (and SMTP credentials when required) for delivery. To reset a forgotten PIN, verify the code sent to `SU_EMAIL`, change `SU_PIN` in `backend/.env`, and restart the backend. The login page's public reCAPTCHA status remains available before sign-in.
 
 ## Install
 

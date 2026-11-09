@@ -516,6 +516,24 @@ export const eventApi = {
       body: '{}',
     });
   },
+  async verifyAdminSettingsPin(pin: string) {
+    return requestJson<{ verified: boolean }>('/admin/settings/access/verify-pin/', {
+      method: 'POST',
+      body: JSON.stringify({ pin }),
+    });
+  },
+  async sendAdminSettingsEmailCode(purpose: 'settings_change' | 'pin_reset') {
+    return requestJson<{ sent: boolean }>('/admin/settings/access/send-code/', {
+      method: 'POST',
+      body: JSON.stringify({ purpose }),
+    });
+  },
+  async verifyAdminSettingsEmailCode(purpose: 'settings_change' | 'pin_reset', emailCode: string) {
+    return requestJson<{ verified: boolean; detail?: string }>('/admin/settings/access/verify-code/', {
+      method: 'POST',
+      body: JSON.stringify({ purpose, emailCode }),
+    });
+  },
   googleOAuthSettings() {
     return requestJson<{ enabled: boolean; available: boolean; clientId: string }>('/admin/settings/google-oauth/');
   },
